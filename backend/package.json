@@ -5,19 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:bot": "tsx watch src/bot.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "start:bot": "node dist/bot.js",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "discord.js": "^14.26.4",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "node-pty": "^1.0.0",
     "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.3",
     "systeminformation": "^5.23.17"
   },
   "devDependencies": {

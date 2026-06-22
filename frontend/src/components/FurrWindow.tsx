@@ -38,7 +38,7 @@ export const FurrWindow = memo(function FurrWindow({ windowState, children, icon
 
   return (
     <section
-      className={clsx("glass-strong absolute overflow-hidden rounded-[12px] shadow-window ring-1 ring-white/30", className)}
+      className={clsx("absolute overflow-hidden rounded-[12px] border border-cyan-300/15 bg-slate-950/70 shadow-window ring-1 ring-purple-500/20 backdrop-blur-xl", className)}
       style={{
         transform: `translate3d(${windowState.x}px, ${windowState.y}px, 0)`,
         width: windowState.width,
@@ -48,21 +48,21 @@ export const FurrWindow = memo(function FurrWindow({ windowState, children, icon
       onMouseDown={() => focusWindow(windowState.id)}
       data-furr-window-id={windowState.id}
     >
-      <header className="flex h-11 select-none items-center justify-between border-b border-white/45 bg-white/38" onMouseDown={onDragStart} onDoubleClick={() => toggleMaximize(windowState.id)}>
+      <header className="flex h-11 select-none items-center justify-between border-b border-purple-500/20 bg-slate-900/55 shadow-[inset_0_-1px_0_rgba(0,240,255,0.08)]" onMouseDown={onDragStart} onDoubleClick={() => toggleMaximize(windowState.id)}>
         <div className="flex min-w-0 items-center gap-2 px-3">
-          <span className="grid h-6 w-6 place-items-center rounded-md bg-white/70 text-slate-700 shadow-sm">{icon ?? <Square size={14} />}</span>
-          <h2 className="truncate text-[13px] font-semibold text-slate-800">{windowState.title}</h2>
+          <span className="grid h-6 w-6 place-items-center rounded-md border border-cyan-300/25 bg-slate-950/80 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.22)]">{icon ?? <Square size={14} />}</span>
+          <h2 className="truncate text-[13px] font-semibold text-slate-100 drop-shadow-[0_0_8px_rgba(139,92,246,0.6)]">{windowState.title}</h2>
           {titleBarContent}
         </div>
 
         <div className="flex h-full items-center" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="grid h-11 w-11 place-items-center text-slate-600 hover:bg-white/55" aria-label="Minimize" onClick={() => minimizeWindow(windowState.id)}>
+          <button className="grid h-11 w-11 place-items-center text-slate-400 hover:bg-cyan-500/10 hover:text-[#00f0ff]" aria-label="Minimize" onClick={() => minimizeWindow(windowState.id)}>
             <Minus size={15} />
           </button>
-          <button className="grid h-11 w-11 place-items-center text-slate-600 hover:bg-white/55" aria-label={windowState.isMaximized ? "Restore" : "Maximize"} onClick={() => toggleMaximize(windowState.id)}>
+          <button className="grid h-11 w-11 place-items-center text-slate-400 hover:bg-purple-500/15 hover:text-violet-200" aria-label={windowState.isMaximized ? "Restore" : "Maximize"} onClick={() => toggleMaximize(windowState.id)}>
             {windowState.isMaximized ? <Square size={13} /> : <Maximize2 size={14} />}
           </button>
-          <button className="grid h-11 w-11 place-items-center text-slate-600 hover:bg-red-500 hover:text-white" aria-label="Close" onClick={() => closeWindow(windowState.id)}>
+          <button className="grid h-11 w-11 place-items-center text-slate-400 hover:bg-[#ff007f]/25 hover:text-pink-100" aria-label="Close" onClick={() => closeWindow(windowState.id)}>
             <X size={16} />
           </button>
         </div>

@@ -10,9 +10,31 @@ services:
       STORAGE_DIR: /app/storage
       DATABASE_URL: file:/app/storage/furrbox.db
       JWT_SECRET: change-this-local-furrbox-secret
+      BOT_BRIDGE_TOKEN: change-this-bot-bridge-token
       CORS_ORIGIN: http://localhost:3000
     ports:
       - "4000:4000"
+    volumes:
+      - furrbox-storage:/app/storage
+
+  furrbox-discord-bot:
+    build:
+      context: ./backend
+    container_name: furrbox-discord-bot
+    restart: unless-stopped
+    command: ["node", "dist/bot.js"]
+    depends_on:
+      - furrbox-backend
+    environment:
+      NODE_ENV: production
+      STORAGE_DIR: /app/storage
+      DATABASE_URL: file:/app/storage/furrbox.db
+      FURRBOX_BACKEND_URL: http://furrbox-backend:4000
+      BOT_BRIDGE_TOKEN: change-this-bot-bridge-token
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?Set DISCORD_TOKEN in .env}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      DISCORD_MUTED_ROLE_ID: ${DISCORD_MUTED_ROLE_ID:-}
+      DISCORD_MUTED_ROLE_NAME: ${DISCORD_MUTED_ROLE_NAME:-Muted}
     volumes:
       - furrbox-storage:/app/storage
 

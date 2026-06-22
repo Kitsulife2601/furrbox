@@ -47,6 +47,14 @@ export async function deleteFile(id: string, token: string) {
   if (!response.ok && response.status !== 204) throw new Error("Failed to delete file.");
 }
 
+export async function readFileBlobUrl(file: FurrFile, token: string) {
+  const response = await fetch(`${API_URL}${file.url}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Failed to read file.");
+  return URL.createObjectURL(await response.blob());
+}
+
 export async function downloadFile(file: FurrFile, token: string) {
   const response = await fetch(`${API_URL}${file.url}`, {
     headers: { Authorization: `Bearer ${token}` }

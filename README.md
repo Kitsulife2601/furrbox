@@ -87,7 +87,40 @@ STORAGE_DIR=./storage
 DATABASE_URL=file:./storage/furrbox.db
 JWT_SECRET=replace-this-for-real-use
 CORS_ORIGIN=http://localhost:3000
+BOT_BRIDGE_TOKEN=replace-this-long-random-bridge-secret
 ```
+
+## Discord Bot
+
+The backend includes a `discord.js` v14 bot in `backend/src/bot.ts`. It syncs Discord member roles into SQLite, receives remote moderation commands from FurrBox over the internal Socket.io bridge, writes audit entries to `Dokumente/Moderation_Beweise/Discord_Logs/audit_log.json`, and DMs the Fish Nagie Owner after every moderation action.
+
+Never commit your Discord token. Put secrets in a local `.env` file or in your hoster's protected environment variables:
+
+```bash
+DISCORD_TOKEN=your_discord_bot_token
+DISCORD_GUILD_ID=your_guild_id
+BOT_BRIDGE_TOKEN=use-the-same-long-random-secret-as-the-backend
+FURRBOX_BACKEND_URL=http://localhost:4000
+DISCORD_MUTED_ROLE_ID=optional_existing_muted_role_id
+DISCORD_MUTED_ROLE_NAME=Muted
+```
+
+Local development:
+
+```bash
+npm --workspace backend run dev
+npm --workspace backend run dev:bot
+```
+
+Production:
+
+```bash
+npm --workspace backend run build
+npm --workspace backend run start
+npm --workspace backend run start:bot
+```
+
+Docker Compose reads `DISCORD_TOKEN` from a project `.env` file next to `docker-compose.yml` and starts both `furrbox-backend` and `furrbox-discord-bot`.
 
 ## GitHub Push
 

@@ -1,11 +1,69 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Cloud, Download, File, FileArchive, FileImage, FileText, FolderSync, Search, Trash2, Upload } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  File,
+  FileArchive,
+  FileImage,
+  FileText,
+  FolderSync,
+  Image,
+  LayoutList,
+  Search,
+  SlidersHorizontal,
+  Upload,
+  X
+} from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { deleteFile, downloadFile, listFiles, uploadFile } from "@/lib/files";
+import { deleteFile, listFiles, readFileBlobUrl, uploadFile } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
+
+type TreeNode = {
+  id: string;
+  label: string;
+  path: string;
+  children?: TreeNode[];
+};
+
+type ExplorerRow =
+  | { kind: "folder"; id: string; name: string; path: string; modified: string; type: "Dateiordner"; size: "" }
+  | { kind: "file"; id: string; name: string; path: string; modified: string; type: string; size: string; file: FurrFile };
+
+const baseTree: TreeNode[] = [
+  {
+    id: "pc",
+    label: "Dieser PC",
+    path: "",
+    children: [
+      {
+        id: "documents",
+        label: "Dokumente",
+        path: "Dokumente",
+        children: [
+          { id: "desktop", label: "virtuelle Privater desktop", path: "Dokumente/virtuelle Privater desktop" },
+          { id: "evidence", label: "Moderation_Beweise", path: "Dokumente/Moderation_Beweise" }
+        ]
+      },
+      { id: "pictures", label: "Bilder", path: "Bilder" },
+      { id: "network", label: "Netzwerk", path: "Netzwerk" }
+    ]
+  }
+];
+
+function displayName(file: FurrFile) {
+  return file.displayName || file.originalName.split(/[\\/]/).pop() || file.originalName;
+}
+
+function virtualPath(file: FurrFile) {
+  if (file.virtualPath !== undefined) return file.virtualPath;
+  const parts = file.originalName.split(/[\\/]/);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : "Dokumente/virtuelle Privater desktop/release";
+}
 
 function formatSize(size: number) {
   if (size < 1024) return `${size} B`;
@@ -13,20 +71,89 @@ function formatSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function fileType(file: FurrFile) {
+  if (file.mimeType.startsWith("image/")) return "Bilddatei";
+  if (file.mimeType.startsWith("video/")) return "Videoclip";
+  if (file.mimeType.includes("json")) return "JSON-Datei";
+  if (file.mimeType.startsWith("text/")) return "Textdokument";
+  if (file.mimeType.includes("zip") || file.mimeType.includes("compressed")) return "Komprimierter Ordner";
+  return "Datei";
+}
+
 function FileIcon({ file }: { file: FurrFile }) {
-  if (file.mimeType.startsWith("image/")) return <FileImage size={20} />;
-  if (file.mimeType.includes("zip") || file.mimeType.includes("compressed")) return <FileArchive size={20} />;
-  if (file.mimeType.startsWith("text/") || file.mimeType.includes("pdf")) return <FileText size={20} />;
-  return <File size={20} />;
+  if (file.mimeType.startsWith("image/")) return <FileImage size={18} />;
+  if (file.mimeType.includes("zip") || file.mimeType.includes("compressed")) return <FileArchive size={18} />;
+  if (file.mimeType.startsWith("text/") || file.mimeType.includes("json")) return <FileText size={18} />;
+  return <File size={18} />;
+}
+
+function NeonFolderIcon({ open = false, size = 18 }: { open?: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3.5 7.2A2.2 2.2 0 0 1 5.7 5h4.15l2 2.05h6.45a2.2 2.2 0 0 1 2.2 2.2v1.15H3.5V7.2Z" fill="rgba(0,240,255,0.18)" stroke="#00f0ff" strokeWidth="1.35" />
+      <path d="M3.35 10.15h17.3l-1.34 7.25a2.45 2.45 0 0 1-2.4 2H6.6a2.45 2.45 0 0 1-2.4-2l-.85-7.25Z" fill={open ? "rgba(255,0,127,0.20)" : "rgba(139,92,246,0.18)"} stroke={open ? "#ff007f" : "#8b5cf6"} strokeWidth="1.35" />
+      <path d="M6 13h12" stroke="#00f0ff" strokeWidth="1" strokeLinecap="round" opacity=".65" />
+    </svg>
+  );
+}
+
+function pathSegments(path: string) {
+  return path ? path.split("/").filter(Boolean) : ["Dieser PC"];
+}
+
+function childFolderRows(files: FurrFile[], currentPath: string): ExplorerRow[] {
+  const folders = new Map<string, string>();
+  for (const file of files) {
+    const path = virtualPath(file);
+    if (!path.startsWith(currentPath)) continue;
+    const rest = path.slice(currentPath.length).replace(/^\/+/, "");
+    const folderName = rest.split("/").filter(Boolean)[0];
+    if (folderName) folders.set(folderName, currentPath ? `${currentPath}/${folderName}` : folderName);
+  }
+  return [...folders.entries()].map(([name, path]) => ({
+    kind: "folder",
+    id: `folder:${path}`,
+    name,
+    path,
+    modified: new Date().toLocaleString(),
+    type: "Dateiordner",
+    size: ""
+  }));
+}
+
+function TreeBranch({ node, currentPath, expanded, toggle, navigate, depth = 0 }: { node: TreeNode; currentPath: string; expanded: Set<string>; toggle: (id: string) => void; navigate: (path: string) => void; depth?: number }) {
+  const hasChildren = Boolean(node.children?.length);
+  const isOpen = expanded.has(node.id);
+  const selected = currentPath === node.path;
+  return (
+    <div>
+      <button
+        className={`flex h-8 w-full items-center gap-1 rounded-md pr-2 text-left text-[13px] transition ${selected ? "bg-cyan-400/10 text-[#00f0ff] shadow-[inset_2px_0_0_#00f0ff,0_0_14px_rgba(0,240,255,0.12)]" : "text-slate-300 hover:bg-white/5 hover:text-slate-100"}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        onClick={() => {
+          if (hasChildren) toggle(node.id);
+          navigate(node.path);
+        }}
+      >
+        {hasChildren ? isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} /> : <span className="w-3.5" />}
+        <NeonFolderIcon open={isOpen} size={16} />
+        <span className="truncate">{node.label}</span>
+      </button>
+      {hasChildren && isOpen ? node.children!.map((child) => <TreeBranch key={child.id} node={child} currentPath={currentPath} expanded={expanded} toggle={toggle} navigate={navigate} depth={depth + 1} />) : null}
+    </div>
+  );
 }
 
 export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const { files, socket, connected, token, activeFileScope, uploadProgress, setFiles, setUploadProgress, setActiveFileScope } = useFurrBoxStore();
-  const [dragging, setDragging] = useState(false);
+  const [currentPath, setCurrentPath] = useState("Dokumente/virtuelle Privater desktop/release");
+  const [history, setHistory] = useState<string[]>([]);
+  const [future, setFuture] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState(() => new Set(["pc", "documents"]));
   const [query, setQuery] = useState("");
+  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const filtered = useMemo(() => files.filter((file) => file.originalName.toLowerCase().includes(query.toLowerCase())), [files, query]);
+  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -36,6 +163,44 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const onDelete = (event: Event) => {
+      const detail = (event as CustomEvent<{ targetId?: string }>).detail;
+      if (detail?.targetId && token) deleteFile(detail.targetId, token).then(refresh);
+    };
+    window.addEventListener("furrfs:delete", onDelete);
+    return () => window.removeEventListener("furrfs:delete", onDelete);
+  }, [refresh, token]);
+
+  const rows = useMemo(() => {
+    const folderRows = childFolderRows(files, currentPath);
+    const fileRows: ExplorerRow[] = files
+      .filter((file) => virtualPath(file) === currentPath)
+      .map((file) => ({
+        kind: "file",
+        id: file.id,
+        name: displayName(file),
+        path: virtualPath(file),
+        modified: new Date(file.uploadedAt).toLocaleString(),
+        type: fileType(file),
+        size: formatSize(file.size),
+        file
+      }));
+    return [...folderRows, ...fileRows]
+      .filter((row) => row.name.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "folder" ? -1 : 1));
+  }, [currentPath, files, query]);
+
+  const navigate = useCallback(
+    (path: string) => {
+      if (path === currentPath) return;
+      setHistory((items) => [...items, currentPath]);
+      setFuture([]);
+      setCurrentPath(path);
+    },
+    [currentPath]
+  );
 
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
@@ -57,62 +222,117 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
     [activeFileScope, refresh, setUploadProgress, socket, token]
   );
 
+  async function openRow(row: ExplorerRow) {
+    if (row.kind === "folder") {
+      navigate(row.path);
+      return;
+    }
+    if (row.file.mimeType.startsWith("image/") && token) {
+      const url = await readFileBlobUrl(row.file, token);
+      setPreview({ name: row.name, url });
+    }
+  }
+
   return (
     <FurrWindow windowState={windowState} icon={<FolderSync size={15} />}>
-      <div className="grid h-full grid-cols-[210px_1fr]">
-        <aside className="border-r border-white/45 bg-white/24 p-4">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500 text-white shadow-lg shadow-sky-500/25">
-              <FolderSync size={21} />
+      <div className="grid h-full grid-cols-[245px_1fr] bg-slate-950/80 text-slate-100">
+        <aside className="scroll-soft overflow-auto border-r border-purple-500/20 bg-slate-900/45 p-3 shadow-[inset_-1px_0_0_rgba(0,240,255,0.08)]">
+          <div className="mb-3 flex items-center gap-2 px-2">
+            <div className="grid h-9 w-9 place-items-center rounded-lg border border-cyan-300/25 bg-slate-950/80 text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.28)]">
+              <FolderSync size={19} />
             </div>
             <div>
-              <p className="text-[13px] font-semibold text-slate-800">FurrFS</p>
-              <p className="text-[11px] text-slate-500">{connected ? "Secure sync online" : "Offline retrying"}</p>
+              <p className="text-[13px] font-semibold text-slate-100">FurrFS Explorer</p>
+              <p className={connected ? "text-[11px] font-medium text-[#00f0ff]" : "text-[11px] font-medium text-[#ff007f]"}>{connected ? "Live synchronisiert" : "Offline"}</p>
             </div>
           </div>
 
-          {[
-            { label: "My Files", scope: "private" as const },
-            { label: "Shared Network", scope: "public" as const }
-          ].map((item) => (
-            <button
-              key={item.scope}
-              className={`mb-1 flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px] ${
-                activeFileScope === item.scope ? "bg-white/70 text-slate-900 shadow-sm" : "text-slate-600 hover:bg-white/42"
-              }`}
-              onClick={() => {
-                setActiveFileScope(item.scope);
-                if (token) listFiles(token, item.scope).then(setFiles);
-              }}
-            >
-              <File size={15} />
-              {item.label}
-            </button>
+          <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg border border-white/5 bg-slate-950/70 p-1">
+            {[
+              { label: "Privat", scope: "private" as const },
+              { label: "Public", scope: "public" as const }
+            ].map((item) => (
+              <button
+                key={item.scope}
+                className={`h-8 rounded-md text-[12px] font-semibold transition ${activeFileScope === item.scope ? "bg-[#00f0ff]/12 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.18)]" : "text-slate-400 hover:text-slate-100"}`}
+                onClick={() => {
+                  setActiveFileScope(item.scope);
+                  if (token) listFiles(token, item.scope).then(setFiles);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {baseTree.map((node) => (
+            <TreeBranch
+              key={node.id}
+              node={node}
+              currentPath={currentPath}
+              expanded={expanded}
+              toggle={(id) =>
+                setExpanded((state) => {
+                  const next = new Set(state);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                })
+              }
+              navigate={navigate}
+            />
           ))}
         </aside>
 
-        <main className="flex min-w-0 flex-col p-5">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-white/60 bg-white/55 px-3">
-              <Search size={16} className="text-slate-500" />
-              <input
-                className="w-full bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
-                placeholder={activeFileScope === "public" ? "Search public shared files" : "Search private files"}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
+        <main className="flex min-w-0 flex-col">
+          <div className="border-b border-purple-500/20 bg-slate-900/50 p-3 shadow-[inset_0_-1px_0_rgba(0,240,255,0.08)]">
+            <div className="mb-3 flex items-center gap-2">
+              <button className="grid h-8 w-8 place-items-center rounded-lg border border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff] disabled:opacity-35" disabled={!history.length} onClick={() => {
+                const previous = history.at(-1);
+                if (!previous) return;
+                setHistory((items) => items.slice(0, -1));
+                setFuture((items) => [currentPath, ...items]);
+                setCurrentPath(previous);
+              }}>
+                <ArrowLeft size={16} />
+              </button>
+              <button className="grid h-8 w-8 place-items-center rounded-lg border border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff] disabled:opacity-35" disabled={!future.length} onClick={() => {
+                const next = future[0];
+                if (!next) return;
+                setFuture((items) => items.slice(1));
+                setHistory((items) => [...items, currentPath]);
+                setCurrentPath(next);
+              }}>
+                <ArrowRight size={16} />
+              </button>
+              <div className="flex h-9 min-w-0 flex-1 items-center gap-1 rounded-lg border border-cyan-300/15 bg-slate-950/65 px-3 text-[13px] text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                {pathSegments(currentPath).map((segment, index, segments) => (
+                  <span key={`${segment}-${index}`} className="flex items-center gap-1">
+                    <button className="rounded px-1 hover:bg-cyan-500/10 hover:text-[#00f0ff]" onClick={() => navigate(segments.slice(0, index + 1).join("/"))}>{segment}</button>
+                    {index < segments.length - 1 ? <ChevronRight size={13} className="text-purple-300/70" /> : null}
+                  </span>
+                ))}
+              </div>
+              <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-cyan-300/15 bg-slate-950/65 px-3">
+                <Search size={15} className="text-[#00f0ff]" />
+                <input className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-100 outline-none placeholder:text-slate-500" placeholder="Suchen" value={query} onChange={(event) => setQuery(event.target.value)} />
+              </div>
             </div>
-            <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800">
-              <Upload size={16} />
-              Upload
-              <input className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
-            </label>
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><LayoutList size={15} />Anzeigen</button>
+              </div>
+              <label className="flex h-8 cursor-pointer items-center gap-2 rounded-none border border-cyan-300/30 bg-slate-950 px-3 text-[12px] font-bold uppercase tracking-[0.08em] text-white shadow-[2px_2px_0px_#ff007f,0_0_18px_rgba(255,0,127,0.25)] transition hover:-translate-y-0.5 hover:border-[#00f0ff] hover:text-[#00f0ff]">
+                <Upload size={14} />
+                Upload
+                <input className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
+              </label>
+            </div>
           </div>
 
           <div
-            className={`mb-4 grid min-h-32 place-items-center rounded-2xl border border-dashed p-5 text-center transition ${
-              dragging ? "border-sky-500 bg-sky-100/70" : "border-slate-300/80 bg-white/36"
-            }`}
+            className={`scroll-soft min-h-0 flex-1 overflow-auto p-3 transition ${dragging ? "bg-cyan-500/10 shadow-[inset_0_0_0_1px_rgba(0,240,255,0.35)]" : "bg-slate-950/30"}`}
             onDragEnter={(event) => {
               event.preventDefault();
               setDragging(true);
@@ -125,62 +345,54 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
               handleFiles(event.dataTransfer.files);
             }}
           >
-            <div>
-              <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-white text-sky-600 shadow-sm">
-                <Cloud size={24} />
+            <div className="min-w-[720px] overflow-hidden rounded-lg border border-purple-500/20 bg-slate-950/60 shadow-[0_0_24px_rgba(139,92,246,0.14),inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="grid grid-cols-[1fr_180px_150px_100px] border-b border-purple-500/20 bg-slate-900/70 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-cyan-100/70">
+                <span>Name</span>
+                <span>Änderungsdatum</span>
+                <span>Typ</span>
+                <span>Größe</span>
               </div>
-              <p className="text-[14px] font-semibold text-slate-800">{activeFileScope === "public" ? "Drop files into Shared Network" : "Drop files into My Files"}</p>
-              <p className="mt-1 text-[12px] text-slate-500">
-                {activeFileScope === "public" ? "Public uploads sync instantly to all active users." : "Private uploads stay isolated to your FurrBox account."}
-              </p>
-              {busy && (
-                <div className="mx-auto mt-4 h-2 w-56 overflow-hidden rounded-full bg-white/70">
-                  <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${uploadProgress}%` }} />
-                </div>
+              {rows.length === 0 ? (
+                <div className="grid h-44 place-items-center text-[13px] text-slate-400">{busy ? `Upload ${uploadProgress}%` : "Dieser Ordner ist leer."}</div>
+              ) : (
+                rows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-[1fr_180px_150px_100px] items-center border-b border-white/5 px-3 py-2 text-[13px] last:border-0 hover:bg-cyan-500/10 hover:shadow-[inset_2px_0_0_#00f0ff]"
+                    onDoubleClick={() => openRow(row)}
+                    data-furr-context={row.kind}
+                    data-file-id={row.kind === "file" ? row.file.id : row.id}
+                    data-file-name={row.name}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className={row.kind === "folder" ? "text-[#00f0ff]" : "text-violet-200"}>{row.kind === "folder" ? <NeonFolderIcon size={18} /> : <FileIcon file={row.file} />}</span>
+                      <span className="truncate text-slate-100">{row.name}</span>
+                    </div>
+                    <span className="text-slate-400">{row.modified}</span>
+                    <span className="text-slate-400">{row.type}</span>
+                    <span className="text-slate-400">{row.size}</span>
+                  </div>
+                ))
               )}
             </div>
           </div>
-
-          <div className="scroll-soft min-h-0 flex-1 overflow-auto rounded-2xl border border-white/52 bg-white/42">
-            <div className="grid grid-cols-[1fr_110px_150px_96px] border-b border-white/60 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <span>Name</span>
-              <span>Size</span>
-              <span>Uploaded</span>
-              <span>Actions</span>
-            </div>
-            {filtered.length === 0 ? (
-              <div className="grid h-32 place-items-center text-[13px] text-slate-500">No synced files yet.</div>
-            ) : (
-              filtered.map((file) => (
-                <div
-                  key={file.id}
-                  className="grid grid-cols-[1fr_110px_150px_96px] items-center border-b border-white/46 px-4 py-3 text-[13px] last:border-0 hover:bg-white/45"
-                  data-furr-context="file"
-                  data-file-id={file.id}
-                  data-file-name={file.originalName}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-slate-600 shadow-sm">
-                      <FileIcon file={file} />
-                    </span>
-                    <span className="truncate font-medium text-slate-800">{file.originalName}</span>
-                  </div>
-                  <span className="text-slate-500">{formatSize(file.size)}</span>
-                  <span className="text-slate-500">{new Date(file.uploadedAt).toLocaleString()}</span>
-                  <div className="flex items-center gap-1">
-                    <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-white" onClick={() => token && downloadFile(file, token)}>
-                      <Download size={15} />
-                    </button>
-                    <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-red-500 hover:text-white" onClick={() => token && deleteFile(file.id, token).then(refresh)}>
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </main>
       </div>
+
+      {preview ? (
+        <div className="fixed inset-0 z-[10010] grid place-items-center bg-black/70 p-8 backdrop-blur-sm">
+          <div className="max-h-full max-w-5xl overflow-hidden rounded-2xl bg-slate-950 shadow-2xl">
+            <div className="flex h-11 items-center justify-between border-b border-white/10 px-4 text-white">
+              <div className="flex items-center gap-2 text-[13px] font-semibold"><Image size={16} />{preview.name}</div>
+              <button onClick={() => {
+                URL.revokeObjectURL(preview.url);
+                setPreview(null);
+              }} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-white/10"><X size={16} /></button>
+            </div>
+            <img src={preview.url} alt={preview.name} className="max-h-[78vh] max-w-full object-contain" />
+          </div>
+        </div>
+      ) : null}
     </FurrWindow>
   );
 }

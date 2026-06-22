@@ -8,6 +8,8 @@ export type FurrFile = {
   id: string;
   name: string;
   originalName: string;
+  displayName?: string;
+  virtualPath?: string;
   size: number;
   mimeType: string;
   scope: "private" | "public";

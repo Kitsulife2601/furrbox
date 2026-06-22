@@ -34,38 +34,39 @@ export function LoginPanel() {
   }
 
   return (
-    <main className="desktop-wallpaper relative grid h-screen w-screen place-items-center overflow-hidden">
-      <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px]" />
-      <form onSubmit={submit} className="glass-strong relative w-[380px] rounded-[22px] p-7 text-center shadow-window">
-        <button type="button" className="absolute left-4 top-4 text-[12px] font-medium text-slate-500 hover:text-slate-900" onClick={() => setAuthStage("lock")}>
+    <main className="cyber-grid relative grid h-screen w-screen place-items-center overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,0,127,0.16),transparent_26%),radial-gradient(circle_at_50%_58%,rgba(0,240,255,0.14),transparent_32%)]" />
+      <form onSubmit={submit} className="relative w-[390px] rounded-[24px] border border-white/5 bg-slate-900/40 p-7 text-center shadow-[0_0_80px_rgba(139,92,246,0.35),0_0_30px_rgba(0,240,255,0.12)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-0 rounded-[24px] border border-cyan-300/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" />
+        <button type="button" className="absolute left-4 top-4 text-[12px] font-medium text-cyan-200/70 hover:text-[#00f0ff]" onClick={() => setAuthStage("lock")}>
           Lock
         </button>
-        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-lg shadow-sky-500/30">
+        <div className="mx-auto grid h-20 w-20 place-items-center rounded-2xl border border-cyan-300/25 bg-slate-950/80 text-[#00f0ff] shadow-[0_0_35px_rgba(0,240,255,0.35)]">
           {mode === "login" ? <KeyRound size={32} /> : <UserPlus size={32} />}
         </div>
-        <h1 className="mt-5 text-[24px] font-semibold text-slate-900">{mode === "login" ? "Sign in" : "Create account"}</h1>
-        <p className="mt-1 text-[13px] text-slate-500">FurrBox private local desktop</p>
+        <h1 className="mt-5 text-[24px] font-semibold text-slate-100 drop-shadow-[0_0_10px_rgba(255,0,127,0.35)]">{mode === "login" ? "Sign in" : "Create account"}</h1>
+        <p className="mt-1 text-[13px] text-cyan-100/60">FurrBox private local desktop</p>
 
-        <div className="mt-6 grid grid-cols-2 rounded-xl bg-white/48 p-1">
-          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "login" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`} onClick={() => setMode("login")}>
+        <div className="mt-6 grid grid-cols-2 rounded-xl border border-purple-400/20 bg-slate-950/70 p-1">
+          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "login" ? "bg-[#ff007f]/20 text-white shadow-[0_0_18px_rgba(255,0,127,0.24)]" : "text-slate-400"}`} onClick={() => setMode("login")}>
             Sign In
           </button>
-          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "register" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`} onClick={() => setMode("register")}>
+          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "register" ? "bg-[#ff007f]/20 text-white shadow-[0_0_18px_rgba(255,0,127,0.24)]" : "text-slate-400"}`} onClick={() => setMode("register")}>
             Create Account
           </button>
         </div>
 
         <div className="mt-5 grid gap-3 text-left">
-          <input className="h-11 rounded-xl border border-white/60 bg-white/72 px-4 text-[14px] outline-none placeholder:text-slate-400 focus:border-sky-400" placeholder="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoFocus />
+          <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoFocus />
           {mode === "register" && (
-            <input className="h-11 rounded-xl border border-white/60 bg-white/72 px-4 text-[14px] outline-none placeholder:text-slate-400 focus:border-sky-400" placeholder="Display name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+            <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Display name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
           )}
-          <input className="h-11 rounded-xl border border-white/60 bg-white/72 px-4 text-[14px] outline-none placeholder:text-slate-400 focus:border-sky-400" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </div>
 
-        {error && <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-left text-[12px] font-medium text-red-700">{error}</p>}
+        {error && <p className="mt-4 rounded-xl border border-[#ff007f]/30 bg-[#ff007f]/10 px-3 py-2 text-left text-[12px] font-medium text-pink-100">{error}</p>}
 
-        <button className="mt-5 h-11 w-full rounded-xl bg-slate-950 text-[14px] font-semibold text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={busy}>
+        <button className="mt-5 h-11 w-full rounded-xl bg-gradient-to-r from-[#ff007f] via-[#8b5cf6] to-[#00f0ff] text-[14px] font-bold text-white shadow-[0_0_25px_rgba(255,0,127,0.45)] [text-shadow:0_0_8px_rgba(0,0,0,0.65)] hover:shadow-[0_0_35px_rgba(0,240,255,0.55)] disabled:cursor-not-allowed disabled:opacity-60" disabled={busy}>
           {busy ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
         </button>
       </form>

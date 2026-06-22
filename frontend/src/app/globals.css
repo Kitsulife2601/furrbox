@@ -3,11 +3,14 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
-  --glass: rgba(255, 255, 255, 0.66);
-  --glass-strong: rgba(255, 255, 255, 0.82);
-  --border: rgba(255, 255, 255, 0.42);
-  --ink: #172033;
+  color-scheme: dark;
+  --glass: rgba(15, 23, 42, 0.46);
+  --glass-strong: rgba(15, 23, 42, 0.72);
+  --border: rgba(139, 92, 246, 0.24);
+  --ink: #e2e8f0;
+  --neon-cyan: #00f0ff;
+  --neon-pink: #ff007f;
+  --neon-purple: #8b5cf6;
 }
 
 * {
@@ -19,7 +22,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #10213f;
+  background: #0a0b10;
   color: var(--ink);
 }
 
@@ -34,10 +37,13 @@ input {
 
 .desktop-wallpaper {
   background:
-    radial-gradient(circle at 22% 20%, rgba(125, 211, 252, 0.65), transparent 29%),
-    radial-gradient(circle at 76% 18%, rgba(196, 181, 253, 0.7), transparent 30%),
-    radial-gradient(circle at 50% 86%, rgba(45, 212, 191, 0.34), transparent 34%),
-    linear-gradient(135deg, #e8f4ff 0%, #bfd9ff 34%, #d6d4ff 62%, #f3f8ff 100%);
+    linear-gradient(rgba(0, 240, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 0, 127, 0.032) 1px, transparent 1px),
+    radial-gradient(circle at 18% 18%, rgba(0, 240, 255, 0.26), transparent 28%),
+    radial-gradient(circle at 82% 22%, rgba(255, 0, 127, 0.22), transparent 28%),
+    radial-gradient(circle at 50% 82%, rgba(139, 92, 246, 0.22), transparent 34%),
+    linear-gradient(135deg, #05060a 0%, #0a0b10 46%, #111124 100%);
+  background-size: 42px 42px, 42px 42px, auto, auto, auto, auto;
 }
 
 .wallpaper-aurora {
@@ -57,13 +63,25 @@ input {
 .glass {
   background: var(--glass);
   border: 1px solid var(--border);
-  backdrop-filter: blur(28px) saturate(1.35);
+  box-shadow: 0 0 28px rgba(139, 92, 246, 0.18), inset 0 1px 0 rgba(0, 240, 255, 0.08);
+  backdrop-filter: blur(28px) saturate(1.45);
 }
 
 .glass-strong {
   background: var(--glass-strong);
-  border: 1px solid rgba(255, 255, 255, 0.52);
-  backdrop-filter: blur(32px) saturate(1.4);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.28), 0 0 18px rgba(0, 240, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(32px) saturate(1.45);
+}
+
+.cyber-grid {
+  background:
+    linear-gradient(rgba(0, 240, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 0, 127, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 50% 35%, rgba(255, 0, 127, 0.22), transparent 28%),
+    radial-gradient(circle at 50% 64%, rgba(0, 240, 255, 0.18), transparent 34%),
+    #0a0b10;
+  background-size: 38px 38px, 38px 38px, auto, auto, auto;
 }
 
 .scroll-soft {

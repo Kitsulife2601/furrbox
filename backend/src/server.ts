@@ -19,6 +19,8 @@ type FileDto = {
   id: string;
   name: string;
   originalName: string;
+  displayName: string;
+  virtualPath: string;
   size: number;
   mimeType: string;
   scope: "private" | "public";
@@ -31,6 +33,39 @@ type UiState = {
   wallpaper: "bloom" | "aurora" | "ink";
   startOpen: boolean;
 };
+type DiscordPrivilege = "none" | "supporter" | "moderator" | "owner" | "dev";
+type DiscordMemberSnapshot = {
+  discordId: string;
+  username: string;
+  displayName: string;
+  roles: string[];
+  highestPrivilege: DiscordPrivilege;
+  isSupporter: boolean;
+  isModerator: boolean;
+  isOwner: boolean;
+  isDev: boolean;
+};
+type ModerationAction = "ban" | "warn" | "timeout" | "mute";
+type ModerationRequest = {
+  requestId: string;
+  source: "dashboard";
+  action: ModerationAction;
+  moderatorId: string;
+  targetId: string;
+  reason: string;
+  durationMs?: number;
+};
+type ModerationResult = ModerationRequest & {
+  status: "success" | "failed";
+  error?: string;
+  completedAt: string;
+};
+const DISCORD_PERMISSION_IDS = {
+  dev: "1517274600487125144",
+  owner: "1395506854549000202",
+  moderator: "1397883231134547989",
+  supporter: "1395506316801343558"
+} as const;
 
 const port = Number(process.env.PORT || 4000);
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
@@ -40,6 +75,7 @@ const prisma = new PrismaClient();
 const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
 const allowedOrigins = corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean);
 const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
+const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -62,9 +98,30 @@ let terminalHistory = "FurrBox shared terminal ready.\r\n";
 let hardwareInterval: NodeJS.Timeout | null = null;
 let publicStorageWatcher: fsSync.FSWatcher | null = null;
 let publicStorageBroadcastTimer: NodeJS.Timeout | null = null;
+let botSocketId: string | null = null;
+const moderationWaiters = new Map<string, { resolve: (result: ModerationResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 
 function sanitizeName(name: string) {
   return name.replace(/[^\w.\- ]+/g, "_").slice(0, 160);
+}
+
+function sanitizePathSegment(segment: string) {
+  return sanitizeName(segment.trim().replace(/\s+/g, "_")).replace(/^\.+$/, "_") || "unknown";
+}
+
+function splitVirtualPath(originalName: string) {
+  const normalized = originalName.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length <= 1) {
+    return {
+      displayName: originalName,
+      virtualPath: "Dokumente/virtuelle Privater desktop/release"
+    };
+  }
+  return {
+    displayName: parts.at(-1) || originalName,
+    virtualPath: parts.slice(0, -1).join("/")
+  };
 }
 
 function scopeFromInput(input: unknown): FileScope {
@@ -87,10 +144,13 @@ function toDto(file: {
   ownerId: string | null;
   uploadedAt: Date;
 }): FileDto {
+  const virtual = splitVirtualPath(file.originalName);
   return {
     id: file.id,
     name: file.name,
     originalName: file.originalName,
+    displayName: virtual.displayName,
+    virtualPath: virtual.virtualPath,
     size: file.size,
     mimeType: file.mimeType,
     scope: file.scope === "PUBLIC" ? "public" : "private",
@@ -156,10 +216,24 @@ function publicStorageDir() {
   return scopeFolder("PUBLIC");
 }
 
+function auditLogVirtualPath() {
+  return "Dokumente/Moderation_Beweise/Discord_Logs/audit_log.json";
+}
+
+function auditLogPhysicalPath() {
+  return path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", "audit_log.json");
+}
+
 async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
   await fs.mkdir(publicStorageDir(), { recursive: true });
   await fs.mkdir(path.join(storageDir, "users"), { recursive: true });
+  await fs.mkdir(path.dirname(auditLogPhysicalPath()), { recursive: true });
+  try {
+    await fs.access(auditLogPhysicalPath());
+  } catch {
+    await fs.writeFile(auditLogPhysicalPath(), "[]", "utf8");
+  }
 }
 
 async function ensureDatabase() {
@@ -187,6 +261,202 @@ async function ensureDatabase() {
   `);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StoredFile_scope_idx" ON "StoredFile"("scope");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StoredFile_ownerId_idx" ON "StoredFile"("ownerId");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "DiscordMember" (
+      "discordId" TEXT NOT NULL PRIMARY KEY,
+      "username" TEXT NOT NULL,
+      "displayName" TEXT NOT NULL,
+      "rolesJson" TEXT NOT NULL,
+      "highestPrivilege" TEXT NOT NULL,
+      "isSupporter" BOOLEAN NOT NULL DEFAULT false,
+      "isModerator" BOOLEAN NOT NULL DEFAULT false,
+      "isOwner" BOOLEAN NOT NULL DEFAULT false,
+      "isDev" BOOLEAN NOT NULL DEFAULT false,
+      "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordMember_highestPrivilege_idx" ON "DiscordMember"("highestPrivilege");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "DiscordWarning" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "targetId" TEXT NOT NULL,
+      "moderatorId" TEXT NOT NULL,
+      "reason" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordWarning_targetId_idx" ON "DiscordWarning"("targetId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordWarning_moderatorId_idx" ON "DiscordWarning"("moderatorId");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ModerationAudit" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "requestId" TEXT,
+      "source" TEXT NOT NULL,
+      "action" TEXT NOT NULL,
+      "moderatorId" TEXT NOT NULL,
+      "targetId" TEXT NOT NULL,
+      "reason" TEXT NOT NULL,
+      "durationMs" INTEGER,
+      "status" TEXT NOT NULL,
+      "error" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_requestId_idx" ON "ModerationAudit"("requestId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_targetId_idx" ON "ModerationAudit"("targetId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_moderatorId_idx" ON "ModerationAudit"("moderatorId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_createdAt_idx" ON "ModerationAudit"("createdAt");`);
+}
+
+async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
+  await prisma.$transaction(
+    members.map((member) =>
+      prisma.discordMember.upsert({
+        where: { discordId: member.discordId },
+        update: {
+          username: member.username,
+          displayName: member.displayName,
+          rolesJson: JSON.stringify(member.roles),
+          highestPrivilege: member.highestPrivilege,
+          isSupporter: member.isSupporter,
+          isModerator: member.isModerator,
+          isOwner: member.isOwner,
+          isDev: member.isDev
+        },
+        create: {
+          discordId: member.discordId,
+          username: member.username,
+          displayName: member.displayName,
+          rolesJson: JSON.stringify(member.roles),
+          highestPrivilege: member.highestPrivilege,
+          isSupporter: member.isSupporter,
+          isModerator: member.isModerator,
+          isOwner: member.isOwner,
+          isDev: member.isDev
+        }
+      })
+    )
+  );
+}
+
+async function appendAuditLog(result: ModerationResult) {
+  const entry = {
+    id: crypto.randomUUID(),
+    requestId: result.requestId,
+    source: result.source,
+    action: result.action,
+    moderatorId: result.moderatorId,
+    targetId: result.targetId,
+    reason: result.reason,
+    durationMs: result.durationMs ?? null,
+    status: result.status,
+    error: result.error ?? null,
+    createdAt: result.completedAt
+  };
+
+  await prisma.moderationAudit.create({
+    data: {
+      id: entry.id,
+      requestId: entry.requestId,
+      source: entry.source,
+      action: entry.action,
+      moderatorId: entry.moderatorId,
+      targetId: entry.targetId,
+      reason: entry.reason,
+      durationMs: entry.durationMs,
+      status: entry.status,
+      error: entry.error
+    }
+  });
+
+  const filePath = auditLogPhysicalPath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  let existing: unknown = [];
+  try {
+    existing = JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch {
+    existing = [];
+  }
+  const entries = Array.isArray(existing) ? existing : [];
+  entries.push(entry);
+  await fs.writeFile(filePath, JSON.stringify(entries.slice(-5000), null, 2), "utf8");
+
+  const stats = await fs.stat(filePath);
+  const existingAuditFile = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: auditLogVirtualPath() } });
+  const storedFile = existingAuditFile
+    ? await prisma.storedFile.update({
+        where: { id: existingAuditFile.id },
+        data: {
+          originalName: auditLogVirtualPath(),
+          size: stats.size,
+          mimeType: "application/json",
+          scope: "PUBLIC",
+          ownerId: null
+        }
+      })
+    : await prisma.storedFile.create({
+        data: {
+      name: auditLogVirtualPath(),
+      originalName: auditLogVirtualPath(),
+      size: stats.size,
+      mimeType: "application/json",
+      scope: "PUBLIC",
+      ownerId: null
+        }
+      });
+  io.to("public").emit("file-uploaded", toDto(storedFile));
+  io.emit("moderation:audit", entry);
+  await emitPublicFiles("moderation-audit");
+}
+
+function normalizeModerationRequest(body: Record<string, unknown>, fallbackModeratorId: string): ModerationRequest {
+  const action = String(body.action || "").toLowerCase();
+  if (!["ban", "warn", "timeout", "mute"].includes(action)) throw new Error("Invalid moderation action.");
+  const targetId = String(body.targetId || "").trim();
+  const moderatorId = String(body.moderatorDiscordId || body.moderatorId || fallbackModeratorId).trim();
+  const reason = String(body.reason || "").trim();
+  const durationMs = body.durationMs === undefined ? undefined : Number(body.durationMs);
+  if (!/^\d{17,22}$/.test(moderatorId)) throw new Error("moderatorDiscordId must be a synced Discord user snowflake.");
+  if (!/^\d{17,22}$/.test(targetId)) throw new Error("targetId must be a Discord snowflake.");
+  if (reason.length < 3 || reason.length > 512) throw new Error("reason must be 3-512 characters.");
+  if ((action === "timeout" || action === "mute") && (!durationMs || durationMs < 60_000 || durationMs > 2_419_200_000)) {
+    throw new Error("durationMs must be between 60 seconds and 28 days for timeout/mute.");
+  }
+  return {
+    requestId: crypto.randomUUID(),
+    source: "dashboard",
+    action: action as ModerationAction,
+    moderatorId,
+    targetId,
+    reason,
+    durationMs
+  };
+}
+
+async function assertModeratorCanExecute(request: ModerationRequest) {
+  if (request.moderatorId === DISCORD_PERMISSION_IDS.dev) return;
+  const moderator = await prisma.discordMember.findUnique({ where: { discordId: request.moderatorId } });
+  if (!moderator) throw new Error("Moderator is not synced from Discord yet.");
+  if (!moderator.isModerator && !moderator.isOwner && !moderator.isDev) {
+    throw new Error("Moderator must have Fish Moderator, Fish Nagie Owner, or Dev access.");
+  }
+}
+
+function dispatchModerationRequest(request: ModerationRequest) {
+  if (!botSocketId) throw new Error("Discord bot is not connected to the FurrBox bridge.");
+  const socket = io.sockets.sockets.get(botSocketId);
+  if (!socket) {
+    botSocketId = null;
+    throw new Error("Discord bot bridge connection is stale.");
+  }
+  return new Promise<ModerationResult>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      moderationWaiters.delete(request.requestId);
+      reject(new Error("Discord bot did not respond before timeout."));
+    }, 30_000);
+    moderationWaiters.set(request.requestId, { resolve, reject, timeout });
+    socket.emit("moderation:command", request);
+  });
 }
 
 const upload = multer({
@@ -206,6 +476,14 @@ const upload = multer({
     }
   }),
   limits: { fileSize: 1024 * 1024 * 250 }
+});
+
+const evidenceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 1024 * 1024 * 500,
+    files: 32
+  }
 });
 
 function ensureSharedTerminal() {
@@ -365,6 +643,31 @@ app.get("/api/auth/me", requireAuth, (req: AuthedRequest, res) => {
   res.json({ user: req.user });
 });
 
+app.get("/api/discord/members", requireAuth, async (_req: AuthedRequest, res, next) => {
+  try {
+    const members = await prisma.discordMember.findMany({ orderBy: [{ highestPrivilege: "desc" }, { displayName: "asc" }] });
+    res.json({
+      members: members.map((member) => ({
+        ...member,
+        roles: JSON.parse(member.rolesJson) as string[]
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/discord/moderation", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const request = normalizeModerationRequest(req.body as Record<string, unknown>, req.user!.id);
+    await assertModeratorCanExecute(request);
+    const result = await dispatchModerationRequest(request);
+    res.status(result.status === "success" ? 200 : 502).json({ result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/files", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const scope = req.query.scope === "public" ? "PUBLIC" : req.query.scope === "private" ? "PRIVATE" : undefined;
@@ -402,6 +705,104 @@ app.post("/api/files", requireAuth, upload.single("file"), async (req: AuthedReq
     }
     await emitFilesForUser(req.user!.id, "upload");
     res.status(201).json({ file: dto });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), async (req: AuthedRequest, res, next) => {
+  try {
+    const platform = String(req.body.platform || "").trim() === "VRChat" ? "VRChat" : "Discord";
+    const targetPrimary = String(req.body.targetPrimary || "").trim();
+    const targetSecondary = String(req.body.targetSecondary || "").trim();
+    const violationCategory = String(req.body.violationCategory || "").trim() || "Other";
+    const notes = String(req.body.notes || "").trim();
+    const uploadedFiles = (req.files || []) as Express.Multer.File[];
+
+    if (!targetPrimary) {
+      res.status(400).json({ error: "Target identification is required." });
+      return;
+    }
+    if (!uploadedFiles.length) {
+      res.status(400).json({ error: "At least one evidence file is required." });
+      return;
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const targetSlug = sanitizePathSegment(targetPrimary);
+    const caseId = `${targetSlug}_${timestamp}`;
+    const virtualCasePath = `Dokumente/Moderation_Beweise/${platform}/${caseId}`;
+    const physicalCasePath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", platform, caseId);
+    await fs.mkdir(physicalCasePath, { recursive: true });
+
+    const metadata = {
+      caseId,
+      platform,
+      targetPrimary,
+      targetSecondary,
+      violationCategory,
+      notes,
+      createdBy: req.user,
+      createdAt: new Date().toISOString(),
+      evidenceFiles: uploadedFiles.map((file) => ({
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size
+      }))
+    };
+
+    const createdFiles = [];
+    for (const file of uploadedFiles) {
+      const safeOriginal = sanitizeName(file.originalname);
+      const storedName = `${Date.now()}-${crypto.randomUUID()}-${safeOriginal}`;
+      await fs.writeFile(path.join(physicalCasePath, storedName), file.buffer);
+      const row = await prisma.storedFile.create({
+        data: {
+          name: path.join("Dokumente", "Moderation_Beweise", platform, caseId, storedName),
+          originalName: `${virtualCasePath}/${safeOriginal}`,
+          size: file.size,
+          mimeType: file.mimetype || "application/octet-stream",
+          scope: "PUBLIC",
+          ownerId: null
+        }
+      });
+      createdFiles.push(row);
+    }
+
+    const metadataName = "case_metadata.json";
+    const metadataBuffer = Buffer.from(JSON.stringify(metadata, null, 2), "utf8");
+    const storedMetadataName = `${Date.now()}-${crypto.randomUUID()}-${metadataName}`;
+    await fs.writeFile(path.join(physicalCasePath, storedMetadataName), metadataBuffer);
+    const metadataRow = await prisma.storedFile.create({
+      data: {
+        name: path.join("Dokumente", "Moderation_Beweise", platform, caseId, storedMetadataName),
+        originalName: `${virtualCasePath}/${metadataName}`,
+        size: metadataBuffer.length,
+        mimeType: "application/json",
+        scope: "PUBLIC",
+        ownerId: null
+      }
+    });
+    createdFiles.push(metadataRow);
+
+    const files = createdFiles.map(toDto);
+    io.to("public").emit("evidence:case-created", {
+      caseId,
+      casePath: virtualCasePath,
+      platform,
+      targetPrimary,
+      violationCategory,
+      files
+    });
+    io.to("public").emit("shared-storage:changed", {
+      eventType: "evidence-case-created",
+      filename: virtualCasePath,
+      scope: "public",
+      changedAt: new Date().toISOString()
+    });
+    await emitPublicFiles("evidence-case-created");
+
+    res.status(201).json({ caseId, casePath: virtualCasePath, files });
   } catch (error) {
     next(error);
   }
@@ -445,6 +846,11 @@ app.delete("/api/files/:id", requireAuth, async (req: AuthedRequest, res, next) 
 });
 
 io.use(async (socket, next) => {
+  const presentedBotToken = typeof socket.handshake.auth.botToken === "string" ? socket.handshake.auth.botToken : undefined;
+  if (botBridgeToken && presentedBotToken === botBridgeToken) {
+    socket.data.bot = true;
+    return next();
+  }
   const token = typeof socket.handshake.auth.token === "string" ? socket.handshake.auth.token : undefined;
   const user = await getUserFromToken(token);
   if (!user) return next(new Error("Authentication required."));
@@ -453,6 +859,39 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", async (socket) => {
+  if (socket.data.bot) {
+    botSocketId = socket.id;
+    socket.join("bot-bridge");
+    io.emit("discord:bot-status", { connected: true, connectedAt: new Date().toISOString() });
+
+    socket.on("discord:members:sync", async ({ guildId, members }: { guildId?: string; members?: DiscordMemberSnapshot[] }) => {
+      if (!Array.isArray(members)) return;
+      await syncDiscordMembers(members);
+      io.emit("discord:members-refreshed", {
+        guildId,
+        count: members.length,
+        members,
+        syncedAt: new Date().toISOString()
+      });
+    });
+
+    socket.on("moderation:result", async (result: ModerationResult) => {
+      const waiter = moderationWaiters.get(result.requestId);
+      if (waiter) {
+        clearTimeout(waiter.timeout);
+        moderationWaiters.delete(result.requestId);
+        waiter.resolve(result);
+      }
+      await appendAuditLog(result);
+    });
+
+    socket.on("disconnect", () => {
+      if (botSocketId === socket.id) botSocketId = null;
+      io.emit("discord:bot-status", { connected: false, disconnectedAt: new Date().toISOString() });
+    });
+    return;
+  }
+
   const user = socket.data.user as AuthUser;
   socket.join(`user:${user.id}`);
   socket.join("public");
@@ -501,6 +940,17 @@ io.on("connection", async (socket) => {
   socket.on("ui-state:update", (patch: Partial<UiState>) => {
     uiState = { ...uiState, ...patch };
     socket.broadcast.emit("ui-state", uiState);
+  });
+
+  socket.on("moderation:execute", async (body: Record<string, unknown>, callback?: (response: { ok: boolean; result?: ModerationResult; error?: string }) => void) => {
+    try {
+      const request = normalizeModerationRequest(body, user.id);
+      await assertModeratorCanExecute(request);
+      const result = await dispatchModerationRequest(request);
+      callback?.({ ok: result.status === "success", result });
+    } catch (error) {
+      callback?.({ ok: false, error: error instanceof Error ? error.message : "Moderation request failed." });
+    }
   });
 
   socket.on("terminal:create", () => {

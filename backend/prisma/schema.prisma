@@ -35,3 +35,48 @@ model StoredFile {
   @@index([scope])
   @@index([ownerId])
 }
+
+model DiscordMember {
+  discordId        String   @id
+  username         String
+  displayName      String
+  rolesJson        String
+  highestPrivilege String
+  isSupporter      Boolean  @default(false)
+  isModerator      Boolean  @default(false)
+  isOwner          Boolean  @default(false)
+  isDev            Boolean  @default(false)
+  syncedAt         DateTime @updatedAt
+
+  @@index([highestPrivilege])
+}
+
+model DiscordWarning {
+  id          String   @id @default(uuid())
+  targetId    String
+  moderatorId String
+  reason      String
+  createdAt   DateTime @default(now())
+
+  @@index([targetId])
+  @@index([moderatorId])
+}
+
+model ModerationAudit {
+  id          String   @id @default(uuid())
+  requestId   String?
+  source      String
+  action      String
+  moderatorId String
+  targetId    String
+  reason      String
+  durationMs  Int?
+  status      String
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([requestId])
+  @@index([targetId])
+  @@index([moderatorId])
+  @@index([createdAt])
+}

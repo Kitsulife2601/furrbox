@@ -1,6 +1,6 @@
 "use client";
 
-import { Files, Globe, LogOut, MonitorCog, Search, Terminal, Wifi, WifiOff } from "lucide-react";
+import { Files, Gavel, Globe, LogOut, MonitorCog, Search, Terminal, Wifi, WifiOff } from "lucide-react";
 import { useMemo } from "react";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
@@ -9,7 +9,8 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
   { id: "furrfs", label: "FurrFS", icon: Files },
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "settings", label: "Settings", icon: MonitorCog },
-  { id: "browser", label: "Browser", icon: Globe }
+  { id: "browser", label: "Browser", icon: Globe },
+  { id: "evidence", label: "Evidence", icon: Gavel }
 ];
 
 export function Taskbar() {
@@ -33,10 +34,10 @@ export function Taskbar() {
   return (
     <>
       {startOpen && (
-        <div className="glass-strong absolute bottom-24 left-1/2 z-40 h-[460px] w-[560px] -translate-x-1/2 animate-task-pop rounded-[22px] p-5 shadow-window">
-          <div className="mb-4 flex h-10 items-center gap-2 rounded-xl bg-white/70 px-3">
-            <Search size={17} className="text-slate-500" />
-            <input className="w-full bg-transparent text-[13px] outline-none placeholder:text-slate-400" placeholder="Search apps, files, settings" />
+        <div className="absolute bottom-24 left-1/2 z-40 h-[460px] w-[560px] -translate-x-1/2 animate-task-pop rounded-[22px] border border-purple-500/25 bg-slate-950/70 p-5 shadow-[0_0_55px_rgba(139,92,246,0.34),0_0_22px_rgba(0,240,255,0.12)] backdrop-blur-2xl">
+          <div className="mb-4 flex h-10 items-center gap-2 rounded-xl border border-cyan-300/15 bg-slate-900/70 px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <Search size={17} className="text-[#00f0ff]" />
+            <input className="w-full bg-transparent text-[13px] text-slate-100 outline-none placeholder:text-slate-500" placeholder="Search apps, files, settings" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             {apps.map((app) => {
@@ -44,35 +45,35 @@ export function Taskbar() {
               return (
                 <button
                   key={app.id}
-                  className="rounded-2xl p-4 text-center hover:bg-white/62"
+                  className="rounded-2xl border border-white/5 p-4 text-center transition hover:border-[#ff007f]/35 hover:bg-[#ff007f]/10 hover:shadow-[0_0_22px_rgba(255,0,127,0.22)]"
                   onClick={() => launch(app.id)}
                 >
-                  <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white text-slate-700 shadow-sm">
+                  <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-cyan-300/20 bg-slate-900/80 text-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.22)]">
                     <Icon size={22} />
                   </span>
-                  <span className="mt-2 block text-[12px] font-medium text-slate-700">{app.label}</span>
+                  <span className="mt-2 block text-[12px] font-semibold text-slate-100">{app.label}</span>
                 </button>
               );
             })}
           </div>
-          <div className="absolute inset-x-0 bottom-0 flex h-16 items-center justify-between rounded-b-[22px] border-t border-white/55 bg-white/36 px-5">
-            <span className="text-[13px] font-semibold text-slate-700">{user?.displayName || "Private local session"}</span>
-            <button className="grid h-9 w-9 place-items-center rounded-xl hover:bg-white/70" aria-label="Sign out" onClick={logout}>
+          <div className="absolute inset-x-0 bottom-0 flex h-16 items-center justify-between rounded-b-[22px] border-t border-purple-500/20 bg-slate-900/55 px-5">
+            <span className="text-[13px] font-semibold text-cyan-100">{user?.displayName || "Private local session"}</span>
+            <button className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 hover:bg-[#ff007f]/15 hover:text-pink-100" aria-label="Sign out" onClick={logout}>
               <LogOut size={17} />
             </button>
           </div>
         </div>
       )}
 
-      <footer className="glass absolute inset-x-0 bottom-0 z-50 mx-auto flex h-16 items-center justify-between px-5 shadow-glass" data-furr-context="taskbar">
+      <footer className="absolute bottom-3 left-1/2 z-50 flex h-16 w-[min(980px,calc(100vw-32px))] -translate-x-1/2 items-center justify-between rounded-2xl border border-purple-500/30 bg-slate-900/60 px-5 shadow-[0_0_30px_rgba(139,92,246,0.35),0_0_16px_rgba(0,240,255,0.12)] backdrop-blur-2xl" data-furr-context="taskbar">
         <div className="flex w-48 items-center gap-2">
-          {connected ? <Wifi size={17} className="text-emerald-600" /> : <WifiOff size={17} className="text-red-500" />}
-          <span className="text-[12px] font-medium text-slate-700">{connected ? "Secure sync online" : "Reconnecting"}</span>
+          {connected ? <Wifi size={17} className="text-[#00f0ff] drop-shadow-[0_0_7px_rgba(0,240,255,0.8)]" /> : <WifiOff size={17} className="text-[#ff007f] drop-shadow-[0_0_7px_rgba(255,0,127,0.8)]" />}
+          <span className="text-[12px] font-semibold text-slate-200">{connected ? "Secure sync online" : "Reconnecting"}</span>
         </div>
 
         <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
           <button
-            className="grid h-11 w-11 place-items-center rounded-xl bg-white/74 text-sky-600 shadow-sm hover:bg-white"
+            className="grid h-11 w-11 place-items-center rounded-xl border border-cyan-300/25 bg-slate-950/70 text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.25)] transition hover:border-[#ff007f]/55 hover:text-[#ff007f] hover:shadow-[0_0_22px_rgba(255,0,127,0.35)]"
             aria-label="Start"
             onClick={() => patchUi({ startOpen: !startOpen })}
           >
@@ -89,7 +90,7 @@ export function Taskbar() {
             return (
               <button
                 key={app.id}
-                className={`grid h-11 w-11 place-items-center rounded-xl transition ${selected ? "bg-white text-slate-900 shadow-sm" : "text-slate-700 hover:bg-white/62"}`}
+                className={`relative grid h-11 w-11 place-items-center rounded-xl border transition ${selected ? "border-[#ff007f]/55 bg-[#ff007f]/15 text-pink-100 shadow-[0_0_20px_rgba(255,0,127,0.34)] after:absolute after:-bottom-2 after:h-1 after:w-5 after:rounded-full after:bg-[#ff007f] after:shadow-[0_0_12px_rgba(255,0,127,0.95)]" : "border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff]"}`}
                 aria-label={app.label}
                 onClick={() => launch(app.id)}
               >
@@ -99,7 +100,7 @@ export function Taskbar() {
           })}
         </div>
 
-        <div className="w-48 text-right text-[12px] font-semibold leading-tight text-slate-700">
+        <div className="w-48 text-right text-[12px] font-semibold leading-tight text-slate-200">
           <div>{time}</div>
           <div>{new Date().toLocaleDateString()}</div>
         </div>
