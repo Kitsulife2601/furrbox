@@ -38,12 +38,16 @@ const databaseUrl = process.env.DATABASE_URL || `file:${path.join(storageDir, "f
 process.env.DATABASE_URL = databaseUrl;
 const prisma = new PrismaClient();
 const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
+const allowedOrigins = corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean);
 const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      if (!origin || origin === "null" || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error(`Origin ${origin} is not allowed.`));
+    },
     methods: ["GET", "POST", "DELETE"]
   }
 });
@@ -296,7 +300,14 @@ function ensurePublicStorageWatcher() {
   });
 }
 
-app.use(cors({ origin: corsOrigin }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || origin === "null" || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error(`Origin ${origin} is not allowed.`));
+    }
+  })
+);
 app.use(express.json());
 
 app.get("/health", (_req, res) => {

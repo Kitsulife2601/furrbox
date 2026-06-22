@@ -16,6 +16,24 @@ npm install
 npm run dev
 ```
 
+## Build Windows EXE
+
+The Windows build packages Electron with a static Next.js export and points the client to the hosted sync backend.
+
+```bash
+npm install
+npm run dist:win
+```
+
+Output files are written to `release/`.
+
+For a different backend URL:
+
+```bash
+set NEXT_PUBLIC_API_URL=https://your-domain.example
+npm run dist:win
+```
+
 The Electron app waits for:
 
 - Frontend: `http://localhost:3000`

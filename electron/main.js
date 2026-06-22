@@ -3,6 +3,15 @@ const path = require("path");
 
 const FRONTEND_URL = process.env.FURRBOX_FRONTEND_URL || "http://localhost:3000";
 
+function loadFrontend(win) {
+  if (app.isPackaged) {
+    win.loadFile(path.join(process.resourcesPath, "frontend", "out", "index.html"));
+    return;
+  }
+
+  win.loadURL(FRONTEND_URL);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     title: "FurrBox",
@@ -23,7 +32,7 @@ function createWindow() {
     }
   });
 
-  win.loadURL(FRONTEND_URL);
+  loadFrontend(win);
 
   if (process.env.FURRBOX_DEVTOOLS === "true") {
     win.webContents.openDevTools({ mode: "detach" });

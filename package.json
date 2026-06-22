@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "FurrBox private Windows 11 inspired desktop environment with real-time file sync.",
+  "main": "electron/main.js",
   "workspaces": [
     "frontend",
     "backend"
@@ -12,12 +13,46 @@
     "dev:web": "concurrently -k -n backend,frontend -c cyan,green \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\"",
     "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
     "build": "npm --workspace frontend run build && npm --workspace backend run build",
+    "build:exe-frontend": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 npm --workspace frontend run build",
+    "dist:win": "npm run build:exe-frontend && electron-builder --win nsis portable",
+    "dist:portable": "npm run build:exe-frontend && electron-builder --win portable",
     "lint": "npm --workspace frontend run lint && npm --workspace backend run lint"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "electron": "^42.4.1",
+    "electron-builder": "^26.0.12",
     "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "de.furrbox.desktop",
+    "productName": "FurrBox",
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "frontend/out",
+        "to": "frontend/out"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   },
   "overrides": {
     "postcss": "^8.5.15"

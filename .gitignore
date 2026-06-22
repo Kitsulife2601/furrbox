@@ -1,5 +1,6 @@
 node_modules
 .next
+frontend/out/
 dist
 coverage
 .env
@@ -11,3 +12,4 @@ npm-debug.log*
 furrbox-dev.*.log
 furrbox-backend-test.*.log
 furrbox-frontend-test.*.log
+release/
