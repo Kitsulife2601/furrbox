@@ -1,6 +1,7 @@
 "use client";
 
-import { Files, Folder, Gavel, Globe, MonitorCog, Terminal } from "lucide-react";
+import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
@@ -9,6 +10,8 @@ import { SettingsWindow } from "@/components/SettingsWindow";
 import { Taskbar } from "@/components/Taskbar";
 import { TerminalWindow } from "@/components/TerminalWindow";
 import { WindowsContextMenu } from "@/components/WindowsContextMenu";
+import { useBootAudio } from "@/hooks/useBootAudio";
+import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { initFurrSocket } from "@/lib/socket";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
@@ -19,8 +22,13 @@ const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentTy
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "settings", label: "Settings", icon: MonitorCog },
   { id: "browser", label: "Browser", icon: Globe },
-  { id: "evidence", label: "Evidence", icon: Gavel }
+  { id: "evidence", label: "Evidence", icon: Gavel },
+  ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];
+
+const FurrPresenceWindow = ENABLE_PRESENCE_TOOL
+  ? dynamic(() => import("@/components/FurrPresence").then((mod) => mod.FurrPresence), { ssr: false })
+  : null;
 
 function wallpaperClass(wallpaper: string) {
   if (wallpaper === "aurora") return "wallpaper-aurora";
@@ -34,6 +42,8 @@ export function Desktop() {
   const openWindow = useWindowStore((state) => state.openWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
   const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
+
+  useBootAudio({ enabled: Boolean(token), volume: 0.22 });
 
   useEffect(() => {
     if (token) initFurrSocket(token);
@@ -106,6 +116,7 @@ export function Desktop() {
           if (win.kind === "terminal") return <TerminalWindow key={win.id} windowState={win} />;
           if (win.kind === "settings") return <SettingsWindow key={win.id} windowState={win} />;
           if (win.kind === "evidence") return <FurrEvidence key={win.id} windowState={win} />;
+          if (ENABLE_PRESENCE_TOOL && FurrPresenceWindow && win.kind === "presence") return <FurrPresenceWindow key={win.id} windowState={win} />;
           if (win.kind === "browser") return <FurrBrowser key={win.id} windowState={win} />;
           return null;
         })}

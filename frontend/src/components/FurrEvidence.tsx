@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Gavel, Image, ShieldAlert, UploadCloud, Video, X } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { saveEvidenceCase } from "@/lib/evidence";
+import { inspectDiscordMessage, listDiscordMembers, saveEvidenceCase, type DiscordMemberOption, type DiscordMessageProof } from "@/lib/evidence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -21,17 +21,53 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
   const { token, socket } = useFurrBoxStore();
   const [platform, setPlatform] = useState<Platform>("Discord");
   const [targetPrimary, setTargetPrimary] = useState("");
+  const [selectedDiscordId, setSelectedDiscordId] = useState("");
+  const [discordMembers, setDiscordMembers] = useState<DiscordMemberOption[]>([]);
+  const [memberLoadError, setMemberLoadError] = useState("");
   const [targetSecondary, setTargetSecondary] = useState("");
+  const [messageId, setMessageId] = useState("");
+  const [messageProof, setMessageProof] = useState<DiscordMessageProof | null>(null);
+  const [messageBusy, setMessageBusy] = useState(false);
   const [violationCategory, setViolationCategory] = useState(categories[0]);
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
+  const selectedMember = useMemo(() => discordMembers.find((member) => member.discordId === selectedDiscordId), [discordMembers, selectedDiscordId]);
+
   const targetLabels = useMemo(() => {
-    if (platform === "Discord") return { primary: "Discord User ID / Tag", secondary: "Server / Channel / Message Link" };
+    if (platform === "Discord") return { primary: "Discord Nutzer", secondary: "Server / Channel / Message Link" };
     return { primary: "VRChat Display Name", secondary: "Instance ID / World / Time" };
   }, [platform]);
+
+  useEffect(() => {
+    if (!token || platform !== "Discord") return;
+    listDiscordMembers(token)
+      .then((members) => {
+        setDiscordMembers(members);
+        setMemberLoadError("");
+      })
+      .catch((error) => setMemberLoadError(error instanceof Error ? error.message : "Discord-Mitglieder konnten nicht geladen werden."));
+  }, [platform, token]);
+
+  async function inspectMessage() {
+    if (!token || !/^\d{17,22}$/.test(messageId)) {
+      setStatus({ type: "error", message: "Nachrichten-ID muss eine gültige Discord-Snowflake sein." });
+      return;
+    }
+    setMessageBusy(true);
+    try {
+      const proof = await inspectDiscordMessage(token, messageId);
+      setMessageProof(proof);
+      setStatus(proof.found ? { type: "success", message: "Nachricht als Beweis geladen." } : { type: "error", message: proof.error || "Nachricht nicht gefunden." });
+    } catch (error) {
+      setMessageProof(null);
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Nachricht konnte nicht geladen werden." });
+    } finally {
+      setMessageBusy(false);
+    }
+  }
 
   function addFiles(nextFiles: FileList | File[]) {
     const incoming = Array.from(nextFiles).filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/") || file.type.startsWith("text/") || file.name.endsWith(".log") || file.name.endsWith(".txt"));
@@ -43,8 +79,9 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
       setStatus({ type: "error", message: "Du musst angemeldet sein." });
       return;
     }
-    if (!targetPrimary.trim() || !files.length) {
-      setStatus({ type: "error", message: "Ziel-ID und mindestens eine Datei sind erforderlich." });
+    const resolvedTarget = platform === "Discord" ? selectedMember?.label || "" : targetPrimary.trim();
+    if (!resolvedTarget || (!files.length && !messageProof?.found)) {
+      setStatus({ type: "error", message: "Zielperson und mindestens eine Datei oder geladene Nachrichten-ID sind erforderlich." });
       return;
     }
 
@@ -52,8 +89,12 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
     try {
       const result = await saveEvidenceCase(token, {
         platform,
-        targetPrimary,
+        targetPrimary: resolvedTarget,
+        targetDiscordId: platform === "Discord" ? selectedMember?.discordId : undefined,
+        targetDisplayName: platform === "Discord" ? selectedMember?.label : undefined,
         targetSecondary,
+        messageId: messageId.trim() || undefined,
+        messageProof,
         violationCategory,
         notes,
         files
@@ -62,6 +103,8 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
       setStatus({ type: "success", message: `Fall gesichert: ${result.casePath}` });
       setFiles([]);
       setNotes("");
+      setMessageId("");
+      setMessageProof(null);
     } catch (error) {
       setStatus({ type: "error", message: error instanceof Error ? error.message : "Speichern fehlgeschlagen." });
     }
@@ -122,13 +165,66 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
 
           <label className="mb-3 block">
             <span className="mb-1 block text-[12px] font-medium text-slate-400">{targetLabels.primary}</span>
-            <input className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300" value={targetPrimary} onChange={(event) => setTargetPrimary(event.target.value)} />
+            {platform === "Discord" ? (
+              <select
+                className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300"
+                value={selectedDiscordId}
+                onChange={(event) => {
+                  setSelectedDiscordId(event.target.value);
+                  setTargetPrimary(discordMembers.find((member) => member.discordId === event.target.value)?.label || "");
+                }}
+              >
+                <option value="">Synchronisierten Discord-Nutzer auswählen</option>
+                {discordMembers.map((member) => (
+                  <option key={member.discordId} value={member.discordId}>
+                    {member.label}{member.roleNames.length ? ` - ${member.roleNames.join(", ")}` : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300" value={targetPrimary} onChange={(event) => setTargetPrimary(event.target.value)} />
+            )}
+            {platform === "Discord" && memberLoadError ? <span className="mt-1 block text-[11px] text-red-300">{memberLoadError}</span> : null}
+            {platform === "Discord" && selectedMember ? <span className="mt-1 block text-[11px] text-cyan-200">{selectedMember.roleNames.length ? selectedMember.roleNames.join(" / ") : "Keine FurrBox-Rolle synchronisiert"}</span> : null}
           </label>
 
           <label className="mb-3 block">
             <span className="mb-1 block text-[12px] font-medium text-slate-400">{targetLabels.secondary}</span>
             <input className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300" value={targetSecondary} onChange={(event) => setTargetSecondary(event.target.value)} />
           </label>
+
+          {platform === "Discord" ? (
+            <div className="mb-3">
+              <span className="mb-1 block text-[12px] font-medium text-slate-400">Nachrichten-ID (Optional)</span>
+              <div className="flex gap-2">
+                <input
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300"
+                  inputMode="numeric"
+                  placeholder="Discord Message Snowflake"
+                  value={messageId}
+                  onChange={(event) => {
+                    setMessageId(event.target.value.replace(/\D/g, ""));
+                    setMessageProof(null);
+                  }}
+                />
+                <button className="h-10 rounded-xl border border-cyan-300/30 px-3 text-[12px] font-semibold text-cyan-200 hover:bg-cyan-500/10 disabled:opacity-50" disabled={messageBusy || !messageId} onClick={inspectMessage}>
+                  Prüfen
+                </button>
+              </div>
+              {messageProof ? (
+                <div className={`mt-2 rounded-xl border p-3 text-[12px] ${messageProof.found ? "border-cyan-300/20 bg-cyan-500/10 text-cyan-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
+                  {messageProof.found ? (
+                    <>
+                      <div className="mb-1 font-semibold">{messageProof.authorName} in #{messageProof.channelName}</div>
+                      <p className="max-h-24 overflow-auto whitespace-pre-wrap text-slate-200">{messageProof.content}</p>
+                    </>
+                  ) : (
+                    <p>{messageProof.error || "Nachricht nicht gefunden."}</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className="mb-3 block">
             <span className="mb-1 block text-[12px] font-medium text-slate-400">Violation Category</span>

@@ -12,8 +12,8 @@ import pty from "node-pty";
 import si from "systeminformation";
 import { Server } from "socket.io";
 
-type AuthUser = Pick<User, "id" | "username" | "displayName">;
-type JwtPayload = { sub: string; username: string; displayName: string };
+type AuthUser = Pick<User, "id" | "username" | "displayName" | "discordId">;
+type JwtPayload = { sub: string; username: string; displayName: string; discordId?: string | null };
 type AuthedRequest = express.Request & { user?: AuthUser };
 type FileDto = {
   id: string;
@@ -29,7 +29,7 @@ type FileDto = {
   url: string;
 };
 type UiState = {
-  activeWindow: "furrfs" | "terminal" | "settings";
+  activeWindow: "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
   wallpaper: "bloom" | "aurora" | "ink";
   startOpen: boolean;
 };
@@ -37,8 +37,10 @@ type DiscordPrivilege = "none" | "supporter" | "moderator" | "owner" | "dev";
 type DiscordMemberSnapshot = {
   discordId: string;
   username: string;
+  nickname: string | null;
   displayName: string;
   roles: string[];
+  roleNames: string[];
   highestPrivilege: DiscordPrivilege;
   isSupporter: boolean;
   isModerator: boolean;
@@ -59,9 +61,56 @@ type ModerationResult = ModerationRequest & {
   status: "success" | "failed";
   error?: string;
   completedAt: string;
+  moderatorName?: string;
+  moderatorRoleName?: string;
+  targetName?: string;
+  targetRoleName?: string;
+};
+type MessageInspectRequest = {
+  requestId: string;
+  messageId: string;
+};
+type MessageInspectResult = MessageInspectRequest & {
+  found: boolean;
+  content: string;
+  authorId?: string;
+  authorName?: string;
+  channelId?: string;
+  channelName?: string;
+  createdAt?: string;
+  error?: string;
+};
+type PresenceStatus = "online" | "offline";
+type PresenceUserDto = {
+  id: string;
+  username: string;
+  displayName: string;
+  discordId: string | null;
+  discordUsername: string | null;
+  nickname: string | null;
+  roleName: string;
+  roleNames: string[];
+  status: PresenceStatus;
+  connectedAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastSeenAt: string | null;
+};
+type PresenceRow = {
+  id: string;
+  username: string;
+  displayName: string;
+  discordId: string | null;
+  discordUsername: string | null;
+  nickname: string | null;
+  roleNamesJson: string | null;
+  highestPrivilege: string | null;
+  status: PresenceStatus | null;
+  connectedAt: Date | string | null;
+  lastHeartbeatAt: Date | string | null;
+  lastSeenAt: Date | string | null;
 };
 const DISCORD_PERMISSION_IDS = {
-  dev: "1517274600487125144",
+  dev: "1312104318006071328",
   owner: "1395506854549000202",
   moderator: "1397883231134547989",
   supporter: "1395506316801343558"
@@ -78,10 +127,21 @@ const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
 const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
 const app = express();
 const server = http.createServer(app);
+
+function isAllowedOrigin(origin?: string) {
+  return (
+    !origin ||
+    origin === "null" ||
+    origin.startsWith("file://") ||
+    origin.startsWith("app://") ||
+    allowedOrigins.includes(origin)
+  );
+}
+
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin || origin === "null" || allowedOrigins.includes(origin)) callback(null, true);
+      if (isAllowedOrigin(origin)) callback(null, true);
       else callback(new Error(`Origin ${origin} is not allowed.`));
     },
     methods: ["GET", "POST", "DELETE"]
@@ -99,7 +159,9 @@ let hardwareInterval: NodeJS.Timeout | null = null;
 let publicStorageWatcher: fsSync.FSWatcher | null = null;
 let publicStorageBroadcastTimer: NodeJS.Timeout | null = null;
 let botSocketId: string | null = null;
+const activePresenceSockets = new Map<string, Set<string>>();
 const moderationWaiters = new Map<string, { resolve: (result: ModerationResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
+const messageInspectWaiters = new Map<string, { resolve: (result: MessageInspectResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 
 function sanitizeName(name: string) {
   return name.replace(/[^\w.\- ]+/g, "_").slice(0, 160);
@@ -160,8 +222,31 @@ function toDto(file: {
   };
 }
 
+function safeJsonArray(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatRoleName(row: Pick<PresenceRow, "highestPrivilege" | "roleNamesJson">) {
+  if (row.highestPrivilege === "dev") return "Dev";
+  if (row.highestPrivilege === "owner") return "Fish Nagie Owner";
+  if (row.highestPrivilege === "moderator") return "Fish Moderator";
+  if (row.highestPrivilege === "supporter") return "Supporter";
+  return safeJsonArray(row.roleNamesJson)[0] || "User";
+}
+
+function iso(value: Date | string | null | undefined) {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 function issueToken(user: AuthUser) {
-  return jwt.sign({ sub: user.id, username: user.username, displayName: user.displayName }, jwtSecret, { expiresIn: "12h" });
+  return jwt.sign({ sub: user.id, username: user.username, displayName: user.displayName, discordId: user.discordId }, jwtSecret, { expiresIn: "12h" });
 }
 
 async function getUserFromToken(token?: string): Promise<AuthUser | null> {
@@ -170,7 +255,7 @@ async function getUserFromToken(token?: string): Promise<AuthUser | null> {
     const payload = jwt.verify(token, jwtSecret) as JwtPayload;
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, username: true, displayName: true }
+      select: { id: true, username: true, displayName: true, discordId: true }
     });
     return user;
   } catch {
@@ -217,11 +302,11 @@ function publicStorageDir() {
 }
 
 function auditLogVirtualPath() {
-  return "Dokumente/Moderation_Beweise/Discord_Logs/audit_log.json";
+  return "Dokumente/Moderation_Beweise/Discord_Logs/Audit_Log.txt";
 }
 
 function auditLogPhysicalPath() {
-  return path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", "audit_log.json");
+  return path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", "Audit_Log.txt");
 }
 
 async function ensureStorage() {
@@ -232,7 +317,7 @@ async function ensureStorage() {
   try {
     await fs.access(auditLogPhysicalPath());
   } catch {
-    await fs.writeFile(auditLogPhysicalPath(), "[]", "utf8");
+    await fs.writeFile(auditLogPhysicalPath(), "FurrBox Discord Moderation Audit Log\r\n------------------------------------------------------------\r\n", "utf8");
   }
 }
 
@@ -243,9 +328,27 @@ async function ensureDatabase() {
       "username" TEXT NOT NULL UNIQUE,
       "passwordHash" TEXT NOT NULL,
       "displayName" TEXT NOT NULL,
+      "discordId" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "discordId" TEXT;`).catch(() => undefined);
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_discordId_key" ON "User"("discordId");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "UserPresence" (
+      "userId" TEXT NOT NULL PRIMARY KEY,
+      "discordId" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'offline',
+      "socketId" TEXT,
+      "connectedAt" DATETIME,
+      "lastHeartbeatAt" DATETIME,
+      "lastSeenAt" DATETIME,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "UserPresence_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "UserPresence_status_idx" ON "UserPresence"("status");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "UserPresence_discordId_idx" ON "UserPresence"("discordId");`);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "StoredFile" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -265,8 +368,10 @@ async function ensureDatabase() {
     CREATE TABLE IF NOT EXISTS "DiscordMember" (
       "discordId" TEXT NOT NULL PRIMARY KEY,
       "username" TEXT NOT NULL,
+      "nickname" TEXT,
       "displayName" TEXT NOT NULL,
       "rolesJson" TEXT NOT NULL,
+      "roleNamesJson" TEXT NOT NULL DEFAULT '[]',
       "highestPrivilege" TEXT NOT NULL,
       "isSupporter" BOOLEAN NOT NULL DEFAULT false,
       "isModerator" BOOLEAN NOT NULL DEFAULT false,
@@ -275,6 +380,8 @@ async function ensureDatabase() {
       "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "nickname" TEXT;`).catch(() => undefined);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "roleNamesJson" TEXT NOT NULL DEFAULT '[]';`).catch(() => undefined);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordMember_highestPrivilege_idx" ON "DiscordMember"("highestPrivilege");`);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "DiscordWarning" (
@@ -315,8 +422,10 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
         where: { discordId: member.discordId },
         update: {
           username: member.username,
+          nickname: member.nickname,
           displayName: member.displayName,
           rolesJson: JSON.stringify(member.roles),
+          roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
@@ -326,8 +435,10 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
         create: {
           discordId: member.discordId,
           username: member.username,
+          nickname: member.nickname,
           displayName: member.displayName,
           rolesJson: JSON.stringify(member.roles),
+          roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
@@ -337,49 +448,175 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
       })
     )
   );
+  await emitPresenceSnapshot("discord-sync");
+}
+
+function toPresenceDto(row: PresenceRow): PresenceUserDto {
+  const roleNames = safeJsonArray(row.roleNamesJson);
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.displayName,
+    discordId: row.discordId,
+    discordUsername: row.discordUsername,
+    nickname: row.nickname,
+    roleName: formatRoleName(row),
+    roleNames,
+    status: row.status === "online" ? "online" : "offline",
+    connectedAt: iso(row.connectedAt),
+    lastHeartbeatAt: iso(row.lastHeartbeatAt),
+    lastSeenAt: iso(row.lastSeenAt)
+  };
+}
+
+async function listPresenceUsers(): Promise<PresenceUserDto[]> {
+  const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
+    SELECT
+      u."id",
+      u."username",
+      u."displayName",
+      u."discordId",
+      dm."username" AS "discordUsername",
+      dm."nickname",
+      dm."roleNamesJson",
+      dm."highestPrivilege",
+      COALESCE(up."status", 'offline') AS "status",
+      up."connectedAt",
+      up."lastHeartbeatAt",
+      up."lastSeenAt"
+    FROM "User" u
+    LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
+    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+    ORDER BY
+      CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
+      COALESCE(dm."nickname", dm."displayName", u."displayName", u."username") COLLATE NOCASE ASC
+  `);
+  return rows.map(toPresenceDto);
+}
+
+async function getPresenceUser(userId: string) {
+  const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
+    SELECT
+      u."id",
+      u."username",
+      u."displayName",
+      u."discordId",
+      dm."username" AS "discordUsername",
+      dm."nickname",
+      dm."roleNamesJson",
+      dm."highestPrivilege",
+      COALESCE(up."status", 'offline') AS "status",
+      up."connectedAt",
+      up."lastHeartbeatAt",
+      up."lastSeenAt"
+    FROM "User" u
+    LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
+    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+    WHERE u."id" = ?
+    LIMIT 1
+  `, userId);
+  return rows[0] ? toPresenceDto(rows[0]) : null;
+}
+
+async function emitPresenceSnapshot(reason: string) {
+  const users = await listPresenceUsers();
+  io.to("presence").emit("presence:snapshot", { reason, users, emittedAt: new Date().toISOString() });
+}
+
+async function emitPresenceUpdate(userId: string, reason: string) {
+  const user = await getPresenceUser(userId);
+  if (!user) return;
+  io.to("presence").emit("presence:update", { ...user, reason, emittedAt: new Date().toISOString() });
+}
+
+async function markUserOnline(user: AuthUser, socketId: string) {
+  const now = new Date().toISOString();
+  const sockets = activePresenceSockets.get(user.id) ?? new Set<string>();
+  sockets.add(socketId);
+  activePresenceSockets.set(user.id, sockets);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "connectedAt", "lastHeartbeatAt", "updatedAt")
+    VALUES (?, ?, 'online', ?, ?, ?, ?)
+    ON CONFLICT("userId") DO UPDATE SET
+      "discordId" = excluded."discordId",
+      "status" = 'online',
+      "socketId" = excluded."socketId",
+      "connectedAt" = COALESCE("connectedAt", excluded."connectedAt"),
+      "lastHeartbeatAt" = excluded."lastHeartbeatAt",
+      "updatedAt" = excluded."updatedAt"
+  `, user.id, user.discordId, socketId, now, now, now);
+  await emitPresenceUpdate(user.id, "connected");
+}
+
+async function markUserHeartbeat(user: AuthUser, socketId: string) {
+  const now = new Date().toISOString();
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "connectedAt", "lastHeartbeatAt", "updatedAt")
+    VALUES (?, ?, 'online', ?, ?, ?, ?)
+    ON CONFLICT("userId") DO UPDATE SET
+      "discordId" = excluded."discordId",
+      "status" = 'online',
+      "socketId" = excluded."socketId",
+      "lastHeartbeatAt" = excluded."lastHeartbeatAt",
+      "updatedAt" = excluded."updatedAt"
+  `, user.id, user.discordId, socketId, now, now, now);
+  await emitPresenceUpdate(user.id, "heartbeat");
+}
+
+async function markUserOffline(user: AuthUser, socketId: string) {
+  const sockets = activePresenceSockets.get(user.id);
+  sockets?.delete(socketId);
+  if (sockets && sockets.size > 0) return;
+  activePresenceSockets.delete(user.id);
+  const now = new Date().toISOString();
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "lastSeenAt", "updatedAt")
+    VALUES (?, ?, 'offline', NULL, ?, ?)
+    ON CONFLICT("userId") DO UPDATE SET
+      "discordId" = excluded."discordId",
+      "status" = 'offline',
+      "socketId" = NULL,
+      "connectedAt" = NULL,
+      "lastSeenAt" = excluded."lastSeenAt",
+      "updatedAt" = excluded."updatedAt"
+  `, user.id, user.discordId, now, now);
+  await emitPresenceUpdate(user.id, "disconnected");
 }
 
 async function appendAuditLog(result: ModerationResult) {
-  const entry = {
-    id: crypto.randomUUID(),
-    requestId: result.requestId,
-    source: result.source,
-    action: result.action,
-    moderatorId: result.moderatorId,
-    targetId: result.targetId,
-    reason: result.reason,
-    durationMs: result.durationMs ?? null,
-    status: result.status,
-    error: result.error ?? null,
-    createdAt: result.completedAt
-  };
-
   await prisma.moderationAudit.create({
     data: {
-      id: entry.id,
-      requestId: entry.requestId,
-      source: entry.source,
-      action: entry.action,
-      moderatorId: entry.moderatorId,
-      targetId: entry.targetId,
-      reason: entry.reason,
-      durationMs: entry.durationMs,
-      status: entry.status,
-      error: entry.error
+      id: crypto.randomUUID(),
+      requestId: result.requestId,
+      source: result.source,
+      action: result.action,
+      moderatorId: result.moderatorId,
+      targetId: result.targetId,
+      reason: result.reason,
+      durationMs: result.durationMs ?? null,
+      status: result.status,
+      error: result.error ?? null
     }
   });
 
   const filePath = auditLogPhysicalPath();
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  let existing: unknown = [];
-  try {
-    existing = JSON.parse(await fs.readFile(filePath, "utf8"));
-  } catch {
-    existing = [];
-  }
-  const entries = Array.isArray(existing) ? existing : [];
-  entries.push(entry);
-  await fs.writeFile(filePath, JSON.stringify(entries.slice(-5000), null, 2), "utf8");
+  const logBlock = [
+    "------------------------------------------------------------",
+    `Date: ${new Date(result.completedAt).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+    `Status: ${result.status.toUpperCase()}`,
+    `Action: ${result.action.toUpperCase()}`,
+    `Moderator Name: ${result.moderatorName || result.moderatorId} [${result.moderatorRoleName || "Unknown"}]`,
+    `Target Name: ${result.targetName || result.targetId} [${result.targetRoleName || "Unknown"}]`,
+    `Request ID: ${result.requestId}`,
+    result.durationMs ? `Duration: ${Math.round(result.durationMs / 1000)} seconds` : "Duration: Not set",
+    "Reason:",
+    result.reason,
+    result.error ? `Error: ${result.error}` : "",
+    "------------------------------------------------------------",
+    ""
+  ].filter(Boolean).join("\r\n");
+  await fs.appendFile(filePath, `${logBlock}\r\n`, "utf8");
 
   const stats = await fs.stat(filePath);
   const existingAuditFile = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: auditLogVirtualPath() } });
@@ -389,7 +626,7 @@ async function appendAuditLog(result: ModerationResult) {
         data: {
           originalName: auditLogVirtualPath(),
           size: stats.size,
-          mimeType: "application/json",
+          mimeType: "text/plain",
           scope: "PUBLIC",
           ownerId: null
         }
@@ -399,13 +636,22 @@ async function appendAuditLog(result: ModerationResult) {
       name: auditLogVirtualPath(),
       originalName: auditLogVirtualPath(),
       size: stats.size,
-      mimeType: "application/json",
+      mimeType: "text/plain",
       scope: "PUBLIC",
       ownerId: null
         }
       });
   io.to("public").emit("file-uploaded", toDto(storedFile));
-  io.emit("moderation:audit", entry);
+  io.emit("moderation:audit", {
+    requestId: result.requestId,
+    status: result.status,
+    action: result.action,
+    moderatorName: result.moderatorName || result.moderatorId,
+    moderatorRoleName: result.moderatorRoleName || "Unknown",
+    targetName: result.targetName || result.targetId,
+    targetRoleName: result.targetRoleName || "Unknown",
+    createdAt: result.completedAt
+  });
   await emitPublicFiles("moderation-audit");
 }
 
@@ -437,9 +683,12 @@ async function assertModeratorCanExecute(request: ModerationRequest) {
   if (request.moderatorId === DISCORD_PERMISSION_IDS.dev) return;
   const moderator = await prisma.discordMember.findUnique({ where: { discordId: request.moderatorId } });
   if (!moderator) throw new Error("Moderator is not synced from Discord yet.");
-  if (!moderator.isModerator && !moderator.isOwner && !moderator.isDev) {
-    throw new Error("Moderator must have Fish Moderator, Fish Nagie Owner, or Dev access.");
+  if (moderator.isDev || moderator.isOwner || moderator.isModerator) return;
+  if (moderator.isSupporter && (request.action === "warn" || request.action === "timeout")) return;
+  if (moderator.isSupporter) {
+    throw new Error("Supporter access only allows Timeout and Warn.");
   }
+  throw new Error("Moderator must have Dev, Fish Nagie Owner, Fish Moderator, or Supporter access.");
 }
 
 function dispatchModerationRequest(request: ModerationRequest) {
@@ -457,6 +706,106 @@ function dispatchModerationRequest(request: ModerationRequest) {
     moderationWaiters.set(request.requestId, { resolve, reject, timeout });
     socket.emit("moderation:command", request);
   });
+}
+
+function dispatchMessageInspect(messageId: string) {
+  if (!/^\d{17,22}$/.test(messageId)) throw new Error("Message ID must be a Discord snowflake.");
+  if (!botSocketId) throw new Error("Discord bot is not connected to the FurrBox bridge.");
+  const socket = io.sockets.sockets.get(botSocketId);
+  if (!socket) {
+    botSocketId = null;
+    throw new Error("Discord bot bridge connection is stale.");
+  }
+  const request: MessageInspectRequest = { requestId: crypto.randomUUID(), messageId };
+  return new Promise<MessageInspectResult>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      messageInspectWaiters.delete(request.requestId);
+      reject(new Error("Discord bot did not return message inspection before timeout."));
+    }, 30_000);
+    messageInspectWaiters.set(request.requestId, { resolve, reject, timeout });
+    socket.emit("message:inspect", request);
+  });
+}
+
+async function resolveDiscordDisplayName(discordId: string) {
+  const member = await prisma.discordMember.findUnique({ where: { discordId } });
+  return member?.nickname || member?.displayName || member?.username || discordId;
+}
+
+async function writeDiscordReportFile(targetName: string, metadata: Record<string, unknown>) {
+  const safeTarget = sanitizePathSegment(targetName);
+  const virtualPath = `Dokumente/Moderation_Beweise/Discord_Logs/${safeTarget}_Report.txt`;
+  const physicalPath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", `${safeTarget}_Report.txt`);
+  await fs.mkdir(path.dirname(physicalPath), { recursive: true });
+  const messageProof = metadata.messageProof as { content?: string; authorName?: string; channelName?: string; createdAt?: string } | null;
+  const payload = Buffer.from([
+    "FurrBox Discord Evidence Report",
+    "------------------------------------------------------------",
+    `Date: ${new Date(String(metadata.createdAt || new Date().toISOString())).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+    "Action: EVIDENCE REPORT",
+    `Moderator Name: ${(metadata.createdBy as { displayName?: string; username?: string } | undefined)?.displayName || (metadata.createdBy as { username?: string } | undefined)?.username || "Unknown"} [FurrBox User]`,
+    `Target Name: ${String(metadata.targetDisplayName || metadata.targetPrimary || "Unknown")}`,
+    `Violation Category: ${String(metadata.violationCategory || "Other")}`,
+    "------------------------------------------------------------",
+    "Reason:",
+    String(metadata.notes || "No additional notes."),
+    "------------------------------------------------------------",
+    messageProof?.content ? "Message Proof:" : "",
+    messageProof?.content ? `Author: ${messageProof.authorName || "Unknown"}` : "",
+    messageProof?.content ? `Channel: ${messageProof.channelName || "Unknown"}` : "",
+    messageProof?.content ? `Created At: ${messageProof.createdAt || "Unknown"}` : "",
+    messageProof?.content ? messageProof.content : "",
+    "------------------------------------------------------------",
+    ""
+  ].filter(Boolean).join("\r\n"), "utf8");
+  await fs.writeFile(physicalPath, payload);
+  const existing = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: virtualPath } });
+  return existing
+    ? prisma.storedFile.update({ where: { id: existing.id }, data: { originalName: virtualPath, size: payload.length, mimeType: "text/plain" } })
+    : prisma.storedFile.create({
+        data: {
+          name: virtualPath,
+          originalName: virtualPath,
+          size: payload.length,
+          mimeType: "text/plain",
+          scope: "PUBLIC",
+          ownerId: null
+        }
+      });
+}
+
+async function listDiscordTextLogsForUser(discordId: string) {
+  const user = await prisma.user.findUnique({ where: { discordId } }).catch(() => null);
+  const member = await prisma.discordMember.findUnique({ where: { discordId } }).catch(() => null);
+  const candidates = [
+    discordId,
+    user?.username,
+    user?.displayName,
+    member?.username,
+    member?.nickname,
+    member?.displayName
+  ]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => [value.toLowerCase(), sanitizePathSegment(value).toLowerCase()]);
+
+  const logsDir = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs");
+  const entries = await fs.readdir(logsDir, { withFileTypes: true }).catch(() => []);
+  const logs = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".txt")) continue;
+    const physicalPath = path.join(logsDir, entry.name);
+    const content = await fs.readFile(physicalPath, "utf8").catch(() => "");
+    const haystack = `${entry.name}\n${content}`.toLowerCase();
+    if (!candidates.some((candidate) => candidate && haystack.includes(candidate))) continue;
+    const stats = await fs.stat(physicalPath);
+    logs.push({
+      fileName: entry.name,
+      virtualPath: `Dokumente/Moderation_Beweise/Discord_Logs/${entry.name}`,
+      updatedAt: stats.mtime.toISOString(),
+      content
+    });
+  }
+  return logs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 const upload = multer({
@@ -581,7 +930,7 @@ function ensurePublicStorageWatcher() {
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || origin === "null" || allowedOrigins.includes(origin)) callback(null, true);
+      if (isAllowedOrigin(origin)) callback(null, true);
       else callback(new Error(`Origin ${origin} is not allowed.`));
     }
   })
@@ -595,6 +944,7 @@ app.get("/health", (_req, res) => {
 app.post("/api/auth/register", async (req, res, next) => {
   try {
     const username = String(req.body.username || "").trim().toLowerCase();
+    const discordId = String(req.body.discordId || "").trim();
     const displayName = String(req.body.displayName || username).trim();
     const password = String(req.body.password || "");
 
@@ -606,11 +956,15 @@ app.post("/api/auth/register", async (req, res, next) => {
       res.status(400).json({ error: "Password must be at least 8 characters." });
       return;
     }
+    if (!/^\d{17,22}$/.test(discordId)) {
+      res.status(400).json({ error: "Discord ID must be a numeric Discord snowflake." });
+      return;
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
-      data: { username, displayName, passwordHash },
-      select: { id: true, username: true, displayName: true }
+      data: { username, displayName, discordId, passwordHash },
+      select: { id: true, username: true, displayName: true, discordId: true }
     });
     await fs.mkdir(scopeFolder("PRIVATE", user.id), { recursive: true });
     res.status(201).json({ token: issueToken(user), user });
@@ -632,7 +986,7 @@ app.post("/api/auth/login", async (req, res, next) => {
       res.status(401).json({ error: "Invalid username or password." });
       return;
     }
-    const profile = { id: user.id, username: user.username, displayName: user.displayName };
+    const profile = { id: user.id, username: user.username, displayName: user.displayName, discordId: user.discordId };
     res.json({ token: issueToken(profile), user: profile });
   } catch (error) {
     next(error);
@@ -645,11 +999,22 @@ app.get("/api/auth/me", requireAuth, (req: AuthedRequest, res) => {
 
 app.get("/api/discord/members", requireAuth, async (_req: AuthedRequest, res, next) => {
   try {
-    const members = await prisma.discordMember.findMany({ orderBy: [{ highestPrivilege: "desc" }, { displayName: "asc" }] });
+    const members = await prisma.discordMember.findMany({ orderBy: [{ displayName: "asc" }] });
     res.json({
       members: members.map((member) => ({
-        ...member,
-        roles: JSON.parse(member.rolesJson) as string[]
+        discordId: member.discordId,
+        username: member.username,
+        nickname: member.nickname,
+        displayName: member.displayName,
+        label: member.nickname ? `${member.nickname} (${member.username})` : member.username,
+        roles: JSON.parse(member.rolesJson) as string[],
+        roleNames: JSON.parse(member.roleNamesJson) as string[],
+        highestPrivilege: member.highestPrivilege,
+        isSupporter: member.isSupporter,
+        isModerator: member.isModerator,
+        isOwner: member.isOwner,
+        isDev: member.isDev,
+        syncedAt: member.syncedAt
       }))
     });
   } catch (error) {
@@ -657,12 +1022,43 @@ app.get("/api/discord/members", requireAuth, async (_req: AuthedRequest, res, ne
   }
 });
 
+app.get("/api/presence/users", requireAuth, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ users: await listPresenceUsers() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/presence/users/:discordId/logs", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const discordId = String(req.params.discordId || "").trim();
+    if (!/^\d{17,22}$/.test(discordId)) {
+      res.status(400).json({ error: "Discord ID must be a numeric Discord snowflake." });
+      return;
+    }
+    res.json({ logs: await listDiscordTextLogsForUser(discordId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/discord/moderation", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    const request = normalizeModerationRequest(req.body as Record<string, unknown>, req.user!.id);
+    const request = normalizeModerationRequest(req.body as Record<string, unknown>, req.user!.discordId || req.user!.id);
     await assertModeratorCanExecute(request);
     const result = await dispatchModerationRequest(request);
     res.status(result.status === "success" ? 200 : 502).json({ result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/discord/message-inspect", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const messageId = String(req.body.messageId || "").trim();
+    const result = await dispatchMessageInspect(messageId);
+    res.status(result.found ? 200 : 404).json({ message: result });
   } catch (error) {
     next(error);
   }
@@ -714,22 +1110,28 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
   try {
     const platform = String(req.body.platform || "").trim() === "VRChat" ? "VRChat" : "Discord";
     const targetPrimary = String(req.body.targetPrimary || "").trim();
+    const targetDiscordId = String(req.body.targetDiscordId || "").trim();
+    const targetDisplayName = String(req.body.targetDisplayName || "").trim();
     const targetSecondary = String(req.body.targetSecondary || "").trim();
+    const messageId = String(req.body.messageId || "").trim();
+    const messageProofRaw = String(req.body.messageProof || "").trim();
     const violationCategory = String(req.body.violationCategory || "").trim() || "Other";
     const notes = String(req.body.notes || "").trim();
     const uploadedFiles = (req.files || []) as Express.Multer.File[];
+    const messageProof = messageProofRaw ? JSON.parse(messageProofRaw) as MessageInspectResult : null;
 
     if (!targetPrimary) {
       res.status(400).json({ error: "Target identification is required." });
       return;
     }
-    if (!uploadedFiles.length) {
-      res.status(400).json({ error: "At least one evidence file is required." });
+    if (!uploadedFiles.length && !messageProof?.found) {
+      res.status(400).json({ error: "At least one evidence file or inspected Discord message is required." });
       return;
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const targetSlug = sanitizePathSegment(targetPrimary);
+    const resolvedTargetName = targetDisplayName || (targetDiscordId ? await resolveDiscordDisplayName(targetDiscordId) : targetPrimary);
+    const targetSlug = sanitizePathSegment(resolvedTargetName);
     const caseId = `${targetSlug}_${timestamp}`;
     const virtualCasePath = `Dokumente/Moderation_Beweise/${platform}/${caseId}`;
     const physicalCasePath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", platform, caseId);
@@ -739,7 +1141,11 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
       caseId,
       platform,
       targetPrimary,
+      targetDiscordId,
+      targetDisplayName: resolvedTargetName,
       targetSecondary,
+      messageId,
+      messageProof,
       violationCategory,
       notes,
       createdBy: req.user,
@@ -785,12 +1191,17 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
     });
     createdFiles.push(metadataRow);
 
+    if (platform === "Discord") {
+      const reportRow = await writeDiscordReportFile(resolvedTargetName, metadata);
+      createdFiles.push(reportRow);
+    }
+
     const files = createdFiles.map(toDto);
     io.to("public").emit("evidence:case-created", {
       caseId,
       casePath: virtualCasePath,
       platform,
-      targetPrimary,
+      targetPrimary: resolvedTargetName,
       violationCategory,
       files
     });
@@ -885,6 +1296,14 @@ io.on("connection", async (socket) => {
       await appendAuditLog(result);
     });
 
+    socket.on("message:inspect-result", (result: MessageInspectResult) => {
+      const waiter = messageInspectWaiters.get(result.requestId);
+      if (!waiter) return;
+      clearTimeout(waiter.timeout);
+      messageInspectWaiters.delete(result.requestId);
+      waiter.resolve(result);
+    });
+
     socket.on("disconnect", () => {
       if (botSocketId === socket.id) botSocketId = null;
       io.emit("discord:bot-status", { connected: false, disconnectedAt: new Date().toISOString() });
@@ -895,6 +1314,7 @@ io.on("connection", async (socket) => {
   const user = socket.data.user as AuthUser;
   socket.join(`user:${user.id}`);
   socket.join("public");
+  await markUserOnline(user, socket.id);
 
   socket.emit("ui-state", uiState);
   socket.emit("files-refreshed", { reason: "connect", files: (await listVisibleFiles(user.id)).map(toDto) });
@@ -906,6 +1326,20 @@ io.on("connection", async (socket) => {
   socket.on("file-uploaded", async ({ scope }: { scope?: "private" | "public" } = {}) => {
     if (scope === "public") await emitPublicFiles("client-refresh");
     await emitFilesForUser(user.id, "client-refresh");
+  });
+
+  socket.on("presence:subscribe", async () => {
+    socket.join("presence");
+    socket.emit("presence:snapshot", { reason: "subscribe", users: await listPresenceUsers(), emittedAt: new Date().toISOString() });
+  });
+
+  socket.on("presence:unsubscribe", () => {
+    socket.leave("presence");
+  });
+
+  socket.on("presence:heartbeat", async () => {
+    await markUserHeartbeat(user, socket.id);
+    socket.emit("presence:heartbeat-ack", { at: new Date().toISOString() });
   });
 
   socket.on("shared-file:create-text", async ({ name, content }: { name?: string; content?: string }) => {
@@ -944,7 +1378,7 @@ io.on("connection", async (socket) => {
 
   socket.on("moderation:execute", async (body: Record<string, unknown>, callback?: (response: { ok: boolean; result?: ModerationResult; error?: string }) => void) => {
     try {
-      const request = normalizeModerationRequest(body, user.id);
+      const request = normalizeModerationRequest(body, user.discordId || user.id);
       await assertModeratorCanExecute(request);
       const result = await dispatchModerationRequest(request);
       callback?.({ ok: result.status === "success", result });
@@ -978,7 +1412,8 @@ io.on("connection", async (socket) => {
     stopHardwareStreamIfIdle();
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
+    await markUserOffline(user, socket.id);
     stopHardwareStreamIfIdle();
   });
 });

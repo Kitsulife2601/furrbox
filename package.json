@@ -13,9 +13,14 @@
     "dev:web": "concurrently -k -n backend,frontend -c cyan,green \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\"",
     "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
     "build": "npm --workspace frontend run build && npm --workspace backend run build",
-    "build:exe-frontend": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 npm --workspace frontend run build",
-    "dist:win": "npm run build:exe-frontend && electron-builder --win nsis portable",
-    "dist:portable": "npm run build:exe-frontend && electron-builder --win portable",
+    "build:exe-frontend": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
+    "build:exe-frontend:standard": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
+    "build:exe-frontend:admin": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run build",
+    "dist:standard": "npm run build:exe-frontend:standard && cross-env FURRBOX_EDITION=Standard electron-builder --win nsis --config electron-builder.json",
+    "dist:admin": "npm run build:exe-frontend:admin && cross-env FURRBOX_EDITION=AdminEdition electron-builder --win nsis --config electron-builder.json",
+    "dist:dual": "npm run dist:standard && npm run dist:admin",
+    "dist:win": "npm run dist:standard",
+    "dist:portable": "npm run build:exe-frontend:standard && electron-builder --win portable",
     "lint": "npm --workspace frontend run lint && npm --workspace backend run lint"
   },
   "devDependencies": {

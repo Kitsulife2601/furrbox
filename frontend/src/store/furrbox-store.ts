@@ -18,13 +18,14 @@ export type FurrFile = {
   url: string;
 };
 
-export type WindowKey = "furrfs" | "terminal" | "settings";
+export type WindowKey = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
 export type Wallpaper = "bloom" | "aurora" | "ink";
 export type AuthStage = "lock" | "login" | "desktop";
 export type UserProfile = {
   id: string;
   username: string;
   displayName: string;
+  discordId?: string | null;
 };
 
 type UiState = {

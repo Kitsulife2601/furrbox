@@ -11,7 +11,7 @@ export function LoginPanel() {
   const { setSession, setAuthStage } = useFurrBoxStore();
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [discordId, setDiscordId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,12 +19,16 @@ export function LoginPanel() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    if (mode === "register" && !/^\d{17,22}$/.test(discordId)) {
+      setError("Discord ID muss nur aus Zahlen bestehen und 17-22 Stellen lang sein.");
+      return;
+    }
     setBusy(true);
     try {
       const result =
         mode === "login"
           ? await login(username, password)
-          : await register(username, displayName || username, password);
+          : await register(username, discordId, password);
       setSession(result.token, result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed.");
@@ -59,7 +63,14 @@ export function LoginPanel() {
         <div className="mt-5 grid gap-3 text-left">
           <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoFocus />
           {mode === "register" && (
-            <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Display name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+            <input
+              className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]"
+              placeholder="Discord ID (Snowflake)"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={discordId}
+              onChange={(event) => setDiscordId(event.target.value.replace(/\D/g, ""))}
+            />
           )}
           <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </div>

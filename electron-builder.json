@@ -1,0 +1,34 @@
+{
+  "appId": "de.furrbox.desktop",
+  "productName": "FurrBox",
+  "files": [
+    "electron/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "frontend/out",
+      "to": "frontend/out"
+    }
+  ],
+  "directories": {
+    "output": "release"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "FurrBox_${env.FURRBOX_EDITION}_Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
+}

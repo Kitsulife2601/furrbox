@@ -17,8 +17,25 @@ model User {
   username     String       @unique
   passwordHash String
   displayName  String
+  discordId    String?      @unique
   createdAt    DateTime     @default(now())
   files        StoredFile[]
+  presence     UserPresence?
+}
+
+model UserPresence {
+  userId          String    @id
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  discordId       String?
+  status          String    @default("offline")
+  socketId        String?
+  connectedAt     DateTime?
+  lastHeartbeatAt DateTime?
+  lastSeenAt      DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([discordId])
 }
 
 model StoredFile {
@@ -39,8 +56,10 @@ model StoredFile {
 model DiscordMember {
   discordId        String   @id
   username         String
+  nickname         String?
   displayName      String
   rolesJson        String
+  roleNamesJson    String   @default("[]")
   highestPrivilege String
   isSupporter      Boolean  @default(false)
   isModerator      Boolean  @default(false)

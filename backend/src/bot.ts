@@ -29,12 +29,32 @@ type ModerationResult = ModerationRequest & {
   status: "success" | "failed";
   error?: string;
   completedAt: string;
+  moderatorName?: string;
+  moderatorRoleName?: string;
+  targetName?: string;
+  targetRoleName?: string;
+};
+type MessageInspectRequest = {
+  requestId: string;
+  messageId: string;
+};
+type MessageInspectResult = MessageInspectRequest & {
+  found: boolean;
+  content: string;
+  authorId?: string;
+  authorName?: string;
+  channelId?: string;
+  channelName?: string;
+  createdAt?: string;
+  error?: string;
 };
 type DiscordMemberSnapshot = {
   discordId: string;
   username: string;
+  nickname: string | null;
   displayName: string;
   roles: string[];
+  roleNames: string[];
   highestPrivilege: DiscordPrivilege;
   isSupporter: boolean;
   isModerator: boolean;
@@ -43,11 +63,17 @@ type DiscordMemberSnapshot = {
 };
 
 const ROLE_IDS = {
-  dev: "1517274600487125144",
+  dev: "1312104318006071328",
   owner: "1395506854549000202",
   moderator: "1397883231134547989",
   supporter: "1395506316801343558"
 } as const;
+const ROLE_DISPLAY_NAMES: Record<string, string> = {
+  [ROLE_IDS.dev]: "Dev",
+  [ROLE_IDS.owner]: "Fish Nagie Owner",
+  [ROLE_IDS.moderator]: "Fish Moderator",
+  [ROLE_IDS.supporter]: "Supporter"
+};
 
 const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.DISCORD_GUILD_ID;
@@ -70,7 +96,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.MessageContent
   ],
   partials: [Partials.Channel]
 });
@@ -89,12 +115,30 @@ function publicStorageDir() {
   return path.join(storageDir, "public");
 }
 
-function warningProfileVirtualPath(targetId: string) {
-  return `Dokumente/Moderation_Beweise/Discord_Logs/profiles/${targetId}.json`;
+function displayRoleFor(member: GuildMember | null, userId?: string) {
+  if (userId === ROLE_IDS.dev) return "Dev";
+  if (!member) return "Unresolved";
+  if (member.id === ROLE_IDS.dev) return "Dev";
+  if (member.roles.cache.has(ROLE_IDS.owner) || member.id === ROLE_IDS.owner) return "Fish Nagie Owner";
+  if (member.roles.cache.has(ROLE_IDS.moderator)) return "Fish Moderator";
+  if (member.roles.cache.has(ROLE_IDS.supporter)) return "Supporter";
+  return "Member";
 }
 
-function warningProfilePhysicalPath(targetId: string) {
-  return path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", "profiles", `${targetId}.json`);
+function moderationClearanceFor(member: GuildMember) {
+  if (member.id === ROLE_IDS.dev) return { roleName: "Dev", allowedActions: ["ban", "warn", "timeout", "mute"] as ModerationAction[] };
+  if (member.id === ROLE_IDS.owner || member.roles.cache.has(ROLE_IDS.owner)) return { roleName: "Fish Nagie Owner", allowedActions: ["ban", "warn", "timeout", "mute"] as ModerationAction[] };
+  if (member.roles.cache.has(ROLE_IDS.moderator)) return { roleName: "Fish Moderator", allowedActions: ["ban", "warn", "timeout", "mute"] as ModerationAction[] };
+  if (member.roles.cache.has(ROLE_IDS.supporter)) return { roleName: "Supporter", allowedActions: ["warn", "timeout"] as ModerationAction[] };
+  return { roleName: "Member", allowedActions: [] as ModerationAction[] };
+}
+
+function reportVirtualPath(targetName: string) {
+  return `Dokumente/Moderation_Beweise/Discord_Logs/${sanitizeName(targetName).replace(/\s+/g, "_")}_Report.txt`;
+}
+
+function reportPhysicalPath(targetName: string) {
+  return path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", `${sanitizeName(targetName).replace(/\s+/g, "_")}_Report.txt`);
 }
 
 function hasRoleOrIdentity(member: GuildMember, id: string) {
@@ -112,11 +156,16 @@ function privilegeFor(member: GuildMember): DiscordPrivilege {
 function snapshotMember(member: GuildMember): DiscordMemberSnapshot {
   const privilege = privilegeFor(member);
   const roles = member.roles.cache.filter((role) => role.id !== member.guild.id).map((role) => role.id);
+  const roleNames = roles.map((roleId) => ROLE_DISPLAY_NAMES[roleId]).filter((roleName): roleName is string => Boolean(roleName));
+  if (member.id === ROLE_IDS.dev && !roleNames.includes("Dev")) roleNames.unshift("Dev");
+  if (member.id === ROLE_IDS.owner && !roleNames.includes("Fish Nagie Owner")) roleNames.unshift("Fish Nagie Owner");
   return {
     discordId: member.id,
     username: member.user.tag,
+    nickname: member.nickname,
     displayName: member.displayName,
     roles,
+    roleNames,
     highestPrivilege: privilege,
     isSupporter: privilege === "supporter" || privilege === "moderator" || privilege === "owner" || privilege === "dev",
     isModerator: privilege === "moderator" || privilege === "owner" || privilege === "dev",
@@ -131,8 +180,10 @@ async function persistMember(member: GuildMember) {
     where: { discordId: snapshot.discordId },
     update: {
       username: snapshot.username,
+      nickname: snapshot.nickname,
       displayName: snapshot.displayName,
       rolesJson: JSON.stringify(snapshot.roles),
+      roleNamesJson: JSON.stringify(snapshot.roleNames),
       highestPrivilege: snapshot.highestPrivilege,
       isSupporter: snapshot.isSupporter,
       isModerator: snapshot.isModerator,
@@ -142,8 +193,10 @@ async function persistMember(member: GuildMember) {
     create: {
       discordId: snapshot.discordId,
       username: snapshot.username,
+      nickname: snapshot.nickname,
       displayName: snapshot.displayName,
       rolesJson: JSON.stringify(snapshot.roles),
+      roleNamesJson: JSON.stringify(snapshot.roleNames),
       highestPrivilege: snapshot.highestPrivilege,
       isSupporter: snapshot.isSupporter,
       isModerator: snapshot.isModerator,
@@ -163,8 +216,10 @@ async function syncGuild(guild: Guild) {
         where: { discordId: member.discordId },
         update: {
           username: member.username,
+          nickname: member.nickname,
           displayName: member.displayName,
           rolesJson: JSON.stringify(member.roles),
+          roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
@@ -174,8 +229,10 @@ async function syncGuild(guild: Guild) {
         create: {
           discordId: member.discordId,
           username: member.username,
+          nickname: member.nickname,
           displayName: member.displayName,
           rolesJson: JSON.stringify(member.roles),
+          roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
@@ -213,46 +270,38 @@ async function findOrCreateMutedRole(guild: Guild): Promise<Role> {
   });
 }
 
-async function appendWarningProfile(request: ModerationRequest) {
-  const profilePath = warningProfilePhysicalPath(request.targetId);
-  await fs.mkdir(path.dirname(profilePath), { recursive: true });
-  let profile: { targetId: string; warnings: Array<{ id: string; moderatorId: string; reason: string; createdAt: string }> };
-  try {
-    profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
-  } catch {
-    profile = { targetId: request.targetId, warnings: [] };
-  }
-  const warning = {
-    id: request.requestId,
-    moderatorId: request.moderatorId,
-    reason: request.reason,
-    createdAt: new Date().toISOString()
-  };
-  profile.warnings.push(warning);
-  await fs.writeFile(profilePath, JSON.stringify(profile, null, 2), "utf8");
-  await prisma.discordWarning.create({
-    data: {
-      id: warning.id,
-      targetId: request.targetId,
-      moderatorId: request.moderatorId,
-      reason: request.reason
-    }
-  });
-
-  const stats = await fs.stat(profilePath);
-  const existing = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: warningProfileVirtualPath(request.targetId) } });
+async function writeTextReport(result: Required<Pick<ModerationResult, "action" | "moderatorName" | "moderatorRoleName" | "targetName" | "targetRoleName" | "reason" | "completedAt">>) {
+  const physicalPath = reportPhysicalPath(result.targetName);
+  const virtualPath = reportVirtualPath(result.targetName);
+  await fs.mkdir(path.dirname(physicalPath), { recursive: true });
+  const document = [
+    "FurrBox Discord Moderation Report",
+    "------------------------------------------------------------",
+    `Date: ${new Date(result.completedAt).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+    `Action: ${result.action.toUpperCase()}`,
+    `Moderator Name: ${result.moderatorName} [${result.moderatorRoleName}]`,
+    `Target Name: ${result.targetName} [${result.targetRoleName}]`,
+    "------------------------------------------------------------",
+    "Reason:",
+    result.reason,
+    "------------------------------------------------------------",
+    ""
+  ].join("\r\n");
+  await fs.writeFile(physicalPath, document, "utf8");
+  const stats = await fs.stat(physicalPath);
+  const existing = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: virtualPath } });
   if (existing) {
     await prisma.storedFile.update({
       where: { id: existing.id },
-      data: { size: stats.size, mimeType: "application/json", originalName: warningProfileVirtualPath(request.targetId) }
+      data: { size: stats.size, mimeType: "text/plain", originalName: virtualPath }
     });
   } else {
     await prisma.storedFile.create({
       data: {
-        name: warningProfileVirtualPath(request.targetId),
-        originalName: warningProfileVirtualPath(request.targetId),
+        name: virtualPath,
+        originalName: virtualPath,
         size: stats.size,
-        mimeType: "application/json",
+        mimeType: "text/plain",
         scope: "PUBLIC",
         ownerId: null
       }
@@ -260,15 +309,40 @@ async function appendWarningProfile(request: ModerationRequest) {
   }
 }
 
+async function appendWarningProfile(request: ModerationRequest) {
+  await prisma.discordWarning.create({
+    data: {
+      id: request.requestId,
+      targetId: request.targetId,
+      moderatorId: request.moderatorId,
+      reason: request.reason
+    }
+  });
+}
+
+async function resolveMemberLabel(guild: Guild, discordId: string) {
+  const member = await guild.members.fetch(discordId).catch(() => null);
+  if (member) return member.nickname || member.user.tag;
+  const user = await client.users.fetch(discordId).catch(() => null);
+  return user?.tag || discordId;
+}
+
 async function sendOwnerAlert(request: ModerationRequest, status: "success" | "failed", error?: string) {
   const owner = await client.users.fetch(ROLE_IDS.owner);
+  const guild = await resolveGuild();
+  const moderatorMember = await guild.members.fetch(request.moderatorId).catch(() => null);
+  const targetMember = await guild.members.fetch(request.targetId).catch(() => null);
+  const targetName = await resolveMemberLabel(guild, request.targetId);
+  const moderatorName = await resolveMemberLabel(guild, request.moderatorId);
+  const moderatorRoleName = displayRoleFor(moderatorMember, request.moderatorId);
+  const targetRoleName = displayRoleFor(targetMember, request.targetId);
   const embed = new EmbedBuilder()
     .setTitle(status === "success" ? "FurrBox moderation executed" : "FurrBox moderation failed")
     .setColor(status === "success" ? 0x00f0ff : 0xff007f)
     .addFields(
       { name: "Action", value: request.action, inline: true },
-      { name: "Target", value: request.targetId, inline: true },
-      { name: "Moderator", value: request.moderatorId, inline: true },
+      { name: "Target", value: `${targetName} [${targetRoleName}]`, inline: true },
+      { name: "Moderator", value: `${moderatorName} [${moderatorRoleName}]`, inline: true },
       { name: "Reason", value: request.reason.slice(0, 1024) },
       { name: "Duration", value: request.durationMs ? `${Math.round(request.durationMs / 1000)} seconds` : "Not set", inline: true },
       { name: "Request ID", value: request.requestId, inline: true }
@@ -280,6 +354,12 @@ async function sendOwnerAlert(request: ModerationRequest, status: "success" | "f
 
 async function executeModeration(request: ModerationRequest) {
   const guild = await resolveGuild();
+  const moderatorMember = await guild.members.fetch(request.moderatorId).catch(() => null);
+  if (!moderatorMember) throw new Error("Moderator is not in the guild and cannot execute moderation.");
+  const clearance = moderationClearanceFor(moderatorMember);
+  if (!clearance.allowedActions.includes(request.action)) {
+    throw new Error(`${moderatorMember.user.tag} [${clearance.roleName}] is not allowed to execute ${request.action}.`);
+  }
   const targetMember = await guild.members.fetch(request.targetId).catch(() => null);
 
   if (request.action === "ban") {
@@ -313,16 +393,63 @@ async function executeModeration(request: ModerationRequest) {
 
 async function handleModerationCommand(request: ModerationRequest) {
   let result: ModerationResult;
+  const guild = await resolveGuild();
+  const moderatorMember = await guild.members.fetch(request.moderatorId).catch(() => null);
+  const targetMember = await guild.members.fetch(request.targetId).catch(() => null);
+  const moderatorName = await resolveMemberLabel(guild, request.moderatorId);
+  const targetName = await resolveMemberLabel(guild, request.targetId);
+  const moderatorRoleName = displayRoleFor(moderatorMember, request.moderatorId);
+  const targetRoleName = displayRoleFor(targetMember, request.targetId);
   try {
     await executeModeration(request);
-    result = { ...request, status: "success", completedAt: new Date().toISOString() };
+    result = { ...request, status: "success", completedAt: new Date().toISOString(), moderatorName, moderatorRoleName, targetName, targetRoleName };
+    await writeTextReport({
+      action: result.action,
+      moderatorName,
+      moderatorRoleName,
+      targetName,
+      targetRoleName,
+      reason: result.reason,
+      completedAt: result.completedAt
+    });
     await sendOwnerAlert(request, "success");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown moderation error.";
-    result = { ...request, status: "failed", error: message, completedAt: new Date().toISOString() };
+    result = { ...request, status: "failed", error: message, completedAt: new Date().toISOString(), moderatorName, moderatorRoleName, targetName, targetRoleName };
     await sendOwnerAlert(request, "failed", message);
   }
   socket.emit("moderation:result", result);
+}
+
+async function inspectMessage(request: MessageInspectRequest): Promise<MessageInspectResult> {
+  const guild = await resolveGuild();
+  const channels = await guild.channels.fetch();
+  for (const channel of channels.values()) {
+    if (!channel || !channel.isTextBased()) continue;
+    const textChannel = channel as typeof channel & { messages?: { fetch: (id: string) => Promise<{ content: string; author: { id: string; tag: string }; createdAt: Date }> } };
+    if (!textChannel.messages) continue;
+    try {
+      const message = await textChannel.messages.fetch(request.messageId);
+      return {
+        ...request,
+        found: true,
+        content: message.content || "[Message content unavailable. Enable Message Content Intent for full proof text.]",
+        authorId: message.author.id,
+        authorName: message.author.tag,
+        channelId: channel.id,
+        channelName: "name" in channel && typeof channel.name === "string" ? channel.name : channel.id,
+        createdAt: message.createdAt.toISOString()
+      };
+    } catch {
+      // Discord returns 404 or missing access for channels where the message does not exist or the bot cannot read.
+    }
+  }
+  return {
+    ...request,
+    found: false,
+    content: "",
+    error: "Message was not found in readable guild text channels."
+  };
 }
 
 socket.on("connect", () => {
@@ -343,6 +470,19 @@ socket.on("moderation:command", (request: ModerationRequest) => {
       completedAt: new Date().toISOString()
     } satisfies ModerationResult);
   });
+});
+
+socket.on("message:inspect", (request: MessageInspectRequest) => {
+  inspectMessage(request)
+    .then((result) => socket.emit("message:inspect-result", result))
+    .catch((error) => {
+      socket.emit("message:inspect-result", {
+        ...request,
+        found: false,
+        content: "",
+        error: error instanceof Error ? error.message : "Message inspection failed."
+      } satisfies MessageInspectResult);
+    });
 });
 
 client.once("ready", async () => {

@@ -6,10 +6,26 @@ import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 
 let initialized = false;
 let activeToken: string | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopHeartbeat() {
+  if (!heartbeatTimer) return;
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function startHeartbeat(socket: ReturnType<typeof io>) {
+  stopHeartbeat();
+  socket.emit("presence:heartbeat");
+  heartbeatTimer = setInterval(() => {
+    if (socket.connected) socket.emit("presence:heartbeat");
+  }, 5_000);
+}
 
 export function resetFurrSocket() {
   const state = useFurrBoxStore.getState();
   state.socket?.disconnect();
+  stopHeartbeat();
   state.setSocket(null);
   state.setConnected(false);
   initialized = false;
@@ -35,14 +51,17 @@ export function initFurrSocket(token: string) {
 
   socket.on("connect", () => {
     useFurrBoxStore.getState().setConnected(true);
+    startHeartbeat(socket);
     socket.emit("terminal:create");
   });
 
   socket.on("disconnect", () => {
+    stopHeartbeat();
     useFurrBoxStore.getState().setConnected(false);
   });
 
   socket.on("connect_error", () => {
+    stopHeartbeat();
     useFurrBoxStore.getState().setConnected(false);
   });
 

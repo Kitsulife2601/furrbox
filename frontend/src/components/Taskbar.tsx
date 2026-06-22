@@ -1,7 +1,8 @@
 "use client";
 
-import { Files, Gavel, Globe, LogOut, MonitorCog, Search, Terminal, Wifi, WifiOff } from "lucide-react";
+import { Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, Wifi, WifiOff } from "lucide-react";
 import { useMemo } from "react";
+import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
 
@@ -10,7 +11,8 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "settings", label: "Settings", icon: MonitorCog },
   { id: "browser", label: "Browser", icon: Globe },
-  { id: "evidence", label: "Evidence", icon: Gavel }
+  { id: "evidence", label: "Evidence", icon: Gavel },
+  ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];
 
 export function Taskbar() {

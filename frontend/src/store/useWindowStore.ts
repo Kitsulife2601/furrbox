@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence";
+export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
 
 export type WindowCoords = {
   x: number;
@@ -139,6 +139,20 @@ const initialWindows: Record<string, FurrWindowState> = {
     width: 860,
     height: 660,
     zIndex: 13,
+    prevCoords: null
+  },
+  presence: {
+    id: "presence",
+    kind: "presence",
+    title: "FurrPresence",
+    isOpen: false,
+    isMinimized: false,
+    isMaximized: false,
+    x: 260,
+    y: 88,
+    width: 940,
+    height: 650,
+    zIndex: 14,
     prevCoords: null
   }
 };
