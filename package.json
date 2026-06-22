@@ -1,0 +1,25 @@
+{
+  "name": "furrbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FurrBox private Windows 11 inspired desktop environment with real-time file sync.",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
+    "dev:web": "concurrently -k -n backend,frontend -c cyan,green \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\"",
+    "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
+    "build": "npm --workspace frontend run build && npm --workspace backend run build",
+    "lint": "npm --workspace frontend run lint && npm --workspace backend run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^42.4.1",
+    "wait-on": "^8.0.1"
+  },
+  "overrides": {
+    "postcss": "^8.5.15"
+  }
+}

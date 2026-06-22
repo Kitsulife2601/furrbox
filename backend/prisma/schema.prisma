@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum FileScope {
+  PRIVATE
+  PUBLIC
+}
+
+model User {
+  id           String       @id @default(uuid())
+  username     String       @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime     @default(now())
+  files        StoredFile[]
+}
+
+model StoredFile {
+  id           String    @id @default(uuid())
+  name         String
+  originalName String
+  size         Int
+  mimeType     String
+  scope        FileScope
+  ownerId      String?
+  owner        User?     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  uploadedAt   DateTime  @default(now())
+
+  @@index([scope])
+  @@index([ownerId])
+}

@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --glass: rgba(255, 255, 255, 0.66);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --border: rgba(255, 255, 255, 0.42);
+  --ink: #172033;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #10213f;
+  color: var(--ink);
+}
+
+body {
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.desktop-wallpaper {
+  background:
+    radial-gradient(circle at 22% 20%, rgba(125, 211, 252, 0.65), transparent 29%),
+    radial-gradient(circle at 76% 18%, rgba(196, 181, 253, 0.7), transparent 30%),
+    radial-gradient(circle at 50% 86%, rgba(45, 212, 191, 0.34), transparent 34%),
+    linear-gradient(135deg, #e8f4ff 0%, #bfd9ff 34%, #d6d4ff 62%, #f3f8ff 100%);
+}
+
+.wallpaper-aurora {
+  background:
+    radial-gradient(circle at 20% 25%, rgba(16, 185, 129, 0.55), transparent 28%),
+    radial-gradient(circle at 80% 30%, rgba(99, 102, 241, 0.62), transparent 34%),
+    linear-gradient(135deg, #eff6ff 0%, #c7d2fe 48%, #ccfbf1 100%);
+}
+
+.wallpaper-ink {
+  background:
+    radial-gradient(circle at 28% 20%, rgba(56, 189, 248, 0.55), transparent 30%),
+    radial-gradient(circle at 78% 74%, rgba(217, 70, 239, 0.34), transparent 28%),
+    linear-gradient(135deg, #0f172a 0%, #1e293b 44%, #111827 100%);
+}
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(28px) saturate(1.35);
+}
+
+.glass-strong {
+  background: var(--glass-strong);
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(32px) saturate(1.4);
+}
+
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(71, 85, 105, 0.45) transparent;
+}
+
+.scroll-soft::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll-soft::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.38);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
