@@ -118,6 +118,7 @@ const DISCORD_PERMISSION_IDS = {
 
 const port = Number(process.env.PORT || 4000);
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
+const updatesDir = path.resolve(process.env.UPDATES_DIR || path.join(storageDir, "updates"));
 const databaseUrl = process.env.DATABASE_URL || `file:${path.join(storageDir, "furrbox.db")}`;
 process.env.DATABASE_URL = databaseUrl;
 const prisma = new PrismaClient();
@@ -311,6 +312,8 @@ function auditLogPhysicalPath() {
 
 async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
+  await fs.mkdir(path.join(updatesDir, "standard"), { recursive: true });
+  await fs.mkdir(path.join(updatesDir, "admin"), { recursive: true });
   await fs.mkdir(publicStorageDir(), { recursive: true });
   await fs.mkdir(path.join(storageDir, "users"), { recursive: true });
   await fs.mkdir(path.dirname(auditLogPhysicalPath()), { recursive: true });
@@ -936,9 +939,16 @@ app.use(
   })
 );
 app.use(express.json());
+app.use("/updates", express.static(updatesDir, {
+  immutable: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader("Cache-Control", "no-store");
+  }
+}));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "furrbox-backend", storageDir, databaseUrl });
+  res.json({ ok: true, service: "furrbox-backend", storageDir, updatesDir, databaseUrl });
 });
 
 app.post("/api/auth/register", async (req, res, next) => {

@@ -13,3 +13,5 @@ furrbox-dev.*.log
 furrbox-backend-test.*.log
 furrbox-frontend-test.*.log
 release/
+updates/*
+!updates/.gitkeep

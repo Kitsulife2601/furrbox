@@ -23,7 +23,13 @@
         ]
       }
     ],
-    "artifactName": "FurrBox_${env.FURRBOX_EDITION}_Setup.${ext}"
+    "artifactName": "FurrBox_${env.FURRBOX_EDITION}_Setup.${ext}",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://5.249.162.130:4000/updates/${env.FURRBOX_UPDATE_CHANNEL}"
+      }
+    ]
   },
   "nsis": {
     "oneClick": false,

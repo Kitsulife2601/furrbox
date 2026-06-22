@@ -16,6 +16,7 @@ services:
       - "4000:4000"
     volumes:
       - furrbox-storage:/app/storage
+      - ./updates:/app/storage/updates
 
   furrbox-discord-bot:
     build:
