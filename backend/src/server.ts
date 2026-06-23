@@ -1498,6 +1498,88 @@ app.post("/api/admin/force-register", requireAuth, async (req: AuthedRequest, re
   }
 });
 
+app.post("/api/admin/update-member-id", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!assertPrimaryDeveloper(req, res)) return;
+
+    const targetUserId = String(req.body.targetUserId || "").trim();
+    const discordId = String(req.body.discordId || "").trim();
+
+    if (!targetUserId) {
+      res.status(400).json({ error: "Target user database key is required." });
+      return;
+    }
+    if (!/^\d{17,19}$/.test(discordId)) {
+      res.status(400).json({ error: "Discord ID must be a 17-19 digit Discord snowflake." });
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, username: true, displayName: true, discordId: true } });
+    if (!targetUser) {
+      res.status(404).json({ error: "Target user was not found." });
+      return;
+    }
+
+    const conflictingUser = await prisma.user.findFirst({ where: { discordId, NOT: { id: targetUserId } }, select: { id: true, username: true } });
+    if (conflictingUser) {
+      res.status(409).json({ error: `Discord ID is already assigned to ${conflictingUser.username}.` });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: targetUserId },
+      data: { discordId },
+      select: { id: true, username: true, displayName: true, discordId: true }
+    });
+
+    const existingMember = await prisma.discordMember.findUnique({ where: { discordId } }).catch(() => null);
+    if (!existingMember) {
+      await prisma.discordMember.create({
+        data: {
+          discordId,
+          username: updatedUser.displayName || updatedUser.username,
+          nickname: updatedUser.displayName || updatedUser.username,
+          displayName: updatedUser.displayName || updatedUser.username,
+          rolesJson: "[]",
+          roleNamesJson: "[]",
+          highestPrivilege: "none",
+          discordStatus: "offline",
+          isDiscordOnline: false,
+          lastDiscordPresenceAt: null,
+          isSupporter: false,
+          isModerator: false,
+          isOwner: false,
+          isDev: false
+        }
+      });
+    }
+
+    await prisma.userPresence.upsert({
+      where: { userId: updatedUser.id },
+      create: {
+        userId: updatedUser.id,
+        discordId,
+        status: "offline"
+      },
+      update: {
+        discordId
+      }
+    });
+
+    await emitPresenceSnapshot("admin-update-member-id");
+    io.emit("discord:members-refreshed", {
+      guildId: "manual-id-update",
+      count: 1,
+      members: [],
+      syncedAt: new Date().toISOString()
+    });
+
+    res.json({ user: updatedUser });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/discord/moderation", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const request = normalizeModerationRequest(req.body as Record<string, unknown>, req.user!.discordId || req.user!.id);

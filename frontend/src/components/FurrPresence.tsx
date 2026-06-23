@@ -1,9 +1,9 @@
 "use client";
 
-import { Activity, Bot, FileText, Radar, Server, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Activity, Bot, Check, FileText, Pencil, Radar, Server, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { forceRegisterUser, listPresenceLogs, listPresenceUsers, type ForceRegisterPayload, type PresenceLog, type PresenceUser } from "@/lib/presence";
+import { forceRegisterUser, listPresenceLogs, listPresenceUsers, updateMemberDiscordId, type ForceRegisterPayload, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -91,6 +91,73 @@ function LogText({ content }: { content: string }) {
   );
 }
 
+function DiscordIdCell({
+  user,
+  canEdit,
+  editing,
+  value,
+  saving,
+  onStart,
+  onChange,
+  onCancel,
+  onSave
+}: {
+  user: PresenceUser;
+  canEdit: boolean;
+  editing: boolean;
+  value: string;
+  saving: boolean;
+  onStart: () => void;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  if (editing) {
+    return (
+      <span className="flex min-w-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+        <input
+          autoFocus
+          className="h-7 min-w-0 flex-1 rounded border border-[#00f0ff] bg-slate-950 px-2 py-0.5 font-mono text-xs text-slate-100 outline-none shadow-[0_0_12px_rgba(0,240,255,0.22)]"
+          inputMode="numeric"
+          maxLength={19}
+          value={value}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 19))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onSave();
+            if (event.key === "Escape") onCancel();
+          }}
+        />
+        <button
+          className="grid h-7 w-7 shrink-0 place-items-center rounded border border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-40"
+          disabled={saving || !/^\d{17,19}$/.test(value)}
+          onClick={onSave}
+          aria-label="Discord ID speichern"
+        >
+          <Check size={14} />
+        </button>
+      </span>
+    );
+  }
+
+  if (!user.discordId && canEdit) {
+    return (
+      <button
+        className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-slate-500 transition hover:border-cyan-300/25 hover:bg-cyan-300/5 hover:text-cyan-100"
+        onClick={(event) => {
+          event.stopPropagation();
+          onStart();
+        }}
+        aria-label="Discord ID bearbeiten"
+      >
+        <span className="truncate">Nicht verbunden</span>
+        <Pencil size={13} className="shrink-0 text-[#ff007f] drop-shadow-[0_0_8px_rgba(255,0,127,0.65)]" />
+      </button>
+    );
+  }
+
+  return <span className="truncate font-mono text-[11px] text-slate-500">{user.discordId || "Nicht verbunden"}</span>;
+}
+
 export function FurrPresence({ windowState }: { windowState: FurrWindowState }) {
   const { token, user, socket, connected, discordBotStatus } = useFurrBoxStore();
   const [activeTab, setActiveTab] = useState<PresenceTab>("team");
@@ -103,6 +170,9 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const [manualName, setManualName] = useState("");
   const [manualRole, setManualRole] = useState<ForceRegisterPayload["role"]>("Member");
   const [manualStatus, setManualStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
+  const [editingDiscordUserId, setEditingDiscordUserId] = useState<string | null>(null);
+  const [editingDiscordValue, setEditingDiscordValue] = useState("");
+  const [savingDiscordId, setSavingDiscordId] = useState(false);
 
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
   const teamUsers = useMemo(() => sortPresence(users.filter((user) => teamRoles.has(cleanRoleName(user)))), [users]);
@@ -180,6 +250,8 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   function switchTab(tab: PresenceTab) {
     const nextUsers = tab === "team" ? teamUsers : globalUsers;
     setActiveTab(tab);
+    setEditingDiscordUserId(null);
+    setEditingDiscordValue("");
     setSelected((current) => (current && nextUsers.some((user) => user.id === current.id) ? current : nextUsers[0] ?? null));
   }
 
@@ -206,6 +278,36 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
       setManualStatus({ type: "success", message: "Nutzer wurde manuell registriert und live synchronisiert." });
     } catch (nextError) {
       setManualStatus({ type: "error", message: nextError instanceof Error ? nextError.message : "Manuelle Registrierung fehlgeschlagen." });
+    }
+  }
+
+  function startDiscordIdEdit(target: PresenceUser) {
+    if (!isPrimaryDeveloper || activeTab !== "global" || target.discordId) return;
+    setEditingDiscordUserId(target.id);
+    setEditingDiscordValue("");
+    setError(null);
+  }
+
+  async function saveDiscordIdEdit(target: PresenceUser) {
+    if (!token || !isPrimaryDeveloper || savingDiscordId) return;
+    if (!/^\d{17,19}$/.test(editingDiscordValue)) {
+      setError("Discord ID muss 17-19 Ziffern enthalten.");
+      return;
+    }
+    setSavingDiscordId(true);
+    setError(null);
+    try {
+      await updateMemberDiscordId(token, { targetUserId: target.id, discordId: editingDiscordValue });
+      const nextUsers = await listPresenceUsers(token, "global");
+      setUsers(nextUsers);
+      const updated = nextUsers.find((entry) => entry.id === target.id);
+      setSelected(updated ?? selected);
+      setEditingDiscordUserId(null);
+      setEditingDiscordValue("");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Discord ID konnte nicht gespeichert werden.");
+    } finally {
+      setSavingDiscordId(false);
     }
   }
 
@@ -289,10 +391,15 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                   const active = selected?.id === user.id;
                   const role = cleanRoleName(user);
                   return (
-                    <button
+                    <div
                       key={user.id}
                       className={`grid w-full grid-cols-[1.35fr_0.62fr_0.95fr_1fr] items-center gap-3 border-b border-white/5 px-4 py-3 text-left transition ${active ? "bg-[#ff007f]/12 shadow-[inset_3px_0_0_#ff007f]" : "hover:bg-cyan-500/5"}`}
                       onClick={() => setSelected(user)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") setSelected(user);
+                      }}
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-[13px] font-bold text-slate-100">{resolvedName(user)}</span>
@@ -306,8 +413,21 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                         <SplitStatusBadge user={user} />
                         {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(user.lastSeenAt)}</span> : null}
                       </span>
-                      <span className="truncate font-mono text-[11px] text-slate-500">{user.discordId || "Nicht verbunden"}</span>
-                    </button>
+                      <DiscordIdCell
+                        user={user}
+                        canEdit={isPrimaryDeveloper && activeTab === "global"}
+                        editing={editingDiscordUserId === user.id}
+                        value={editingDiscordValue}
+                        saving={savingDiscordId}
+                        onStart={() => startDiscordIdEdit(user)}
+                        onChange={setEditingDiscordValue}
+                        onCancel={() => {
+                          setEditingDiscordUserId(null);
+                          setEditingDiscordValue("");
+                        }}
+                        onSave={() => saveDiscordIdEdit(user)}
+                      />
+                    </div>
                   );
                 })}
 

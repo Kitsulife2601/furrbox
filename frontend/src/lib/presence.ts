@@ -34,6 +34,11 @@ export type ForceRegisterPayload = {
   role: "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
 };
 
+export type UpdateMemberIdPayload = {
+  targetUserId: string;
+  discordId: string;
+};
+
 async function authedFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -58,6 +63,13 @@ export async function listPresenceLogs(token: string, discordId: string): Promis
 
 export async function forceRegisterUser(token: string, payload: ForceRegisterPayload): Promise<void> {
   await authedFetch<{ user: unknown; member: unknown }>("/api/admin/force-register", token, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateMemberDiscordId(token: string, payload: UpdateMemberIdPayload): Promise<void> {
+  await authedFetch<{ user: PresenceUser }>("/api/admin/update-member-id", token, {
     method: "POST",
     body: JSON.stringify(payload)
   });
