@@ -6,14 +6,20 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
+  Clipboard,
+  Copy,
+  Download,
   File,
   FileArchive,
   FileImage,
   FileText,
   FolderSync,
   LayoutList,
+  Scissors,
   Search,
   SlidersHorizontal,
+  Star,
+  Trash2,
   Upload
 } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
@@ -33,6 +39,20 @@ type ExplorerRow =
   | { kind: "file"; id: string; name: string; path: string; modified: string; type: string; size: string; file: FurrFile };
 
 const baseTree: TreeNode[] = [
+  {
+    id: "quick",
+    label: "Schnellzugriff",
+    path: "Schnellzugriff",
+    children: [
+      { id: "quick-desktop", label: "Desktop", path: "Dokumente/virtuelle Privater desktop" },
+      { id: "quick-downloads", label: "Downloads", path: "Downloads" },
+      { id: "quick-documents", label: "Dokumente", path: "Dokumente" },
+      { id: "quick-pictures", label: "Bilder", path: "Bilder" },
+      { id: "quick-evidence", label: "Moderation_Beweise", path: "Dokumente/Moderation_Beweise" },
+      { id: "quick-public", label: "Public", path: "Public" },
+      { id: "quick-upload", label: "Upload-Eingang", path: "Dokumente/virtuelle Privater desktop/release" }
+    ]
+  },
   {
     id: "pc",
     label: "Dieser PC",
@@ -101,6 +121,7 @@ function NeonFolderIcon({ open = false, size = 18 }: { open?: boolean; size?: nu
 }
 
 function pathSegments(path: string) {
+  if (path === "Schnellzugriff") return ["Schnellzugriff"];
   return path ? path.split("/").filter(Boolean) : ["Dieser PC"];
 }
 
@@ -152,10 +173,10 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const createWindow = useWindowStore((state) => state.createWindow);
   const openWindow = useWindowStore((state) => state.openWindow);
   const updateWindow = useWindowStore((state) => state.updateWindow);
-  const [currentPath, setCurrentPath] = useState("Dokumente/virtuelle Privater desktop/release");
+  const [currentPath, setCurrentPath] = useState("Schnellzugriff");
   const [history, setHistory] = useState<string[]>([]);
   const [future, setFuture] = useState<string[]>([]);
-  const [expanded, setExpanded] = useState(() => new Set(["pc", "documents"]));
+  const [expanded, setExpanded] = useState(() => new Set(["quick", "pc", "documents"]));
   const [query, setQuery] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -194,6 +215,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   }, [refresh, token]);
 
   const rows = useMemo(() => {
+    if (currentPath === "Schnellzugriff") return [];
     const folderRows = childFolderRows(files, currentPath);
     const fileRows: ExplorerRow[] = files
       .filter((file) => virtualPath(file) === currentPath)
@@ -220,6 +242,27 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       setCurrentPath(path);
     },
     [currentPath]
+  );
+
+  const quickAccessFolders = useMemo(
+    () => [
+      { name: "Desktop", path: "Dokumente/virtuelle Privater desktop", subtitle: "Virtuelle Arbeitsflaeche" },
+      { name: "Downloads", path: "Downloads", subtitle: "Eingehende Dateien" },
+      { name: "Dokumente", path: "Dokumente", subtitle: "Private Dokumente" },
+      { name: "Bilder", path: "Bilder", subtitle: "Screenshots und Medien" },
+      { name: "Moderation_Beweise", path: "Dokumente/Moderation_Beweise", subtitle: "Reports und Beweise" },
+      { name: "Public", path: "Public", subtitle: "Geteilter Team-Speicher" },
+      { name: "Upload-Eingang", path: "Dokumente/virtuelle Privater desktop/release", subtitle: "Neue Uploads" }
+    ],
+    []
+  );
+
+  const recentFiles = useMemo(
+    () =>
+      [...files]
+        .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+        .slice(0, 6),
+    [files]
   );
 
   const handleFiles = useCallback(
@@ -349,7 +392,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
               <div className="flex h-9 min-w-0 flex-1 items-center gap-1 rounded-lg border border-cyan-300/15 bg-slate-950/65 px-3 text-[13px] text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 {pathSegments(currentPath).map((segment, index, segments) => (
                   <span key={`${segment}-${index}`} className="flex items-center gap-1">
-                    <button className="rounded px-1 hover:bg-cyan-500/10 hover:text-[#00f0ff]" onClick={() => navigate(segments.slice(0, index + 1).join("/"))}>{segment}</button>
+                    <button className="rounded px-1 hover:bg-cyan-500/10 hover:text-[#00f0ff]" onClick={() => navigate(segment === "Schnellzugriff" ? "Schnellzugriff" : segments.slice(0, index + 1).join("/"))}>{segment}</button>
                     {index < segments.length - 1 ? <ChevronRight size={13} className="text-purple-300/70" /> : null}
                   </span>
                 ))}
@@ -359,8 +402,13 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 <input className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-100 outline-none placeholder:text-slate-500" placeholder="Suchen" value={query} onChange={(event) => setQuery(event.target.value)} />
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-cyan-300/15 px-3 text-[13px] text-cyan-100 hover:border-cyan-300/40 hover:bg-cyan-500/10"><Star size={15} />Neu</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Scissors size={15} />Ausschneiden</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Copy size={15} />Kopieren</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Clipboard size={15} />Einfuegen</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100"><Trash2 size={15} />Loeschen</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><LayoutList size={15} />Anzeigen</button>
               </div>
@@ -386,6 +434,49 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
               handleFiles(event.dataTransfer.files);
             }}
           >
+            {currentPath === "Schnellzugriff" ? (
+              <div className="grid gap-4">
+                <section className="rounded-xl border border-cyan-300/15 bg-slate-950/55 p-4 shadow-[0_0_24px_rgba(0,240,255,0.08)]">
+                  <div className="mb-3 flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.16em] text-cyan-100">
+                    <Star size={15} className="text-[#00f0ff]" />
+                    Angeheftete Ordner
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
+                    {quickAccessFolders.map((folder) => (
+                      <button key={folder.path} className="group flex items-center gap-3 rounded-xl border border-white/5 bg-slate-900/55 p-3 text-left transition hover:border-cyan-300/35 hover:bg-cyan-500/10 hover:shadow-[0_0_18px_rgba(0,240,255,0.16)]" onClick={() => navigate(folder.path)}>
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-cyan-300/20 bg-slate-950/80 text-[#00f0ff]">
+                          <NeonFolderIcon open size={20} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-bold text-slate-100">{folder.name}</span>
+                          <span className="block truncate text-[11px] text-slate-500">{folder.subtitle}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-purple-500/20 bg-slate-950/45 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.16em] text-purple-100">
+                    <Download size={15} className="text-[#8b5cf6]" />
+                    Zuletzt verwendet
+                  </div>
+                  {recentFiles.length ? (
+                    <div className="grid gap-2">
+                      {recentFiles.map((file) => (
+                        <button key={file.id} className="grid grid-cols-[1fr_150px_110px] items-center rounded-lg border border-white/5 bg-slate-900/40 px-3 py-2 text-left text-[12px] hover:bg-purple-500/10" onClick={() => openRow({ kind: "file", id: file.id, name: displayName(file), path: virtualPath(file), modified: new Date(file.uploadedAt).toLocaleString(), type: fileType(file), size: formatSize(file.size), file })}>
+                          <span className="truncate text-slate-100">{displayName(file)}</span>
+                          <span className="text-slate-500">{fileType(file)}</span>
+                          <span className="text-slate-500">{formatSize(file.size)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-white/5 bg-slate-900/30 p-4 text-[13px] text-slate-500">Noch keine zuletzt verwendeten Dateien.</div>
+                  )}
+                </section>
+              </div>
+            ) : (
             <div className="min-w-[720px] overflow-hidden rounded-lg border border-purple-500/20 bg-slate-950/60 shadow-[0_0_24px_rgba(139,92,246,0.14),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="grid grid-cols-[1fr_180px_150px_100px] border-b border-purple-500/20 bg-slate-900/70 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-cyan-100/70">
                 <span>Name</span>
@@ -423,6 +514,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 ))
               )}
             </div>
+            )}
           </div>
         </main>
       </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import { FileText, Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, UserPlus, Wifi, WifiOff } from "lucide-react";
-import { useMemo } from "react";
+import { Bell, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
-import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
+import { useFurrBoxStore, type FurrFile, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
 
 const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
@@ -16,13 +16,39 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
 ];
 
 const developerDiscordId = "1312104318006071328";
+const documentMimeHints = ["text/", "application/pdf", "application/json"];
+
+type SearchHit = {
+  id: string;
+  label: string;
+  detail: string;
+  category: "Apps" | "Dokumente" | "Bilder" | "Systemeinstellungen";
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  action: () => void;
+};
+
+function fileDisplayName(file: FurrFile) {
+  return file.displayName || file.originalName || file.name;
+}
+
+function isImage(file: FurrFile) {
+  return file.mimeType.startsWith("image/");
+}
+
+function isDocument(file: FurrFile) {
+  return documentMimeHints.some((hint) => file.mimeType.startsWith(hint) || file.mimeType === hint);
+}
 
 export function Taskbar() {
-  const { activeWindow, connected, startOpen, user, logout, patchUi } = useFurrBoxStore();
+  const { activeWindow, connected, files, startOpen, user, logout, patchUi } = useFurrBoxStore();
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
   const restoreWindow = useWindowStore((state) => state.restoreWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [infoOpen, setInfoOpen] = useState(false);
+  const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
   const canManageAccounts = ENABLE_PRESENCE_TOOL && user?.discordId === developerDiscordId;
   const startMenuApps = useMemo(
@@ -54,6 +80,76 @@ export function Taskbar() {
     else openWindow(id);
     patchUi({ activeWindow: id as WindowKey, startOpen: false });
   }
+
+  function openViewer(file: FurrFile) {
+    createWindow({
+      kind: "viewer",
+      title: fileDisplayName(file),
+      url: file.url,
+      x: 260,
+      y: 110,
+      width: isImage(file) ? 860 : 760,
+      height: isImage(file) ? 600 : 560
+    });
+    setSearchOpen(false);
+    setSearchQuery("");
+    patchUi({ startOpen: false }, false);
+  }
+
+  const searchHits = useMemo<SearchHit[]>(() => {
+    const appHits: SearchHit[] = startMenuApps.map((app) => ({
+      id: `app-${app.id}`,
+      label: app.label,
+      detail: "App starten",
+      category: "Apps",
+      icon: app.icon,
+      action: () => launch(app.id)
+    }));
+
+    const fileHits: SearchHit[] = files
+      .filter((file) => isImage(file) || isDocument(file) || file.virtualPath?.toLowerCase().includes("moderation_beweise"))
+      .slice(0, 80)
+      .map((file) => ({
+        id: `file-${file.id}`,
+        label: fileDisplayName(file),
+        detail: file.virtualPath || (file.scope === "public" ? "Public" : "Meine Dateien"),
+        category: isImage(file) ? "Bilder" : "Dokumente",
+        icon: isImage(file) ? Image : FileText,
+        action: () => openViewer(file)
+      }));
+
+    const settingHits: SearchHit[] = [
+      { id: "settings-display", label: "Anzeigeeinstellungen", detail: "FurrSettings oeffnen", category: "Systemeinstellungen", icon: Settings, action: () => launch("settings") },
+      { id: "settings-sync", label: "Secure Sync", detail: connected ? "Online" : "Reconnect", category: "Systemeinstellungen", icon: connected ? Wifi : WifiOff, action: () => setInfoOpen(true) },
+      { id: "settings-task", label: "Info-Center", detail: "Benachrichtigungen und Schnellregler", category: "Systemeinstellungen", icon: Bell, action: () => setInfoOpen(true) }
+    ];
+
+    const allHits = [...appHits, ...fileHits, ...settingHits];
+    if (!deferredSearch) return allHits.slice(0, 12);
+    return allHits
+      .filter((hit) => `${hit.label} ${hit.detail} ${hit.category}`.toLowerCase().includes(deferredSearch))
+      .slice(0, 18);
+  }, [connected, deferredSearch, files, startMenuApps]);
+
+  const groupedHits = useMemo(
+    () =>
+      searchHits.reduce<Record<SearchHit["category"], SearchHit[]>>(
+        (groups, hit) => {
+          groups[hit.category].push(hit);
+          return groups;
+        },
+        { Apps: [], Dokumente: [], Bilder: [], Systemeinstellungen: [] }
+      ),
+    [searchHits]
+  );
+
+  const recentFiles = useMemo(
+    () =>
+      [...files]
+        .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+        .slice(0, 4),
+    [files]
+  );
 
   return (
     <>
@@ -89,8 +185,116 @@ export function Taskbar() {
         </div>
       )}
 
+      {searchOpen ? (
+        <div className="absolute bottom-24 left-[calc(50%-490px)] z-40 w-[430px] animate-task-pop overflow-hidden rounded-[20px] border border-cyan-300/25 bg-slate-950/80 shadow-[0_0_42px_rgba(0,240,255,0.2),0_0_28px_rgba(139,92,246,0.22)] backdrop-blur-2xl">
+          <div className="flex items-center justify-between border-b border-cyan-300/15 px-4 py-3">
+            <div>
+              <p className="text-[12px] font-black uppercase tracking-[0.18em] text-cyan-100">Deep Search</p>
+              <p className="text-[11px] text-slate-500">Apps, Dokumente, Bilder und Systemeinstellungen</p>
+            </div>
+            <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-pink-500/15 hover:text-pink-100" onClick={() => setSearchOpen(false)} aria-label="Suche schliessen">
+              <X size={15} />
+            </button>
+          </div>
+          <div className="scroll-soft max-h-[420px] overflow-auto p-3">
+            {(["Apps", "Dokumente", "Bilder", "Systemeinstellungen"] as const).map((category) =>
+              groupedHits[category].length ? (
+                <section key={category} className="mb-3 last:mb-0">
+                  <h3 className="mb-1 px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">{category}</h3>
+                  <div className="grid gap-1">
+                    {groupedHits[category].map((hit) => {
+                      const Icon = hit.icon;
+                      return (
+                        <button
+                          key={hit.id}
+                          className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-900/45 px-3 py-2 text-left transition hover:border-cyan-300/35 hover:bg-cyan-500/10"
+                          onClick={hit.action}
+                        >
+                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-cyan-300/20 bg-slate-950/70 text-[#00f0ff]">
+                            <Icon size={17} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-[13px] font-bold text-slate-100">{hit.label}</span>
+                            <span className="block truncate text-[11px] text-slate-500">{hit.detail}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null
+            )}
+            {!searchHits.length ? <div className="rounded-xl border border-white/5 bg-slate-900/45 p-4 text-[13px] text-slate-500">Keine Treffer gefunden.</div> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {infoOpen ? (
+        <div className="absolute bottom-24 right-[calc(50%-490px)] z-40 w-[380px] animate-task-pop overflow-hidden rounded-[22px] border border-purple-500/25 bg-slate-950/80 shadow-[0_0_48px_rgba(139,92,246,0.32),0_0_22px_rgba(0,240,255,0.14)] backdrop-blur-2xl">
+          <div className="flex items-center justify-between border-b border-purple-500/20 px-4 py-3">
+            <div>
+              <p className="text-[12px] font-black uppercase tracking-[0.18em] text-purple-100">Info-Center</p>
+              <p className="text-[11px] text-slate-500">Benachrichtigungen und Schnellregler</p>
+            </div>
+            <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-pink-500/15 hover:text-pink-100" onClick={() => setInfoOpen(false)} aria-label="Info-Center schliessen">
+              <X size={15} />
+            </button>
+          </div>
+          <div className="grid gap-3 p-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button className={`rounded-xl border p-3 text-left ${connected ? "border-cyan-300/30 bg-cyan-500/10 text-cyan-100" : "border-pink-400/25 bg-pink-500/10 text-pink-100"}`}>
+                {connected ? <Wifi size={18} /> : <WifiOff size={18} />}
+                <span className="mt-2 block text-[12px] font-bold">{connected ? "Secure Sync" : "Reconnect"}</span>
+                <span className="text-[10px] text-slate-500">{connected ? "Online" : "Nicht verbunden"}</span>
+              </button>
+              <button className="rounded-xl border border-purple-400/25 bg-purple-500/10 p-3 text-left text-purple-100" onClick={() => launch("settings")}>
+                <Settings size={18} />
+                <span className="mt-2 block text-[12px] font-bold">Settings</span>
+                <span className="text-[10px] text-slate-500">Systempanel</span>
+              </button>
+            </div>
+            <section className="rounded-xl border border-white/5 bg-slate-900/45 p-3">
+              <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-cyan-100">
+                <Bell size={14} /> Status
+              </div>
+              <p className="text-[12px] text-slate-400">{connected ? "Alle FurrBox-Sync-Dienste sind verbunden." : "FurrBox versucht, den Sync-Server erneut zu erreichen."}</p>
+            </section>
+            <section className="rounded-xl border border-white/5 bg-slate-900/45 p-3">
+              <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-purple-100">
+                <FolderSearch size={14} /> Letzte Dateien
+              </div>
+              {recentFiles.length ? (
+                <div className="grid gap-1">
+                  {recentFiles.map((file) => (
+                    <button key={file.id} className="truncate rounded-lg px-2 py-1 text-left text-[12px] text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-100" onClick={() => openViewer(file)}>
+                      {fileDisplayName(file)}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[12px] text-slate-500">Noch keine Dateien im Verlauf.</p>
+              )}
+            </section>
+          </div>
+        </div>
+      ) : null}
+
       <footer className="absolute bottom-3 left-1/2 z-50 flex h-16 w-[min(980px,calc(100vw-32px))] -translate-x-1/2 items-center justify-between rounded-2xl border border-purple-500/30 bg-slate-900/60 px-5 shadow-[0_0_30px_rgba(139,92,246,0.35),0_0_16px_rgba(0,240,255,0.12)] backdrop-blur-2xl" data-furr-context="taskbar">
-        <div className="w-48" aria-hidden="true" />
+        <div className="relative w-56">
+          <div className={`flex h-10 items-center gap-2 rounded-xl border bg-slate-950/55 px-3 transition ${searchOpen ? "border-cyan-300/40 shadow-[0_0_18px_rgba(0,240,255,0.18)]" : "border-white/5"}`}>
+            <Search size={16} className="text-[#00f0ff]" />
+            <input
+              className="min-w-0 flex-1 bg-transparent text-[12px] font-semibold text-slate-100 outline-none placeholder:text-slate-500"
+              placeholder="Suchen"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+            />
+          </div>
+        </div>
 
         <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
           <button
@@ -138,7 +342,7 @@ export function Taskbar() {
           })}
         </div>
 
-        <div className="flex w-48 items-center justify-end gap-3 text-slate-200">
+        <button className="flex w-48 items-center justify-end gap-3 rounded-xl px-2 py-1 text-slate-200 transition hover:bg-cyan-500/10" onClick={() => setInfoOpen((open) => !open)} aria-label="Info-Center oeffnen">
           <div
             className={`grid h-9 w-9 place-items-center rounded-xl border bg-slate-950/55 transition ${
               connected
@@ -150,11 +354,12 @@ export function Taskbar() {
           >
             {connected ? <Wifi size={17} className="drop-shadow-[0_0_7px_rgba(0,240,255,0.8)]" /> : <WifiOff size={17} className="drop-shadow-[0_0_7px_rgba(255,0,127,0.8)]" />}
           </div>
+          <CalendarDays size={15} className="text-slate-400" />
           <div className="text-right text-[12px] font-semibold leading-tight">
             <div>{time}</div>
             <div>{new Date().toLocaleDateString()}</div>
           </div>
-        </div>
+        </button>
       </footer>
     </>
   );
