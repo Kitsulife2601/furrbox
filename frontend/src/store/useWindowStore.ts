@@ -60,7 +60,7 @@ export const WINDOW_MIN_HEIGHT = 200;
 
 export function getWindowMinimumSize(kind: FurrWindowKind) {
   if (kind === "presence") return { minWidth: 900, minHeight: 560 };
-  if (kind === "accounts") return { minWidth: 460, minHeight: 560 };
+  if (kind === "accounts") return { minWidth: 820, minHeight: 560 };
   if (kind === "furrfs") return { minWidth: 780, minHeight: 520 };
   if (kind === "evidence") return { minWidth: 760, minHeight: 560 };
   if (kind === "viewer") return { minWidth: 520, minHeight: 360 };
@@ -174,9 +174,9 @@ const initialWindows: Record<string, FurrWindowState> = {
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    x: 260,
-    y: 110,
-    width: 520,
+    x: 210,
+    y: 96,
+    width: 920,
     height: 650,
     zIndex: 15,
     prevCoords: null

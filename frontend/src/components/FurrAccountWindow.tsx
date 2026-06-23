@@ -14,7 +14,7 @@ export function FurrAccountWindow({ windowState }: { windowState: FurrWindowStat
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
 
   return (
-    <FurrWindow windowState={windowState} icon={<UserPlus size={15} />} minWidth={460} minHeight={560}>
+    <FurrWindow windowState={windowState} icon={<UserPlus size={15} />} minWidth={820} minHeight={560}>
       <div className="flex h-full min-h-0 flex-col bg-[#050711]/95 text-slate-100">
         <header className="border-b border-cyan-300/15 bg-slate-950/70 px-5 py-4 shadow-[0_0_28px_rgba(0,240,255,0.08)]">
           <div className="flex items-center gap-3">
