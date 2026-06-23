@@ -1,6 +1,6 @@
 {
   "name": "furrbox",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "description": "FurrBox private Windows 11 inspired desktop environment with real-time file sync.",
   "main": "electron/main.js",

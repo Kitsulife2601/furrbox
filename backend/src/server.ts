@@ -716,8 +716,8 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
 }
 
 async function listPresenceUsers(view: PresenceView = "global"): Promise<PresenceUserDto[]> {
-  if (view === "team") {
-    const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
+  const privilegeWhere = view === "team" ? `WHERE dm."highestPrivilege" IN ('dev', 'owner', 'moderator', 'supporter')` : "";
+  const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
       SELECT
         COALESCE(u."id", 'discord:' || dm."discordId") AS "id",
         COALESCE(u."username", dm."username") AS "username",
@@ -737,38 +737,12 @@ async function listPresenceUsers(view: PresenceView = "global"): Promise<Presenc
       FROM "DiscordMember" dm
       LEFT JOIN "User" u ON u."discordId" = dm."discordId"
       LEFT JOIN "UserPresence" up ON up."discordId" = dm."discordId"
-      WHERE dm."highestPrivilege" IN ('dev', 'owner', 'moderator', 'supporter')
+      ${privilegeWhere}
       ORDER BY
         CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
+        CASE WHEN COALESCE(dm."isDiscordOnline", false) = true THEN 0 ELSE 1 END,
         COALESCE(dm."nickname", dm."displayName", dm."username") COLLATE NOCASE ASC
     `);
-    return rows.map(toPresenceDto);
-  }
-
-  const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
-    SELECT
-      u."id",
-      u."username",
-      u."displayName",
-      u."discordId",
-      dm."username" AS "discordUsername",
-      dm."nickname",
-      dm."roleNamesJson",
-      dm."highestPrivilege",
-      COALESCE(dm."discordStatus", 'offline') AS "discordStatus",
-      COALESCE(dm."isDiscordOnline", false) AS "isDiscordOnline",
-      dm."lastDiscordPresenceAt",
-      COALESCE(up."status", 'offline') AS "status",
-      up."connectedAt",
-      up."lastHeartbeatAt",
-      up."lastSeenAt"
-    FROM "User" u
-    LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
-    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
-    ORDER BY
-      CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
-      COALESCE(dm."nickname", dm."displayName", u."displayName", u."username") COLLATE NOCASE ASC
-  `);
   return rows.map(toPresenceDto);
 }
 

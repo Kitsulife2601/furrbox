@@ -78,9 +78,10 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   [ROLE_IDS.moderator]: "Fish Moderator",
   [ROLE_IDS.supporter]: "Supporter"
 };
+const FISH_GUILD_ID = "1386651125327073470";
 
 const token = process.env.DISCORD_TOKEN;
-const guildId = process.env.DISCORD_GUILD_ID;
+const guildId = process.env.DISCORD_GUILD_ID || FISH_GUILD_ID;
 const bridgeUrl = process.env.FURRBOX_BACKEND_URL || "http://localhost:4000";
 const bridgeToken = process.env.BOT_BRIDGE_TOKEN;
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));

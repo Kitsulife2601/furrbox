@@ -54,6 +54,10 @@ function sortPresence(users: PresenceUser[]) {
   });
 }
 
+function isLocalFurrBoxAccount(user: PresenceUser) {
+  return !user.id.startsWith("discord:");
+}
+
 function StatusBadge({ online, onlineLabel = "ONLINE", offlineLabel = "OFFLINE" }: { online: boolean; onlineLabel?: string; offlineLabel?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${online ? "animate-pulse border-cyan-300/45 bg-cyan-300/10 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.28)]" : "border-slate-700 bg-slate-800/50 text-slate-500"}`}>
@@ -245,7 +249,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   }
 
   function startDiscordIdEdit(target: PresenceUser) {
-    if (!isPrimaryDeveloper || activeTab !== "global" || target.discordId) return;
+    if (!isPrimaryDeveloper || activeTab !== "global" || target.discordId || !isLocalFurrBoxAccount(target)) return;
     setEditingDiscordUserId(target.id);
     setEditingDiscordValue("");
     setError(null);
@@ -294,7 +298,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     { label: "FurrBox Sync", value: connected ? "Online" : "Offline", detail: connected ? "WebSocket verbunden" : "Client reconnecting", online: connected, icon: Server },
     { label: "Discord Bot", value: discordBotStatus.connected ? "Online" : "Offline", detail: discordBotStatus.connected ? `Seit ${formatLastSeen(discordBotStatus.connectedAt)}` : `Zuletzt ${formatLastSeen(discordBotStatus.disconnectedAt)}`, online: discordBotStatus.connected, icon: Bot },
     { label: "Team Nodes", value: `${teamOnlineCount}/${teamUsers.length}`, detail: "Dev, Owner, Mod, Supporter", online: teamOnlineCount > 0, icon: ShieldCheck },
-    { label: "Global Registry", value: `${onlineCount}/${globalUsers.length}`, detail: "Alle registrierten Nutzer", online: onlineCount > 0, icon: Users }
+    { label: "Global Registry", value: `${onlineCount}/${globalUsers.length}`, detail: "Alle Discord-Fischmember", online: onlineCount > 0, icon: Users }
   ];
 
   return (
@@ -370,6 +374,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                   const appOnline = isAppOnline(entry);
                   const active = selected?.id === entry.id;
                   const role = cleanRoleName(entry);
+                  const canManageLocalAccount = isPrimaryDeveloper && activeTab === "global" && isLocalFurrBoxAccount(entry);
                   return (
                     <div
                       key={entry.id}
@@ -395,7 +400,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                       </span>
                       <DiscordIdCell
                         user={entry}
-                        canEdit={isPrimaryDeveloper && activeTab === "global"}
+                        canEdit={canManageLocalAccount}
                         editing={editingDiscordUserId === entry.id}
                         value={editingDiscordValue}
                         saving={savingDiscordId}
@@ -410,12 +415,14 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                       {isPrimaryDeveloper && activeTab === "global" ? (
                         <button
                           className="grid h-8 w-8 place-items-center rounded-lg border border-pink-400/25 bg-pink-500/10 text-[#ff007f] shadow-[0_0_12px_rgba(255,0,127,0.22)] transition hover:bg-pink-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                          disabled={deletingUserId === entry.id || entry.discordId === developerDiscordId}
+                          disabled={!canManageLocalAccount || deletingUserId === entry.id || entry.discordId === developerDiscordId}
                           onClick={(event) => {
                             event.stopPropagation();
+                            if (!canManageLocalAccount) return;
                             deleteUser(entry);
                           }}
-                          aria-label="Account loeschen"
+                          aria-label={canManageLocalAccount ? "Lokalen FurrBox-Account loeschen" : "Discord-Mitglied wird synchronisiert"}
+                          title={canManageLocalAccount ? "Lokalen FurrBox-Account loeschen" : "Discord-Mitglied wird vom Server synchronisiert"}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -426,7 +433,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
                 {!visibleUsers.length ? (
                   <div className="px-5 py-12 text-center text-[13px] text-slate-500">
-                    {activeTab === "team" ? "Keine Team-Nutzer mit Dev, Owner, Mod oder Supporter Rolle gefunden." : "Noch keine registrierten Nutzer gefunden."}
+                    {activeTab === "team" ? "Keine Team-Nutzer mit Dev, Owner, Mod oder Supporter Rolle gefunden." : "Noch keine Discord-Fischmember synchronisiert."}
                   </div>
                 ) : null}
               </div>
