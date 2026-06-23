@@ -16,7 +16,6 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
   ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];
 
-const pinnedTaskbarApps = apps.filter((app) => app.id !== "presence");
 const developerDiscordId = "1312104318006071328";
 const documentMimeHints = ["text/", "application/pdf", "application/json"];
 
@@ -64,13 +63,17 @@ export function Taskbar() {
   );
   const dockApps = useMemo(() => {
     const accountsIsRunning = canManageAccounts && windows.accounts?.isOpen;
+    const browserIsRunning = Object.values(windows).some((win) => win.kind === "browser" && win.isOpen);
     const presenceIsRunning = windows.presence?.isOpen;
     return [
-      ...pinnedTaskbarApps,
-      ...(presenceIsRunning ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : []),
+      ...apps.filter((app) => {
+        if (app.id === "browser") return browserIsRunning;
+        if (app.id === "presence") return presenceIsRunning;
+        return windows[app.id]?.isOpen;
+      }),
       ...(accountsIsRunning ? [{ id: "accounts" as const, label: "Accounts", icon: UserPlus }] : [])
     ];
-  }, [canManageAccounts, windows.accounts?.isOpen, windows.presence?.isOpen]);
+  }, [canManageAccounts, windows]);
   const viewerWindows = useMemo(
     () =>
       Object.values(windows)
@@ -325,7 +328,10 @@ export function Taskbar() {
           </button>
           {dockApps.map((app) => {
             const Icon = app.icon;
-            const selected = app.id !== "browser" && windows[app.id]?.isOpen && !windows[app.id]?.isMinimized;
+            const selected =
+              app.id === "browser"
+                ? Object.values(windows).some((win) => win.kind === "browser" && win.isOpen && !win.isMinimized)
+                : windows[app.id]?.isOpen && !windows[app.id]?.isMinimized;
             return (
               <button
                 key={app.id}
