@@ -62,6 +62,10 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
   );
   const selectedPartner = privateUsers.find((entry) => entry.id === partnerId) || privateUsers[0] || null;
   const activePartnerId = selectedPartner?.id || "";
+  const userRolesById = useMemo(
+    () => Object.fromEntries(users.map((entry) => [entry.id, entry.roleName])),
+    [users]
+  );
 
   const refreshMessages = useCallback(async () => {
     if (!token) return;
@@ -239,11 +243,17 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
       <div ref={scrollRef} className="scroll-soft min-h-0 flex-1 space-y-2 overflow-auto p-3">
         {messages.length ? messages.map((message) => {
           const own = message.senderId === user?.id;
+          const senderRoleName = message.senderRoleName || userRolesById[message.senderId] || "Member";
           return (
             <div key={message.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[82%] rounded-2xl border px-3 py-2 ${own ? "border-cyan-300/25 bg-cyan-500/10" : "border-purple-500/25 bg-purple-500/10"}`}>
                 <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
-                  <span className="truncate">{own ? "Du" : message.senderName}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{own ? "Du" : message.senderName}</span>
+                    <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.08em] ${roleBadgeClass(senderRoleName)}`}>
+                      {cleanRoleName(senderRoleName)}
+                    </span>
+                  </span>
                   <span>{new Date(message.createdAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
                 <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-100">{message.content}</p>
