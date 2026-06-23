@@ -1,8 +1,9 @@
 "use client";
 
 import { Bell, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MessageCircle, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { FurrChatPanel } from "@/components/FurrChatPanel";
+import type { ChatMessage } from "@/lib/chat";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { useFurrBoxStore, type FurrFile, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
@@ -45,7 +46,7 @@ function isDocument(file: FurrFile) {
 }
 
 export function Taskbar() {
-  const { activeWindow, connected, files, startOpen, user, logout, patchUi } = useFurrBoxStore();
+  const { activeWindow, connected, files, socket, startOpen, user, logout, patchUi } = useFurrBoxStore();
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
   const restoreWindow = useWindowStore((state) => state.restoreWindow);
@@ -54,6 +55,9 @@ export function Taskbar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [infoOpen, setInfoOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatPreview, setChatPreview] = useState<ChatMessage | null>(null);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const chatPreviewTimer = useRef<number | null>(null);
   const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
   const canManageAccounts = ENABLE_PRESENCE_TOOL && isDeveloperSession(user);
@@ -165,6 +169,49 @@ export function Taskbar() {
         .slice(0, 4),
     [files]
   );
+
+  useEffect(() => {
+    if (chatOpen) {
+      setUnreadChatCount(0);
+      setChatPreview(null);
+      if (chatPreviewTimer.current) {
+        window.clearTimeout(chatPreviewTimer.current);
+        chatPreviewTimer.current = null;
+      }
+    }
+  }, [chatOpen]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onChatMessage = (message: ChatMessage) => {
+      if (message.senderId === user?.id || chatOpen) return;
+      setChatPreview(message);
+      setUnreadChatCount((count) => Math.min(99, count + 1));
+      if (chatPreviewTimer.current) window.clearTimeout(chatPreviewTimer.current);
+      chatPreviewTimer.current = window.setTimeout(() => {
+        setChatPreview(null);
+        chatPreviewTimer.current = null;
+      }, 4_800);
+    };
+    socket.on("chat:message", onChatMessage);
+    return () => {
+      socket.off("chat:message", onChatMessage);
+      if (chatPreviewTimer.current) {
+        window.clearTimeout(chatPreviewTimer.current);
+        chatPreviewTimer.current = null;
+      }
+    };
+  }, [chatOpen, socket, user?.id]);
+
+  function openChatFromPreview() {
+    setChatOpen(true);
+    setChatPreview(null);
+    setUnreadChatCount(0);
+    if (chatPreviewTimer.current) {
+      window.clearTimeout(chatPreviewTimer.current);
+      chatPreviewTimer.current = null;
+    }
+  }
 
   return (
     <>
@@ -296,6 +343,29 @@ export function Taskbar() {
 
       <FurrChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
 
+      {chatPreview ? (
+        <button
+          className="absolute bottom-24 left-1/2 z-50 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 animate-task-pop overflow-hidden rounded-2xl border border-cyan-300/30 bg-slate-950/88 p-4 text-left text-slate-100 shadow-[0_0_34px_rgba(0,240,255,0.26),0_18px_45px_rgba(0,0,0,0.45)] backdrop-blur-2xl transition hover:border-pink-400/45 hover:bg-slate-950/95"
+          onClick={openChatFromPreview}
+          aria-label="Neue Chat-Nachricht oeffnen"
+        >
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-300/35 bg-cyan-400/10 text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.28)]">
+              <MessageCircle size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-3">
+                <span className="truncate text-[13px] font-black text-cyan-100">{chatPreview.senderName}</span>
+                <span className="shrink-0 rounded-md border border-purple-400/25 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-purple-100">
+                  {chatPreview.channel === "private" ? "Privat" : "Team"}
+                </span>
+              </span>
+              <span className="mt-1 block line-clamp-2 text-[12px] leading-5 text-slate-300">{chatPreview.content}</span>
+            </span>
+          </div>
+        </button>
+      ) : null}
+
       <footer className="absolute bottom-3 left-1/2 z-50 flex h-16 w-[min(980px,calc(100vw-32px))] -translate-x-1/2 items-center justify-between rounded-2xl border border-purple-500/30 bg-slate-900/60 px-5 shadow-[0_0_30px_rgba(139,92,246,0.35),0_0_16px_rgba(0,240,255,0.12)] backdrop-blur-2xl" data-furr-context="taskbar">
         <div className="relative w-56">
           <div className={`flex h-10 items-center gap-2 rounded-xl border bg-slate-950/55 px-3 transition ${searchOpen ? "border-cyan-300/40 shadow-[0_0_18px_rgba(0,240,255,0.18)]" : "border-white/5"}`}>
@@ -364,9 +434,18 @@ export function Taskbar() {
             className={`relative grid h-11 w-11 place-items-center rounded-xl border transition ${chatOpen ? "border-cyan-300/55 bg-cyan-500/15 text-cyan-100 shadow-[0_0_20px_rgba(0,240,255,0.34)] after:absolute after:-bottom-2 after:h-1 after:w-5 after:rounded-full after:bg-[#00f0ff] after:shadow-[0_0_12px_rgba(0,240,255,0.95)]" : "border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff]"}`}
             aria-label="FurrChat"
             title="FurrChat"
-            onClick={() => setChatOpen((open) => !open)}
+            onClick={() => {
+              setChatOpen((open) => !open);
+              setUnreadChatCount(0);
+              setChatPreview(null);
+            }}
           >
             <MessageCircle size={21} />
+            {unreadChatCount > 0 && !chatOpen ? (
+              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-slate-950 bg-[#ff007f] px-1 text-[10px] font-black leading-none text-white shadow-[0_0_14px_rgba(255,0,127,0.85)]">
+                {unreadChatCount > 9 ? "9+" : unreadChatCount}
+              </span>
+            ) : null}
           </button>
         </div>
 
