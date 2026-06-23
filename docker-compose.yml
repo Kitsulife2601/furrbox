@@ -11,7 +11,7 @@ services:
       DATABASE_URL: file:/app/storage/furrbox.db
       JWT_SECRET: change-this-local-furrbox-secret
       BOT_BRIDGE_TOKEN: change-this-bot-bridge-token
-      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,capacitor://localhost,ionic://localhost,https://localhost
+      CORS_ORIGIN: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,capacitor://localhost,ionic://localhost,https://localhost"
     ports:
       - "4000:4000"
     volumes:
