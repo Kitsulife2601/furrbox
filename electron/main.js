@@ -18,7 +18,7 @@ function loadFrontend(win) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    title: "FurrBox",
+    title: edition.edition === "AdminEdition" ? "FurrBox Admin Edition" : "FurrBox Standard",
     width: 1440,
     height: 900,
     minWidth: 1024,

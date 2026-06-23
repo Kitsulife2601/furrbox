@@ -1,6 +1,6 @@
 {
   "name": "furrbox",
-  "version": "1.0.32",
+  "version": "1.0.33",
   "private": true,
   "description": "FurrBox private Windows 11 inspired desktop environment with real-time file sync.",
   "main": "electron/main.js",
@@ -16,8 +16,8 @@
     "build:exe-frontend": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
     "build:exe-frontend:standard": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
     "build:exe-frontend:admin": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run build",
-    "dist:standard": "npm run build:exe-frontend:standard && cross-env FURRBOX_EDITION=Standard node scripts/write-edition.js && cross-env FURRBOX_EDITION=Standard FURRBOX_UPDATE_CHANNEL=standard electron-builder --win nsis --config electron-builder.json && cross-env FURRBOX_EDITION=Standard node scripts/collect-update-artifacts.js",
-    "dist:admin": "npm run build:exe-frontend:admin && cross-env FURRBOX_EDITION=AdminEdition node scripts/write-edition.js && cross-env FURRBOX_EDITION=AdminEdition FURRBOX_UPDATE_CHANNEL=admin electron-builder --win nsis --config electron-builder.json && cross-env FURRBOX_EDITION=AdminEdition node scripts/collect-update-artifacts.js",
+    "dist:standard": "npm run build:exe-frontend:standard && cross-env FURRBOX_EDITION=Standard node scripts/write-edition.js && cross-env FURRBOX_EDITION=Standard electron-builder --win nsis --config electron-builder.config.cjs && cross-env FURRBOX_EDITION=Standard node scripts/collect-update-artifacts.js",
+    "dist:admin": "npm run build:exe-frontend:admin && cross-env FURRBOX_EDITION=AdminEdition node scripts/write-edition.js && cross-env FURRBOX_EDITION=AdminEdition electron-builder --win nsis --config electron-builder.config.cjs && cross-env FURRBOX_EDITION=AdminEdition node scripts/collect-update-artifacts.js",
     "dist:dual": "npm run dist:standard && npm run dist:admin",
     "dist:win": "npm run dist:standard",
     "dist:portable": "npm run build:exe-frontend:standard && electron-builder --win portable",
@@ -34,8 +34,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "de.furrbox.desktop",
-    "productName": "FurrBox",
+    "appId": "de.furrbox.desktop.standard",
+    "productName": "FurrBox Standard",
     "files": [
       "electron/**/*",
       "package.json"

@@ -1,6 +1,6 @@
 {
-  "appId": "de.furrbox.desktop",
-  "productName": "FurrBox",
+  "appId": "de.furrbox.desktop.standard",
+  "productName": "FurrBox Standard",
   "files": [
     "electron/**/*",
     "package.json"
