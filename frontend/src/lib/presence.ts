@@ -33,7 +33,7 @@ export type AccountRole = "Member" | "Supporter" | "Fish Moderator" | "Fish Nagi
 export type CreateUserPayload = {
   username: string;
   discordId: string;
-  password: string;
+  password?: string;
   role: AccountRole;
 };
 

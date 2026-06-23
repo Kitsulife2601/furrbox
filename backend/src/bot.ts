@@ -1,5 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   EmbedBuilder,
   GatewayIntentBits,
@@ -65,6 +68,14 @@ type DiscordMemberSnapshot = {
   isDev: boolean;
 };
 type DiscordPresenceStatus = "online" | "idle" | "dnd" | "offline";
+type AccountOnboardingInvitePayload = {
+  discordId: string;
+  username: string;
+  displayName: string;
+  roleName: string;
+  setupUrl: string;
+  expiresAt: string;
+};
 
 const ROLE_IDS = {
   dev: "1312104318006071328",
@@ -484,6 +495,31 @@ async function inspectMessage(request: MessageInspectRequest): Promise<MessageIn
   };
 }
 
+async function sendAccountOnboardingInvite(payload: AccountOnboardingInvitePayload) {
+  const expiresAt = new Date(payload.expiresAt);
+  const expiresLabel = Number.isNaN(expiresAt.getTime()) ? "in 72 Stunden" : expiresAt.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  const user = await client.users.fetch(payload.discordId);
+  const embed = new EmbedBuilder()
+    .setColor(0x00f0ff)
+    .setTitle("FurrBox Account aktivieren")
+    .setDescription(`Hallo ${payload.displayName}, dein FurrBox Zugang wurde vorbereitet. Wenn du deinen eigenen Login nutzen moechtest, lege ueber den Button dein Passwort fest.`)
+    .addFields(
+      { name: "Nutzername", value: `\`${payload.username}\``, inline: true },
+      { name: "Rolle", value: payload.roleName, inline: true },
+      { name: "Gueltig bis", value: expiresLabel, inline: false }
+    )
+    .setFooter({ text: "FurrBox sendet niemals Passwoerter ueber Discord. Das Passwort wird nur auf der sicheren Setup-Seite gesetzt." })
+    .setTimestamp(new Date());
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setStyle(ButtonStyle.Link)
+      .setURL(payload.setupUrl)
+      .setLabel("Eigenes Passwort festlegen")
+  );
+
+  await user.send({ embeds: [embed], components: [row] });
+}
+
 socket.on("connect", () => {
   console.log(`FurrBox Discord bot bridge connected to ${bridgeUrl}.`);
 });
@@ -515,6 +551,12 @@ socket.on("message:inspect", (request: MessageInspectRequest) => {
         error: error instanceof Error ? error.message : "Message inspection failed."
       } satisfies MessageInspectResult);
     });
+});
+
+socket.on("account:onboarding-invite", (payload: AccountOnboardingInvitePayload) => {
+  sendAccountOnboardingInvite(payload)
+    .then(() => console.log(`Sent FurrBox onboarding invite to ${payload.discordId}.`))
+    .catch((error) => console.error(`Failed to send FurrBox onboarding invite to ${payload.discordId}: ${error instanceof Error ? error.message : String(error)}`));
 });
 
 client.once("ready", async () => {

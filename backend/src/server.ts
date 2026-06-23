@@ -12,6 +12,7 @@ import pty from "node-pty";
 import si from "systeminformation";
 import { Server } from "socket.io";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 
 type SessionRole = "Super_Admin" | "User";
 type AuthUser = Pick<User, "id" | "username" | "displayName" | "discordId"> & { sessionRole: SessionRole };
@@ -105,6 +106,14 @@ type TerminalProfile = {
 type PresenceStatus = "online" | "offline";
 type PresenceView = "team" | "global";
 type AdminOverrideRole = "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
+type AccountInvitePayload = {
+  discordId: string;
+  username: string;
+  displayName: string;
+  roleName: AdminOverrideRole;
+  setupUrl: string;
+  expiresAt: string;
+};
 type PresenceUserDto = {
   id: string;
   username: string;
@@ -160,6 +169,10 @@ const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
 const allowedOrigins = corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean);
 const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
 const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
+const publicBackendUrl =
+  process.env.PUBLIC_BACKEND_URL ||
+  process.env.FURRBOX_PUBLIC_URL ||
+  (process.env.NODE_ENV === "production" ? "http://5.249.162.130:4000" : `http://localhost:${port}`);
 const app = express();
 const server = http.createServer(app);
 
@@ -362,6 +375,123 @@ function adminOverrideRoleData(role: AdminOverrideRole) {
   };
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function accountInviteTokenHash(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function createDisabledPasswordHashSeed(discordId: string) {
+  return `pending:${discordId}:${crypto.randomUUID()}:${crypto.randomBytes(16).toString("hex")}`;
+}
+
+async function createAccountSetupInvite(user: Pick<User, "id" | "username" | "displayName" | "discordId">, roleName: AdminOverrideRole): Promise<AccountInvitePayload | null> {
+  if (!user.discordId) return null;
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = accountInviteTokenHash(rawToken);
+  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+
+  await prisma.$executeRawUnsafe(
+    `
+    INSERT INTO "AccountSetupInvite" ("id", "userId", "discordId", "tokenHash", "expiresAt", "createdAt")
+    VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    crypto.randomUUID(),
+    user.id,
+    user.discordId,
+    tokenHash,
+    expiresAt,
+    new Date().toISOString()
+  );
+
+  return {
+    discordId: user.discordId,
+    username: user.username,
+    displayName: user.displayName,
+    roleName,
+    setupUrl: `${publicBackendUrl.replace(/\/+$/, "")}/setup/${rawToken}`,
+    expiresAt
+  };
+}
+
+async function findActiveAccountInvite(rawToken: string) {
+  const tokenHash = accountInviteTokenHash(rawToken);
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      tokenHash: string;
+      userId: string;
+      discordId: string;
+      expiresAt: string | Date;
+      usedAt: string | Date | null;
+      username: string;
+      displayName: string;
+    }>
+  >(
+    `
+    SELECT invite."tokenHash", invite."userId", invite."discordId", invite."expiresAt", invite."usedAt",
+           accountUser."username", accountUser."displayName"
+    FROM "AccountSetupInvite" invite
+    INNER JOIN "User" accountUser ON accountUser."id" = invite."userId"
+    WHERE invite."tokenHash" = ?
+    LIMIT 1
+    `,
+    tokenHash
+  );
+  const invite = rows[0];
+  if (!invite || invite.usedAt) return null;
+  if (new Date(invite.expiresAt).getTime() < Date.now()) return null;
+  return invite;
+}
+
+function renderSetupPage(options: { token: string; username?: string; displayName?: string; invalid?: boolean; completed?: boolean; error?: string }) {
+  const title = options.completed ? "FurrBox Account aktiviert" : options.invalid ? "FurrBox Einladung ungueltig" : "FurrBox Passwort festlegen";
+  const safeToken = escapeHtml(options.token);
+  const safeName = escapeHtml(options.displayName || options.username || "FurrBox Nutzer");
+  const safeError = options.error ? escapeHtml(options.error) : "";
+  const content = options.invalid
+    ? `<p class="muted">Diese Einladung ist abgelaufen oder wurde bereits benutzt. Bitte Kitsulife um eine neue Einladung.</p>`
+    : options.completed
+      ? `<p class="muted">Dein Passwort wurde gespeichert. Du kannst dich jetzt in FurrBox mit deinem Nutzernamen anmelden.</p>`
+      : `
+        <p class="muted">Hallo <strong>${safeName}</strong>. Lege hier dein eigenes Passwort fest. Danach funktioniert der normale FurrBox-Login.</p>
+        <form method="post" action="/setup/${safeToken}">
+          <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Neues Passwort" required />
+          <input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Passwort wiederholen" required />
+          ${safeError ? `<div class="error">${safeError}</div>` : ""}
+          <button type="submit">Passwort aktivieren</button>
+        </form>
+      `;
+
+  return `<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#060812 radial-gradient(circle at 30% 20%, rgba(0,240,255,.16), transparent 32%), radial-gradient(circle at 70% 80%, rgba(255,0,127,.18), transparent 34%); color:#e5faff; }
+    .card { width:min(440px, calc(100vw - 32px)); border:1px solid rgba(0,240,255,.28); border-radius:22px; background:rgba(15,23,42,.78); box-shadow:0 0 55px rgba(139,92,246,.36), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter:blur(18px); padding:28px; }
+    h1 { margin:0 0 8px; font-size:22px; letter-spacing:.08em; text-transform:uppercase; }
+    .muted { color:#a7b5d6; line-height:1.55; font-size:14px; }
+    form { display:grid; gap:12px; margin-top:22px; }
+    input { height:44px; border-radius:14px; border:1px solid rgba(0,240,255,.24); background:rgba(2,6,23,.72); color:#f8fafc; padding:0 14px; outline:none; }
+    input:focus { border-color:#00f0ff; box-shadow:0 0 18px rgba(0,240,255,.32); }
+    button { height:46px; border:0; border-radius:14px; color:white; font-weight:800; letter-spacing:.08em; text-transform:uppercase; background:linear-gradient(90deg,#ff007f,#8b5cf6,#00f0ff); box-shadow:0 0 26px rgba(255,0,127,.36); cursor:pointer; }
+    .error { border:1px solid rgba(255,0,127,.28); background:rgba(255,0,127,.1); color:#ffd7e8; border-radius:12px; padding:10px 12px; font-size:13px; }
+  </style>
+</head>
+<body><main class="card"><h1>${escapeHtml(title)}</h1>${content}</main></body>
+</html>`;
+}
+
 function iso(value: Date | string | null | undefined) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -466,6 +596,21 @@ async function ensureDatabase() {
   `);
   await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "discordId" TEXT;`).catch(() => undefined);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_discordId_key" ON "User"("discordId");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "AccountSetupInvite" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "discordId" TEXT NOT NULL,
+      "tokenHash" TEXT NOT NULL UNIQUE,
+      "expiresAt" DATETIME NOT NULL,
+      "usedAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AccountSetupInvite_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AccountSetupInvite_userId_idx" ON "AccountSetupInvite"("userId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AccountSetupInvite_discordId_idx" ON "AccountSetupInvite"("discordId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AccountSetupInvite_expiresAt_idx" ON "AccountSetupInvite"("expiresAt");`);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "UserPresence" (
       "userId" TEXT NOT NULL PRIMARY KEY,
@@ -1460,6 +1605,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use("/updates", express.static(updatesDir, {
   immutable: false,
   maxAge: 0,
@@ -1470,6 +1616,78 @@ app.use("/updates", express.static(updatesDir, {
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "furrbox-backend", storageDir, updatesDir, databaseUrl });
+});
+
+app.get("/setup/:token", async (req, res, next) => {
+  try {
+    const token = String(req.params.token || "").trim();
+    const invite = /^[a-f0-9]{64}$/i.test(token) ? await findActiveAccountInvite(token) : null;
+    res.type("html").send(renderSetupPage({
+      token,
+      username: invite?.username,
+      displayName: invite?.displayName,
+      invalid: !invite
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/setup/:token", async (req, res, next) => {
+  try {
+    const token = String(req.params.token || "").trim();
+    const password = String(req.body.password || "");
+    const confirmPassword = String(req.body.confirmPassword || "");
+    const invite = /^[a-f0-9]{64}$/i.test(token) ? await findActiveAccountInvite(token) : null;
+    if (!invite) {
+      res.status(400).type("html").send(renderSetupPage({ token, invalid: true }));
+      return;
+    }
+    if (password.length < 8) {
+      res.status(400).type("html").send(renderSetupPage({ token, username: invite.username, displayName: invite.displayName, error: "Passwort muss mindestens 8 Zeichen lang sein." }));
+      return;
+    }
+    if (password !== confirmPassword) {
+      res.status(400).type("html").send(renderSetupPage({ token, username: invite.username, displayName: invite.displayName, error: "Die Passwoerter stimmen nicht ueberein." }));
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: invite.userId }, data: { passwordHash } }),
+      prisma.$executeRawUnsafe(`UPDATE "AccountSetupInvite" SET "usedAt" = ? WHERE "tokenHash" = ?`, new Date().toISOString(), invite.tokenHash)
+    ]);
+    await emitPresenceSnapshot("account-setup-complete");
+    res.type("html").send(renderSetupPage({ token, completed: true, username: invite.username, displayName: invite.displayName }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/onboarding/complete", async (req, res, next) => {
+  try {
+    const token = String(req.body.token || "").trim();
+    const password = String(req.body.password || "");
+    const invite = /^[a-f0-9]{64}$/i.test(token) ? await findActiveAccountInvite(token) : null;
+    if (!invite) {
+      res.status(400).json({ error: "Einladung ist ungueltig oder abgelaufen." });
+      return;
+    }
+    if (password.length < 8) {
+      res.status(400).json({ error: "Passwort muss mindestens 8 Zeichen lang sein." });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: invite.userId }, data: { passwordHash } }),
+      prisma.$executeRawUnsafe(`UPDATE "AccountSetupInvite" SET "usedAt" = ? WHERE "tokenHash" = ?`, new Date().toISOString(), invite.tokenHash)
+    ]);
+    await emitPresenceSnapshot("account-setup-complete");
+    res.json({ ok: true, username: invite.username });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/auth/login", async (req, res, next) => {
@@ -1680,7 +1898,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
       res.status(400).json({ error: "Discord-ID muss eine numerische Snowflake sein." });
       return;
     }
-    if (password.length < 8) {
+    if (password && password.length < 8) {
       res.status(400).json({ error: "Passwort muss mindestens 8 Zeichen lang sein." });
       return;
     }
@@ -1699,7 +1917,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
     }
 
     const roleData = adminOverrideRoleData(roleInput);
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password || createDisabledPasswordHashSeed(discordId), 12);
     const createdUser = await prisma.user.create({
       data: {
         username,
@@ -1745,6 +1963,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
     });
 
     const snapshotUser = await getPresenceUser(createdUser.id);
+    const accountInvite = password ? null : await createAccountSetupInvite(createdUser, roleInput);
     await emitPresenceSnapshot("admin-create-user");
     io.emit("registryUpdate", { action: "create", user: snapshotUser, emittedAt: new Date().toISOString() });
     io.emit("discord:members-refreshed", {
@@ -1753,13 +1972,18 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
       members: [],
       syncedAt: new Date().toISOString()
     });
+    if (accountInvite) {
+      io.to("bot-bridge").emit("account:onboarding-invite", accountInvite);
+    }
     await emitTeamNotification({
       version: "FurrBox",
-      title: "System-Update: Neuer Account erstellt",
-      description: `${username} wurde durch Kitsulife in der Datenbank angelegt.`
+      title: accountInvite ? "System-Update: Account-Einladung gesendet" : "System-Update: Neuer Account erstellt",
+      description: accountInvite
+        ? `${username} wurde angelegt. Der Discord-Bot sendet jetzt den Aktivierungslink.`
+        : `${username} wurde durch Kitsulife in der Datenbank angelegt.`
     });
 
-    res.status(201).json({ user: snapshotUser ?? toAuthUser(createdUser) });
+    res.status(201).json({ user: snapshotUser ?? toAuthUser(createdUser), inviteSent: Boolean(accountInvite), inviteExpiresAt: accountInvite?.expiresAt });
   } catch (error) {
     next(error);
   }
