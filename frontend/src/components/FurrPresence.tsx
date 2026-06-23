@@ -165,6 +165,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const { token, user, socket, connected, discordBotStatus } = useFurrBoxStore();
   const [activeTab, setActiveTab] = useState<PresenceTab>("team");
   const [users, setUsers] = useState<PresenceUser[]>([]);
+  const [teamRegistryUsers, setTeamRegistryUsers] = useState<PresenceUser[]>([]);
   const [selected, setSelected] = useState<PresenceUser | null>(null);
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -175,20 +176,25 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
-  const teamUsers = useMemo(() => sortPresence(users.filter((entry) => teamRoles.has(cleanRoleName(entry)))), [users]);
+  const teamUsers = useMemo(() => sortPresence(teamRegistryUsers.filter((entry) => teamRoles.has(cleanRoleName(entry)))), [teamRegistryUsers]);
   const globalUsers = useMemo(() => sortPresence(users), [users]);
   const visibleUsers = activeTab === "team" ? teamUsers : globalUsers;
-  const onlineCount = users.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
+  const onlineCount = globalUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
   const teamOnlineCount = teamUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
   const rowGrid = isPrimaryDeveloper && activeTab === "global" ? "grid-cols-[1.3fr_0.55fr_0.85fr_0.9fr_44px]" : "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
 
   async function refreshRegistry() {
     if (!token) return;
-    const nextUsers = await listPresenceUsers(token, "global");
+    const [nextUsers, nextTeamUsers] = await Promise.all([
+      listPresenceUsers(token, "global"),
+      listPresenceUsers(token, "team")
+    ]);
+    const nextVisibleUsers = activeTab === "team" ? sortPresence(nextTeamUsers) : sortPresence(nextUsers);
     setUsers(nextUsers);
+    setTeamRegistryUsers(nextTeamUsers);
     setSelected((current) => {
-      if (!current) return sortPresence(nextUsers)[0] ?? null;
-      return nextUsers.find((entry) => entry.id === current.id) ?? sortPresence(nextUsers)[0] ?? null;
+      if (!current) return nextVisibleUsers[0] ?? null;
+      return nextVisibleUsers.find((entry) => entry.id === current.id) ?? nextVisibleUsers[0] ?? null;
     });
   }
 
@@ -198,30 +204,19 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
   useEffect(() => {
     if (!socket || !token) return;
-    const snapshotHandler = ({ users: nextUsers }: { users: PresenceUser[] }) => {
-      setUsers(nextUsers);
-      setSelected((current) => {
-        if (!current) return sortPresence(nextUsers)[0] ?? null;
-        return nextUsers.find((entry) => entry.id === current.id) ?? current;
-      });
-    };
-    const updateHandler = (updated: PresenceUser) => {
-      setUsers((current) => sortPresence([updated, ...current.filter((entry) => entry.id !== updated.id)]));
-      setSelected((current) => (current?.id === updated.id ? updated : current));
-    };
     const refreshHandler = () => {
       refreshRegistry().catch((nextError: Error) => setError(nextError.message));
     };
     socket.emit("presence:subscribe");
-    socket.on("presence:snapshot", snapshotHandler);
-    socket.on("presence:update", updateHandler);
+    socket.on("presence:snapshot", refreshHandler);
+    socket.on("presence:update", refreshHandler);
     socket.on("discord:presence-refreshed", refreshHandler);
     socket.on("discord:members-refreshed", refreshHandler);
     socket.on("registryUpdate", refreshHandler);
     return () => {
       socket.emit("presence:unsubscribe");
-      socket.off("presence:snapshot", snapshotHandler);
-      socket.off("presence:update", updateHandler);
+      socket.off("presence:snapshot", refreshHandler);
+      socket.off("presence:update", refreshHandler);
       socket.off("discord:presence-refreshed", refreshHandler);
       socket.off("discord:members-refreshed", refreshHandler);
       socket.off("registryUpdate", refreshHandler);
