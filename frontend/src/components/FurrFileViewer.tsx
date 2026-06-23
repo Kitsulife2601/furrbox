@@ -1,9 +1,9 @@
 "use client";
 
-import { File, FileImage, FileText } from "lucide-react";
+import { File, FileImage, FileText, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { readFileBlobUrl, readFileText } from "@/lib/files";
+import { readFileBlobUrl, readFileText, updateTextDocument } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -42,8 +42,10 @@ export function FurrFileViewer({ windowState }: { windowState: FurrWindowState }
   const file = useMemo(() => files.find((item) => item.id === payload?.fileId), [files, payload?.fileId]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +53,7 @@ export function FurrFileViewer({ windowState }: { windowState: FurrWindowState }
 
     setImageUrl(null);
     setText(null);
+    setDirty(false);
     setError(null);
 
     if (!token || !file) return;
@@ -86,6 +89,20 @@ export function FurrFileViewer({ windowState }: { windowState: FurrWindowState }
     };
   }, [file, token]);
 
+  async function saveText() {
+    if (!file || !token || text === null || !isTextDocument(file)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateTextDocument(file, token, text);
+      setDirty(false);
+    } catch {
+      setError("Textdokument konnte nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const Icon = file?.mimeType.startsWith("image/") ? FileImage : file && isTextDocument(file) ? FileText : File;
 
   return (
@@ -101,6 +118,16 @@ export function FurrFileViewer({ windowState }: { windowState: FurrWindowState }
               {fileLabel(file)}
             </span>
           ) : null}
+          {file && text !== null && isTextDocument(file) ? (
+            <button
+              className="ml-2 inline-flex h-8 items-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!dirty || saving}
+              onClick={saveText}
+            >
+              <Save size={13} />
+              {saving ? "Speichert" : dirty ? "Speichern" : "Gespeichert"}
+            </button>
+          ) : null}
         </div>
 
         <div className="scroll-soft min-h-0 flex-1 overflow-auto">
@@ -115,7 +142,22 @@ export function FurrFileViewer({ windowState }: { windowState: FurrWindowState }
               <img src={imageUrl} alt={displayName(file)} className="max-h-full max-w-full object-contain shadow-[0_0_42px_rgba(0,240,255,0.16)]" />
             </div>
           ) : text !== null ? (
-            <pre className="min-h-full whitespace-pre-wrap bg-slate-950 p-5 font-mono text-[12px] leading-5 text-slate-200">{text || "Dieses Textdokument ist leer."}</pre>
+            <textarea
+              className="min-h-full w-full resize-none bg-slate-950 p-5 font-mono text-[12px] leading-5 text-slate-200 outline-none selection:bg-cyan-400/25"
+              value={text}
+              spellCheck={false}
+              placeholder="Dieses Textdokument ist leer."
+              onChange={(event) => {
+                setText(event.target.value);
+                setDirty(true);
+              }}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                  event.preventDefault();
+                  saveText();
+                }
+              }}
+            />
           ) : (
             <div className="grid h-full place-items-center p-8 text-center text-[13px] text-slate-400">Keine Vorschau verfuegbar.</div>
           )}

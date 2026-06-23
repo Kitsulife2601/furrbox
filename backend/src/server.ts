@@ -216,6 +216,7 @@ let botConnectedAt: string | null = null;
 const activePresenceSockets = new Map<string, Set<string>>();
 const moderationWaiters = new Map<string, { resolve: (result: ModerationResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 const messageInspectWaiters = new Map<string, { resolve: (result: MessageInspectResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
+const FOLDER_MARKER_MIME = "application/x-furrbox-folder";
 
 function sanitizeName(name: string) {
   return name.replace(/[^\w.\- ]+/g, "_").slice(0, 160);
@@ -249,6 +250,51 @@ function virtualOriginalName(originalName: string, virtualPathInput: unknown) {
     .filter(Boolean)
     .join("/");
   return virtualPath ? `${virtualPath}/${fileName}` : fileName;
+}
+
+function normalizeVirtualFolderPath(parentPathInput: unknown, nameInput: unknown) {
+  const parentPath = String(parentPathInput || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => sanitizeName(part.trim()))
+    .filter(Boolean)
+    .join("/");
+  const folderName = sanitizeName(String(nameInput || "Neuer Ordner").trim()).replace(/[. ]+$/g, "") || "Neuer Ordner";
+  return parentPath ? `${parentPath}/${folderName}` : folderName;
+}
+
+function normalizeTextDocumentName(nameInput: unknown) {
+  const safeName = sanitizeName(String(nameInput || "Neues Textdokument.txt").trim()).replace(/[. ]+$/g, "") || "Neues Textdokument";
+  return safeName.toLowerCase().endsWith(".txt") ? safeName : `${safeName}.txt`;
+}
+
+async function createStoredTextLikeFile(user: AuthUser, scope: FileScope, originalName: string, content: string, mimeType = "text/plain") {
+  const folder = scopeFolder(scope, user.id);
+  await fs.mkdir(folder, { recursive: true });
+  const storedName = `${Date.now()}-${crypto.randomUUID()}-${sanitizeName(path.basename(originalName))}`;
+  const physicalPath = path.join(folder, storedName);
+  const payload = Buffer.from(content, "utf8");
+  await fs.writeFile(physicalPath, payload);
+  return prisma.storedFile.create({
+    data: {
+      name: storedName,
+      originalName,
+      size: payload.length,
+      mimeType,
+      scope,
+      ownerId: scope === "PRIVATE" ? user.id : null
+    }
+  });
+}
+
+async function emitFileMutation(userId: string, scope: FileScope, reason: string, file?: Awaited<ReturnType<typeof prisma.storedFile.create>>) {
+  if (file) {
+    const dto = toDto(file);
+    if (scope === "PUBLIC") io.to("public").emit("file-uploaded", dto);
+    else io.to(`user:${userId}`).emit("file-uploaded", dto);
+  }
+  if (scope === "PUBLIC") await emitPublicFiles(reason);
+  await emitFilesForUser(userId, reason);
 }
 
 function scopeFromInput(input: unknown): FileScope {
@@ -2175,6 +2221,46 @@ app.post("/api/files", requireAuth, upload.single("file"), async (req: AuthedReq
   }
 });
 
+app.post("/api/files/folder", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const scope = scopeFromInput(req.body.scope);
+    const folderPath = normalizeVirtualFolderPath(req.body.virtualPath, req.body.name);
+    const markerOriginalName = `${folderPath}/.furrfolder`;
+    const existing = await prisma.storedFile.findFirst({
+      where: {
+        originalName: markerOriginalName,
+        scope,
+        ownerId: scope === "PRIVATE" ? req.user!.id : null
+      }
+    });
+
+    const folder = existing ?? await createStoredTextLikeFile(req.user!, scope, markerOriginalName, "", FOLDER_MARKER_MIME);
+    await emitFileMutation(req.user!.id, scope, existing ? "folder-refresh" : "folder-create", folder);
+    res.status(existing ? 200 : 201).json({ folder: toDto(folder) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/files/text", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const scope = scopeFromInput(req.body.scope);
+    const folderPath = String(req.body.virtualPath || "")
+      .replace(/\\/g, "/")
+      .split("/")
+      .map((part) => sanitizeName(part.trim()))
+      .filter(Boolean)
+      .join("/");
+    const fileName = normalizeTextDocumentName(req.body.name);
+    const originalName = folderPath ? `${folderPath}/${fileName}` : fileName;
+    const file = await createStoredTextLikeFile(req.user!, scope, originalName, String(req.body.content || ""), "text/plain");
+    await emitFileMutation(req.user!.id, scope, "text-create", file);
+    res.status(201).json({ file: toDto(file) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), async (req: AuthedRequest, res, next) => {
   try {
     const platform = String(req.body.platform || "").trim() === "VRChat" ? "VRChat" : "Discord";
@@ -2270,6 +2356,35 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
     await emitPublicFiles("evidence-case-created");
 
     res.status(201).json({ caseId, casePath: virtualCasePath, files });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/files/:id/text", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const file = await prisma.storedFile.findUnique({ where: { id: String(req.params.id) } });
+    if (!file || (file.scope === "PRIVATE" && file.ownerId !== req.user!.id)) {
+      res.status(404).json({ error: "File not found." });
+      return;
+    }
+    if (!file.mimeType.startsWith("text/") && !file.originalName.toLowerCase().endsWith(".txt")) {
+      res.status(400).json({ error: "Only text documents can be edited." });
+      return;
+    }
+
+    const content = String(req.body.content || "");
+    const physicalPath = path.join(scopeFolder(file.scope, file.ownerId || undefined), file.name);
+    await fs.writeFile(physicalPath, content, "utf8");
+    const updated = await prisma.storedFile.update({
+      where: { id: file.id },
+      data: {
+        size: Buffer.byteLength(content, "utf8"),
+        uploadedAt: new Date()
+      }
+    });
+    await emitFileMutation(req.user!.id, updated.scope, "text-update", updated);
+    res.json({ file: toDto(updated) });
   } catch (error) {
     next(error);
   }

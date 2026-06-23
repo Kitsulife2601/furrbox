@@ -43,6 +43,48 @@ export async function uploadFile(file: File, token: string, scope: "private" | "
   });
 }
 
+export async function createFolder(token: string, scope: "private" | "public", virtualPath: string, name: string): Promise<FurrFile> {
+  const response = await fetch(`${API_URL}/api/files/folder`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scope, virtualPath, name })
+  });
+  const data = (await response.json().catch(() => ({}))) as { folder?: FurrFile; error?: string };
+  if (!response.ok || !data.folder) throw new Error(data.error || "Ordner konnte nicht erstellt werden.");
+  return data.folder;
+}
+
+export async function createTextDocument(token: string, scope: "private" | "public", virtualPath: string, name: string, content = ""): Promise<FurrFile> {
+  const response = await fetch(`${API_URL}/api/files/text`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scope, virtualPath, name, content })
+  });
+  const data = (await response.json().catch(() => ({}))) as { file?: FurrFile; error?: string };
+  if (!response.ok || !data.file) throw new Error(data.error || "Textdokument konnte nicht erstellt werden.");
+  return data.file;
+}
+
+export async function updateTextDocument(file: FurrFile, token: string, content: string): Promise<FurrFile> {
+  const response = await fetch(`${API_URL}/api/files/${file.id}/text`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ content })
+  });
+  const data = (await response.json().catch(() => ({}))) as { file?: FurrFile; error?: string };
+  if (!response.ok || !data.file) throw new Error(data.error || "Textdokument konnte nicht gespeichert werden.");
+  return data.file;
+}
+
 export async function deleteFile(id: string, token: string) {
   const response = await fetch(`${API_URL}/api/files/${id}`, {
     method: "DELETE",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,7 +23,7 @@ import {
   Upload
 } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { deleteFile, listFiles, uploadFile } from "@/lib/files";
+import { createFolder, createTextDocument, deleteFile, listFiles, uploadFile } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowState } from "@/store/useWindowStore";
 
@@ -101,6 +101,14 @@ function fileType(file: FurrFile) {
 function isTextDocument(file: FurrFile) {
   const name = displayName(file).toLowerCase();
   return file.mimeType.startsWith("text/") || file.mimeType.includes("json") || name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".md") || name.endsWith(".json");
+}
+
+function isFolderMarker(file: FurrFile) {
+  return file.mimeType === "application/x-furrbox-folder" || displayName(file) === ".furrfolder";
+}
+
+function writablePath(path: string) {
+  return path === "Schnellzugriff" ? "Dokumente" : path;
 }
 
 function FileIcon({ file }: { file: FurrFile }) {
@@ -181,6 +189,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const pasteInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -218,7 +227,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
     if (currentPath === "Schnellzugriff") return [];
     const folderRows = childFolderRows(files, currentPath);
     const fileRows: ExplorerRow[] = files
-      .filter((file) => virtualPath(file) === currentPath)
+      .filter((file) => virtualPath(file) === currentPath && !isFolderMarker(file))
       .map((file) => ({
         kind: "file",
         id: file.id,
@@ -273,7 +282,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       try {
         for (const file of selected) {
           setUploadProgress(3);
-          await uploadFile(file, token, activeFileScope, setUploadProgress, currentPath);
+          await uploadFile(file, token, activeFileScope, setUploadProgress, writablePath(currentPath));
           socket?.emit("file-uploaded", { scope: activeFileScope });
         }
         await refresh();
@@ -309,6 +318,44 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
           height: 620
         });
       }
+    }
+  }
+
+  async function createNewFolder() {
+    if (!token) return;
+    const name = window.prompt("Ordnername", "Neuer Ordner")?.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      await createFolder(token, activeFileScope, writablePath(currentPath), name);
+      socket?.emit("file-uploaded", { scope: activeFileScope });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createNewTextDocument() {
+    if (!token) return;
+    const name = window.prompt("Name des Textdokuments", "Neues Textdokument.txt")?.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const created = await createTextDocument(token, activeFileScope, writablePath(currentPath), name);
+      socket?.emit("file-uploaded", { scope: activeFileScope });
+      await refresh();
+      await openRow({
+        kind: "file",
+        id: created.id,
+        name: displayName(created),
+        path: virtualPath(created),
+        modified: new Date(created.uploadedAt).toLocaleString(),
+        type: fileType(created),
+        size: formatSize(created.size),
+        file: created
+      });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -404,10 +451,12 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
             </div>
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
-                <button className="flex h-8 items-center gap-2 rounded-lg border border-cyan-300/15 px-3 text-[13px] text-cyan-100 hover:border-cyan-300/40 hover:bg-cyan-500/10"><Star size={15} />Neu</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-cyan-300/15 px-3 text-[13px] text-cyan-100 hover:border-cyan-300/40 hover:bg-cyan-500/10" onClick={createNewFolder}><Star size={15} />Ordner</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-cyan-300/15 px-3 text-[13px] text-cyan-100 hover:border-cyan-300/40 hover:bg-cyan-500/10" onClick={createNewTextDocument}><FileText size={15} />Textdokument</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Scissors size={15} />Ausschneiden</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Copy size={15} />Kopieren</button>
-                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Clipboard size={15} />Einfuegen</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100" onClick={() => pasteInputRef.current?.click()}><Clipboard size={15} />Einfuegen</button>
+                <input ref={pasteInputRef} className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100"><Trash2 size={15} />Loeschen</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><LayoutList size={15} />Anzeigen</button>
