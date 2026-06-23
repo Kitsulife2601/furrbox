@@ -2,7 +2,7 @@
 
 import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
@@ -55,7 +55,38 @@ export function Desktop() {
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
+  const updateWindow = useWindowStore((state) => state.updateWindow);
   const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
+  const [selectedDesktopItem, setSelectedDesktopItem] = useState<string | null>(null);
+
+  const launchDesktopApp = useCallback(
+    (id: FurrWindowKind) => {
+      if (id === "browser") {
+        const existingBrowser = Object.values(useWindowStore.getState().windows)
+          .filter((win) => win.kind === "browser")
+          .sort((a, b) => b.zIndex - a.zIndex)[0];
+        if (existingBrowser) {
+          openWindow(existingBrowser.id);
+        } else {
+          createWindow({ kind: "browser", title: "FurrBrowser", url: "https://example.com", x: 180, y: 90, width: 920, height: 640 });
+        }
+        return;
+      }
+      openWindow(id);
+      patchUi({ activeWindow: id as WindowKey });
+    },
+    [createWindow, openWindow, patchUi]
+  );
+
+  const openDesktopFolder = useCallback(
+    (folder: { id: string; name: string }) => {
+      const folderPath = `Dokumente/${folder.name}`;
+      updateWindow("furrfs", { url: `furrfs:path:${encodeURIComponent(folderPath)}` });
+      openWindow("furrfs");
+      patchUi({ activeWindow: "furrfs" });
+    },
+    [openWindow, patchUi, updateWindow]
+  );
 
   useBootAudio({
     enabled: Boolean(token),
@@ -138,21 +169,14 @@ export function Desktop() {
           return (
             <button
               key={item.id}
-              className="group grid w-20 justify-items-center gap-2 rounded-xl px-2 py-3 text-white transition hover:bg-slate-950/45"
-              onDoubleClick={() => {
-                if (item.id === "browser") createWindow({ kind: "browser", title: "FurrBrowser", url: "https://example.com", x: 180, y: 90, width: 920, height: 640 });
-                else {
-                  openWindow(item.id);
-                  patchUi({ activeWindow: item.id as WindowKey });
-                }
-              }}
+              className={`group grid w-20 justify-items-center gap-2 rounded-xl px-2 py-3 text-white transition hover:bg-slate-950/45 ${selectedDesktopItem === item.id ? "bg-cyan-400/10 ring-1 ring-cyan-300/35" : ""}`}
+              aria-label={`${item.label} öffnen`}
               onClick={() => {
-                if (item.id === "browser") {
-                  createWindow({ kind: "browser", title: "FurrBrowser", url: "https://example.com", x: 180, y: 90, width: 920, height: 640 });
-                } else {
-                  openWindow(item.id);
-                  patchUi({ activeWindow: item.id as WindowKey });
-                }
+                setSelectedDesktopItem(item.id);
+                launchDesktopApp(item.id);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") launchDesktopApp(item.id);
               }}
             >
               <span className="grid h-12 w-12 place-items-center rounded-[14px] border border-cyan-300/25 bg-slate-950/65 text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(255,255,255,0.08)] transition group-hover:border-[#ff007f]/65 group-hover:text-[#ff007f] group-hover:shadow-[0_0_24px_rgba(255,0,127,0.38)]">
@@ -164,15 +188,23 @@ export function Desktop() {
         })}
       </div>
 
-      <div className="absolute inset-0 z-10">
+      <div className="pointer-events-none absolute inset-0 z-10">
         {folders.map((folder) => (
           <button
             key={folder.id}
-            className="group absolute grid w-20 justify-items-center gap-2 rounded-xl px-2 py-3 text-white transition hover:bg-slate-950/45"
+            className={`pointer-events-auto group absolute grid w-20 justify-items-center gap-2 rounded-xl px-2 py-3 text-white transition hover:bg-slate-950/45 ${selectedDesktopItem === folder.id ? "bg-purple-400/10 ring-1 ring-purple-300/35" : ""}`}
             style={{ left: folder.x, top: folder.y }}
             data-furr-context="folder"
             data-file-id={folder.id}
             data-file-name={folder.name}
+            aria-label={`${folder.name} in FurrFS öffnen`}
+            onClick={() => {
+              setSelectedDesktopItem(folder.id);
+              openDesktopFolder(folder);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") openDesktopFolder(folder);
+            }}
           >
             <span className="grid h-12 w-12 place-items-center rounded-[14px] border border-purple-300/25 bg-slate-950/65 text-[#8b5cf6] shadow-[0_0_18px_rgba(139,92,246,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] transition group-hover:border-[#00f0ff]/60 group-hover:text-[#00f0ff] group-hover:shadow-[0_0_24px_rgba(0,240,255,0.32)]">
               <Folder size={25} />

@@ -1015,6 +1015,7 @@ type EvidenceReportMetadata = {
   messageProof: MessageInspectResult | null;
   violationCategory: string;
   notes: string;
+  evidenceFiles?: Array<{ originalName: string; mimeType: string; size: number }>;
   createdBy: AuthUser | undefined;
   createdAt: string;
 };
@@ -1028,6 +1029,18 @@ function formatGermanDateTime(isoDate: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(isoDate)).replace(",", " -") + " Uhr";
+}
+
+function formatSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = size;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 async function moderatorRoleNameFor(discordId?: string | null) {
@@ -1047,28 +1060,39 @@ async function buildEvidenceReportText(metadata: EvidenceReportMetadata) {
     : metadata.targetSecondary || "Nicht angegeben";
   const messageContent = metadata.messageProof?.content?.trim() || "Keine Discord-Nachricht geladen.";
   const notes = metadata.notes || "Keine Moderator-Notizen eingetragen.";
+  const evidenceFiles = metadata.evidenceFiles?.length
+    ? metadata.evidenceFiles.map((file, index) => `${index + 1}. ${file.originalName} (${file.mimeType || "Datei"}, ${formatSize(file.size)})`).join("\r\n")
+    : "Keine separaten Dateien angehängt.";
 
   return [
     "==================================================",
     "        FURRBOX SYSTEM-MODERATIONSPROTOKOLL",
     "==================================================",
     "[FALL-INFORMATIONEN]",
+    `Fall-ID       : ${metadata.caseId || "Nicht angegeben"}`,
     `Zeitpunkt     : ${formatGermanDateTime(metadata.createdAt)}`,
     `Plattform     : ${metadata.platform}`,
+    `Kategorie     : ${metadata.violationCategory}`,
     `Zielperson    : ${targetName} (ID: ${targetId})`,
     `Moderator     : ${moderatorName} (Rolle: ${moderatorRole})`,
     "",
     "[BEWEISMITTEL & QUELLEN]",
-    `Kategorie     : ${metadata.violationCategory}`,
     `Nachrichten-ID: ${metadata.messageId || "Nicht angegeben"}`,
     `Server/Channel: ${channel}`,
     "Inhalt der Nachricht:",
     "--------------------------------------------------",
-    `"${messageContent}"`,
+    messageContent,
+    "--------------------------------------------------",
+    "",
+    "[ANGEHÄNGTE DATEIEN]",
+    "--------------------------------------------------",
+    evidenceFiles,
     "--------------------------------------------------",
     "",
     "[MODERATOR NOTIZEN]",
+    "--------------------------------------------------",
     notes,
+    "--------------------------------------------------",
     "==================================================",
     ""
   ].join("\r\n");
@@ -1104,6 +1128,78 @@ async function writeDiscordReportFile(targetName: string, metadata: EvidenceRepo
   const virtualPath = `Dokumente/Moderation_Beweise/Discord_Logs/${safeTarget}_Report.txt`;
   const physicalPath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", `${safeTarget}_Report.txt`);
   return writeStoredTextFile(virtualPath, physicalPath, await buildEvidenceReportText(metadata));
+}
+
+function legacyEvidenceMetadataFromJson(raw: string): EvidenceReportMetadata | null {
+  try {
+    const parsed = JSON.parse(raw) as {
+      caseId?: string;
+      platform?: string;
+      targetPrimary?: string;
+      targetDiscordId?: string;
+      targetDisplayName?: string;
+      targetSecondary?: string;
+      messageId?: string;
+      messageProof?: MessageInspectResult | null;
+      violationCategory?: string;
+      notes?: string;
+      evidenceFiles?: Array<{ originalName?: string; mimeType?: string; size?: number }>;
+      createdBy?: AuthUser;
+      createdAt?: string;
+    };
+    const platform = parsed.platform === "VRChat" ? "VRChat" : "Discord";
+    return {
+      caseId: parsed.caseId,
+      platform,
+      targetPrimary: String(parsed.targetPrimary || parsed.targetDisplayName || "Unbekannt"),
+      targetDiscordId: String(parsed.targetDiscordId || ""),
+      targetDisplayName: String(parsed.targetDisplayName || parsed.targetPrimary || "Unbekannt"),
+      targetSecondary: String(parsed.targetSecondary || ""),
+      messageId: String(parsed.messageId || ""),
+      messageProof: parsed.messageProof || null,
+      violationCategory: String(parsed.violationCategory || "Other"),
+      notes: String(parsed.notes || ""),
+      evidenceFiles: Array.isArray(parsed.evidenceFiles)
+        ? parsed.evidenceFiles.map((file) => ({
+            originalName: String(file.originalName || "Unbekannte Datei"),
+            mimeType: String(file.mimeType || "Datei"),
+            size: Number(file.size || 0)
+          }))
+        : [],
+      createdBy: parsed.createdBy,
+      createdAt: parsed.createdAt || new Date().toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function migrateLegacyEvidenceMetadataFiles() {
+  const legacyRows = await prisma.storedFile.findMany({
+    where: {
+      scope: "PUBLIC",
+      OR: [
+        { name: { endsWith: "case_metadata.json" } },
+        { originalName: { endsWith: "case_metadata.json" } }
+      ]
+    }
+  });
+
+  for (const row of legacyRows) {
+    const physicalPath = path.join(publicStorageDir(), row.name);
+    const raw = await fs.readFile(physicalPath, "utf8").catch(() => "");
+    const metadata = legacyEvidenceMetadataFromJson(raw);
+    const virtualCasePath = path.dirname(row.originalName || row.name).replace(/\\/g, "/");
+    const physicalCasePath = path.dirname(physicalPath);
+    if (metadata && virtualCasePath && virtualCasePath !== ".") {
+      await writeCaseReportFile(virtualCasePath, physicalCasePath, metadata);
+      if (metadata.platform === "Discord") {
+        await writeDiscordReportFile(metadata.targetDisplayName || metadata.targetPrimary, metadata);
+      }
+    }
+    await fs.unlink(physicalPath).catch(() => undefined);
+    await prisma.storedFile.delete({ where: { id: row.id } }).catch(() => undefined);
+  }
 }
 
 async function listDiscordTextLogsForUser(discordId: string) {
@@ -1885,6 +1981,11 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
       messageProof,
       violationCategory,
       notes,
+      evidenceFiles: uploadedFiles.map((file) => ({
+        originalName: file.originalname,
+        mimeType: file.mimetype || "Datei",
+        size: file.size
+      })),
       createdBy: req.user,
       createdAt: new Date().toISOString()
     };
@@ -2185,6 +2286,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 Promise.all([ensureStorage(), ensureDatabase()])
   .then(() => ensurePrimaryDeveloperAccount())
+  .then(() => migrateLegacyEvidenceMetadataFiles())
   .then(() => {
   ensurePublicStorageWatcher();
   server.listen(port, () => {

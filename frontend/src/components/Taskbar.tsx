@@ -25,7 +25,11 @@ export function Taskbar() {
 
   function launch(id: FurrWindowKind) {
     if (id === "browser") {
-      createWindow({ kind: "browser", title: "FurrBrowser", url: "https://example.com", x: 180, y: 90, width: 920, height: 640 });
+      const existingBrowser = Object.values(useWindowStore.getState().windows)
+        .filter((win) => win.kind === "browser")
+        .sort((a, b) => b.zIndex - a.zIndex)[0];
+      if (existingBrowser) openWindow(existingBrowser.id);
+      else createWindow({ kind: "browser", title: "FurrBrowser", url: "https://example.com", x: 180, y: 90, width: 920, height: 640 });
       return;
     }
     if (windows[id]?.isMinimized) restoreWindow(id);

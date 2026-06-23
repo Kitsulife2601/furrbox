@@ -172,6 +172,15 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   }, [activeFileScope, setFiles, token]);
 
   useEffect(() => {
+    if (!windowState.url?.startsWith("furrfs:path:")) return;
+    const nextPath = decodeURIComponent(windowState.url.replace("furrfs:path:", ""));
+    if (!nextPath || nextPath === currentPath) return;
+    setHistory((items) => [...items, currentPath]);
+    setFuture([]);
+    setCurrentPath(nextPath);
+  }, [currentPath, windowState.url]);
+
+  useEffect(() => {
     refresh();
   }, [refresh]);
 
