@@ -1,14 +1,12 @@
 "use client";
 
-import { Activity, Bot, Check, FileText, Pencil, Radar, Server, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Activity, Bot, FileText, Radar, Server, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FurrAccountManager } from "@/components/FurrAccountManager";
 import { FurrWindow } from "@/components/FurrWindow";
-import { deleteAdminUser, listPresenceLogs, listPresenceUsers, updateMemberDiscordId, type PresenceLog, type PresenceUser } from "@/lib/presence";
+import { listPresenceLogs, listPresenceUsers, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
-
-type PresenceTab = "team" | "global";
 
 const teamRoles = new Set(["Dev", "Owner", "Mod", "Supporter"]);
 const developerDiscordId = "1312104318006071328";
@@ -95,107 +93,27 @@ function LogText({ content }: { content: string }) {
   );
 }
 
-function DiscordIdCell({
-  user,
-  canEdit,
-  editing,
-  value,
-  saving,
-  onStart,
-  onChange,
-  onCancel,
-  onSave
-}: {
-  user: PresenceUser;
-  canEdit: boolean;
-  editing: boolean;
-  value: string;
-  saving: boolean;
-  onStart: () => void;
-  onChange: (value: string) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}) {
-  if (editing) {
-    return (
-      <span className="flex min-w-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
-        <input
-          autoFocus
-          className="h-7 min-w-0 flex-1 rounded border border-[#00f0ff] bg-slate-950 px-2 py-0.5 font-mono text-xs text-slate-100 outline-none shadow-[0_0_12px_rgba(0,240,255,0.22)]"
-          inputMode="numeric"
-          maxLength={19}
-          value={value}
-          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 19))}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") onSave();
-            if (event.key === "Escape") onCancel();
-          }}
-        />
-        <button
-          className="grid h-7 w-7 shrink-0 place-items-center rounded border border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-40"
-          disabled={saving || !/^\d{17,19}$/.test(value)}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSave();
-          }}
-          aria-label="Discord ID speichern"
-        >
-          <Check size={14} />
-        </button>
-      </span>
-    );
-  }
-
-  if (!user.discordId && canEdit) {
-    return (
-      <button
-        className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-slate-500 transition hover:border-cyan-300/25 hover:bg-cyan-300/5 hover:text-cyan-100"
-        onClick={(event) => {
-          event.stopPropagation();
-          onStart();
-        }}
-        aria-label="Discord ID bearbeiten"
-      >
-        <span className="truncate">Nicht verbunden</span>
-        <Pencil size={13} className="shrink-0 text-[#ff007f] drop-shadow-[0_0_8px_rgba(255,0,127,0.65)]" />
-      </button>
-    );
-  }
-
-  return <span className="truncate font-mono text-[11px] text-slate-500">{user.discordId || "Nicht verbunden"}</span>;
-}
-
 export function FurrPresence({ windowState }: { windowState: FurrWindowState }) {
   const { token, user, socket, connected, discordBotStatus } = useFurrBoxStore();
-  const [activeTab, setActiveTab] = useState<PresenceTab>("team");
-  const [users, setUsers] = useState<PresenceUser[]>([]);
-  const [teamRegistryUsers, setTeamRegistryUsers] = useState<PresenceUser[]>([]);
+  const [registeredTeamUsers, setRegisteredTeamUsers] = useState<PresenceUser[]>([]);
   const [selected, setSelected] = useState<PresenceUser | null>(null);
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingDiscordUserId, setEditingDiscordUserId] = useState<string | null>(null);
-  const [editingDiscordValue, setEditingDiscordValue] = useState("");
-  const [savingDiscordId, setSavingDiscordId] = useState(false);
-  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
-  const teamUsers = useMemo(() => sortPresence(teamRegistryUsers.filter((entry) => teamRoles.has(cleanRoleName(entry)))), [teamRegistryUsers]);
-  const globalUsers = useMemo(() => sortPresence(users), [users]);
-  const visibleUsers = activeTab === "team" ? teamUsers : globalUsers;
-  const onlineCount = globalUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
+  const teamUsers = useMemo(
+    () => sortPresence(registeredTeamUsers.filter((entry) => isLocalFurrBoxAccount(entry) && teamRoles.has(cleanRoleName(entry)))),
+    [registeredTeamUsers]
+  );
   const teamOnlineCount = teamUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
-  const rowGrid = isPrimaryDeveloper && activeTab === "global" ? "grid-cols-[1.3fr_0.55fr_0.85fr_0.9fr_44px]" : "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
+  const rowGrid = "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
 
   async function refreshRegistry() {
     if (!token) return;
-    const [nextUsers, nextTeamUsers] = await Promise.all([
-      listPresenceUsers(token, "global"),
-      listPresenceUsers(token, "team")
-    ]);
-    const nextVisibleUsers = activeTab === "team" ? sortPresence(nextTeamUsers) : sortPresence(nextUsers);
-    setUsers(nextUsers);
-    setTeamRegistryUsers(nextTeamUsers);
+    const nextUsers = await listPresenceUsers(token, "global");
+    const nextVisibleUsers = sortPresence(nextUsers.filter((entry) => isLocalFurrBoxAccount(entry) && teamRoles.has(cleanRoleName(entry))));
+    setRegisteredTeamUsers(nextUsers);
     setSelected((current) => {
       if (!current) return nextVisibleUsers[0] ?? null;
       return nextVisibleUsers.find((entry) => entry.id === current.id) ?? nextVisibleUsers[0] ?? null;
@@ -240,65 +158,10 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
       .finally(() => setLoadingLogs(false));
   }, [selected?.discordId, token]);
 
-  function switchTab(tab: PresenceTab) {
-    const nextUsers = tab === "team" ? teamUsers : globalUsers;
-    setActiveTab(tab);
-    setEditingDiscordUserId(null);
-    setEditingDiscordValue("");
-    setSelected((current) => (current && nextUsers.some((entry) => entry.id === current.id) ? current : nextUsers[0] ?? null));
-  }
-
-  function startDiscordIdEdit(target: PresenceUser) {
-    if (!isPrimaryDeveloper || activeTab !== "global" || target.discordId || !isLocalFurrBoxAccount(target)) return;
-    setEditingDiscordUserId(target.id);
-    setEditingDiscordValue("");
-    setError(null);
-  }
-
-  async function saveDiscordIdEdit(target: PresenceUser) {
-    if (!token || !isPrimaryDeveloper || savingDiscordId) return;
-    if (!/^\d{17,19}$/.test(editingDiscordValue)) {
-      setError("Discord ID muss 17-19 Ziffern enthalten.");
-      return;
-    }
-    setSavingDiscordId(true);
-    setError(null);
-    try {
-      await updateMemberDiscordId(token, { targetUserId: target.id, discordId: editingDiscordValue });
-      await refreshRegistry();
-      setEditingDiscordUserId(null);
-      setEditingDiscordValue("");
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Discord ID konnte nicht gespeichert werden.");
-    } finally {
-      setSavingDiscordId(false);
-    }
-  }
-
-  async function deleteUser(target: PresenceUser) {
-    if (!token || !isPrimaryDeveloper || deletingUserId) return;
-    if (target.discordId === developerDiscordId) {
-      setError("Der primaere Entwickler-Account kann nicht geloescht werden.");
-      return;
-    }
-    if (!window.confirm(`Account "${resolvedName(target)}" wirklich vollstaendig loeschen?`)) return;
-    setDeletingUserId(target.id);
-    setError(null);
-    try {
-      await deleteAdminUser(token, target.id);
-      await refreshRegistry();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Account konnte nicht geloescht werden.");
-    } finally {
-      setDeletingUserId(null);
-    }
-  }
-
   const cards = [
     { label: "FurrBox Sync", value: connected ? "Online" : "Offline", detail: connected ? "WebSocket verbunden" : "Client reconnecting", online: connected, icon: Server },
     { label: "Discord Bot", value: discordBotStatus.connected ? "Online" : "Offline", detail: discordBotStatus.connected ? `Seit ${formatLastSeen(discordBotStatus.connectedAt)}` : `Zuletzt ${formatLastSeen(discordBotStatus.disconnectedAt)}`, online: discordBotStatus.connected, icon: Bot },
-    { label: "Team Nodes", value: `${teamOnlineCount}/${teamUsers.length}`, detail: "Dev, Owner, Mod, Supporter", online: teamOnlineCount > 0, icon: ShieldCheck },
-    { label: "Global Registry", value: `${onlineCount}/${globalUsers.length}`, detail: "Alle Discord-Fischmember", online: onlineCount > 0, icon: Users }
+    { label: "Team Matrix", value: `${teamOnlineCount}/${teamUsers.length}`, detail: "Registrierte App-Accounts mit Teamrolle", online: teamOnlineCount > 0, icon: ShieldCheck }
   ];
 
   return (
@@ -320,7 +183,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
             <StatusBadge online={connected && discordBotStatus.connected} onlineLabel="SYSTEM OK" offlineLabel="TEILWEISE OFFLINE" />
           </div>
 
-          <div className="mt-4 grid grid-cols-4 gap-2">
+          <div className="mt-4 grid grid-cols-3 gap-2">
             {cards.map((card) => {
               const Icon = card.icon;
               return (
@@ -337,23 +200,12 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
           </div>
         </header>
 
-        <div className="flex items-center gap-2 border-b border-purple-500/20 bg-slate-950/45 px-4 py-3">
-          {[
-            { id: "team" as const, label: "TEAM MATRIX", count: teamUsers.length, online: teamOnlineCount },
-            { id: "global" as const, label: "GLOBAL REGISTRY", count: globalUsers.length, online: onlineCount }
-          ].map((tab) => {
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                className={`rounded-xl border px-4 py-2 text-left transition ${active ? "border-[#00f0ff]/55 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(0,240,255,0.22)]" : "border-white/5 bg-slate-900/45 text-slate-500 hover:border-purple-500/30 hover:text-slate-200"}`}
-                onClick={() => switchTab(tab.id)}
-              >
-                <span className="block text-[11px] font-black uppercase tracking-[0.18em]">{tab.label}</span>
-                <span className="mt-1 block text-[10px] font-semibold text-slate-500">{tab.online}/{tab.count} online</span>
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between gap-3 border-b border-purple-500/20 bg-slate-950/45 px-4 py-3">
+          <div className="rounded-xl border border-[#00f0ff]/55 bg-cyan-400/10 px-4 py-2 text-cyan-100 shadow-[0_0_18px_rgba(0,240,255,0.22)]">
+            <span className="block text-[11px] font-black uppercase tracking-[0.18em]">TEAM MATRIX</span>
+            <span className="mt-1 block text-[10px] font-semibold text-slate-500">{teamOnlineCount}/{teamUsers.length} online · nur registrierte FurrBox-App-Accounts</span>
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">Global Registry ausgeblendet</span>
         </div>
 
         {error ? <div className="border-b border-pink-500/20 bg-pink-500/10 px-5 py-2 text-[12px] font-semibold text-pink-100">{error}</div> : null}
@@ -367,14 +219,12 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                   <span>Rolle</span>
                   <span>Status</span>
                   <span>Discord ID</span>
-                  {isPrimaryDeveloper && activeTab === "global" ? <span>Aktion</span> : null}
                 </div>
 
-                {visibleUsers.map((entry) => {
+                {teamUsers.map((entry) => {
                   const appOnline = isAppOnline(entry);
                   const active = selected?.id === entry.id;
                   const role = cleanRoleName(entry);
-                  const canManageLocalAccount = isPrimaryDeveloper && activeTab === "global" && isLocalFurrBoxAccount(entry);
                   return (
                     <div
                       key={entry.id}
@@ -398,42 +248,14 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                         <SplitStatusBadge user={entry} />
                         {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(entry.lastSeenAt)}</span> : null}
                       </span>
-                      <DiscordIdCell
-                        user={entry}
-                        canEdit={canManageLocalAccount}
-                        editing={editingDiscordUserId === entry.id}
-                        value={editingDiscordValue}
-                        saving={savingDiscordId}
-                        onStart={() => startDiscordIdEdit(entry)}
-                        onChange={setEditingDiscordValue}
-                        onCancel={() => {
-                          setEditingDiscordUserId(null);
-                          setEditingDiscordValue("");
-                        }}
-                        onSave={() => saveDiscordIdEdit(entry)}
-                      />
-                      {isPrimaryDeveloper && activeTab === "global" ? (
-                        <button
-                          className="grid h-8 w-8 place-items-center rounded-lg border border-pink-400/25 bg-pink-500/10 text-[#ff007f] shadow-[0_0_12px_rgba(255,0,127,0.22)] transition hover:bg-pink-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                          disabled={!canManageLocalAccount || deletingUserId === entry.id || entry.discordId === developerDiscordId}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (!canManageLocalAccount) return;
-                            deleteUser(entry);
-                          }}
-                          aria-label={canManageLocalAccount ? "Lokalen FurrBox-Account loeschen" : "Discord-Mitglied wird synchronisiert"}
-                          title={canManageLocalAccount ? "Lokalen FurrBox-Account loeschen" : "Discord-Mitglied wird vom Server synchronisiert"}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      ) : null}
+                      <span className="truncate font-mono text-[11px] text-slate-500">{entry.discordId || "Nicht verbunden"}</span>
                     </div>
                   );
                 })}
 
-                {!visibleUsers.length ? (
+                {!teamUsers.length ? (
                   <div className="px-5 py-12 text-center text-[13px] text-slate-500">
-                    {activeTab === "team" ? "Keine Team-Nutzer mit Dev, Owner, Mod oder Supporter Rolle gefunden." : "Noch keine Discord-Fischmember synchronisiert."}
+                    Keine registrierten FurrBox-App-Accounts mit Dev, Owner, Mod oder Supporter Rolle gefunden.
                   </div>
                 ) : null}
               </div>
