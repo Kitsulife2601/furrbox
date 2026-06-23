@@ -166,7 +166,11 @@ const databaseUrl = process.env.DATABASE_URL || `file:${path.join(storageDir, "f
 process.env.DATABASE_URL = databaseUrl;
 const prisma = new PrismaClient();
 const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
-const allowedOrigins = corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean);
+const allowedOrigins = new Set([
+  ...corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean),
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+]);
 const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
 const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
 const publicBackendUrl =
@@ -182,7 +186,7 @@ function isAllowedOrigin(origin?: string) {
     origin === "null" ||
     origin.startsWith("file://") ||
     origin.startsWith("app://") ||
-    allowedOrigins.includes(origin)
+    allowedOrigins.has(origin)
   );
 }
 
