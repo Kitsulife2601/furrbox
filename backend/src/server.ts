@@ -388,10 +388,6 @@ function accountInviteTokenHash(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function createDisabledPasswordHashSeed(discordId: string) {
-  return `pending:${discordId}:${crypto.randomUUID()}:${crypto.randomBytes(16).toString("hex")}`;
-}
-
 async function createAccountSetupInvite(user: Pick<User, "id" | "username" | "displayName" | "discordId">, roleName: AdminOverrideRole): Promise<AccountInvitePayload | null> {
   if (!user.discordId) return null;
   const rawToken = crypto.randomBytes(32).toString("hex");
@@ -451,21 +447,21 @@ async function findActiveAccountInvite(rawToken: string) {
 }
 
 function renderSetupPage(options: { token: string; username?: string; displayName?: string; invalid?: boolean; completed?: boolean; error?: string }) {
-  const title = options.completed ? "FurrBox Account aktiviert" : options.invalid ? "FurrBox Einladung ungueltig" : "FurrBox Passwort festlegen";
+  const title = options.completed ? "FurrBox Passwort aktualisiert" : options.invalid ? "FurrBox Link ungueltig" : "FurrBox Passwort aendern";
   const safeToken = escapeHtml(options.token);
   const safeName = escapeHtml(options.displayName || options.username || "FurrBox Nutzer");
   const safeError = options.error ? escapeHtml(options.error) : "";
   const content = options.invalid
-    ? `<p class="muted">Diese Einladung ist abgelaufen oder wurde bereits benutzt. Bitte Kitsulife um eine neue Einladung.</p>`
+    ? `<p class="muted">Dieser Link ist abgelaufen oder wurde bereits benutzt. Dein vorhandenes Passwort bleibt gueltig. Bitte Kitsulife um einen neuen Link, falls du es aendern moechtest.</p>`
     : options.completed
-      ? `<p class="muted">Dein Passwort wurde gespeichert. Du kannst dich jetzt in FurrBox mit deinem Nutzernamen anmelden.</p>`
+      ? `<p class="muted">Dein neues Passwort wurde gespeichert. Du kannst dich jetzt in FurrBox mit deinem Nutzernamen anmelden.</p>`
       : `
-        <p class="muted">Hallo <strong>${safeName}</strong>. Lege hier dein eigenes Passwort fest. Danach funktioniert der normale FurrBox-Login.</p>
+        <p class="muted">Hallo <strong>${safeName}</strong>. Dein Start-Passwort funktioniert bereits. Wenn du moechtest, kannst du es hier durch ein eigenes neues Passwort ersetzen.</p>
         <form method="post" action="/setup/${safeToken}">
           <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Neues Passwort" required />
           <input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Passwort wiederholen" required />
           ${safeError ? `<div class="error">${safeError}</div>` : ""}
-          <button type="submit">Passwort aktivieren</button>
+          <button type="submit">Passwort aendern</button>
         </form>
       `;
 
@@ -1898,7 +1894,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
       res.status(400).json({ error: "Discord-ID muss eine numerische Snowflake sein." });
       return;
     }
-    if (password && password.length < 8) {
+    if (password.length < 8) {
       res.status(400).json({ error: "Passwort muss mindestens 8 Zeichen lang sein." });
       return;
     }
@@ -1917,7 +1913,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
     }
 
     const roleData = adminOverrideRoleData(roleInput);
-    const passwordHash = await bcrypt.hash(password || createDisabledPasswordHashSeed(discordId), 12);
+    const passwordHash = await bcrypt.hash(password, 12);
     const createdUser = await prisma.user.create({
       data: {
         username,
@@ -1963,7 +1959,7 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
     });
 
     const snapshotUser = await getPresenceUser(createdUser.id);
-    const accountInvite = password ? null : await createAccountSetupInvite(createdUser, roleInput);
+    const accountInvite = await createAccountSetupInvite(createdUser, roleInput);
     await emitPresenceSnapshot("admin-create-user");
     io.emit("registryUpdate", { action: "create", user: snapshotUser, emittedAt: new Date().toISOString() });
     io.emit("discord:members-refreshed", {
@@ -1977,9 +1973,9 @@ app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, 
     }
     await emitTeamNotification({
       version: "FurrBox",
-      title: accountInvite ? "System-Update: Account-Einladung gesendet" : "System-Update: Neuer Account erstellt",
+      title: accountInvite ? "System-Update: Account erstellt & Passwortwechsel angeboten" : "System-Update: Neuer Account erstellt",
       description: accountInvite
-        ? `${username} wurde angelegt. Der Discord-Bot sendet jetzt den Aktivierungslink.`
+        ? `${username} wurde mit Start-Passwort angelegt. Der Discord-Bot fragt nach optionalem Passwortwechsel.`
         : `${username} wurde durch Kitsulife in der Datenbank angelegt.`
     });
 

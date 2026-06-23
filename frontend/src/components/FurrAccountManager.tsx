@@ -37,6 +37,7 @@ export function FurrAccountManager({
 }) {
   const [username, setUsername] = useState("");
   const [discordId, setDiscordId] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<AccountRole>("Member");
   const [accounts, setAccounts] = useState<PresenceUser[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -75,13 +76,19 @@ export function FurrAccountManager({
       setStatus({ type: "error", message: "Discord-ID muss eine numerische Snowflake sein." });
       return;
     }
-    setStatus({ type: "saving", message: "Account wird angelegt und der Bot sendet die Aktivierungsfrage..." });
+    if (password.length < 8) {
+      setStatus({ type: "error", message: "Start-Passwort muss mindestens 8 Zeichen lang sein." });
+      return;
+    }
+
+    setStatus({ type: "saving", message: "Account wird mit Start-Passwort angelegt und der Bot fragt nach optionaler Aenderung..." });
     try {
-      await createAdminUser(token, { username: cleanUsername, discordId, role });
+      await createAdminUser(token, { username: cleanUsername, discordId, password, role });
       setUsername("");
       setDiscordId("");
+      setPassword("");
       setRole("Member");
-      setStatus({ type: "success", message: "Account wurde erstellt. Der Discord-Bot sendet den privaten Aktivierungslink." });
+      setStatus({ type: "success", message: "Account wurde erstellt. Das Start-Passwort funktioniert sofort; der Bot fragt nach optionalem eigenem Passwort." });
       await refreshAccounts();
       await onCreated();
     } catch (error) {
@@ -140,6 +147,17 @@ export function FurrAccountManager({
             />
           </label>
           <label className="block">
+            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Start-Passwort</span>
+            <input
+              className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] text-slate-100 outline-none focus:border-pink-400 focus:shadow-[0_0_16px_rgba(255,0,127,0.22)]"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Mindestens 8 Zeichen"
+              autoComplete="new-password"
+            />
+          </label>
+          <label className="block">
             <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rolle</span>
             <select
               className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] font-semibold text-slate-100 outline-none focus:border-violet-300"
@@ -156,10 +174,10 @@ export function FurrAccountManager({
             disabled={status.type === "saving"}
           >
             <UserPlus size={15} />
-            Account anlegen & Bot fragen
+            Account erstellen & Bot fragen
           </button>
           <p className="text-[11px] leading-relaxed text-slate-500">
-            Der Nutzer bekommt vom Discord-Bot einen privaten Aktivierungslink und legt sein eigenes Passwort selbst fest.
+            Das Start-Passwort bleibt gueltig. Der Bot fragt den Nutzer nur, ob er es durch ein eigenes Passwort ersetzen moechte.
           </p>
           {status.type !== "idle" ? (
             <div className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${status.type === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : status.type === "error" ? "border-pink-300/20 bg-pink-400/10 text-pink-100" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-100"}`}>

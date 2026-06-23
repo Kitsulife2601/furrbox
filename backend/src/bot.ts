@@ -501,20 +501,20 @@ async function sendAccountOnboardingInvite(payload: AccountOnboardingInvitePaylo
   const user = await client.users.fetch(payload.discordId);
   const embed = new EmbedBuilder()
     .setColor(0x00f0ff)
-    .setTitle("FurrBox Account aktivieren")
-    .setDescription(`Hallo ${payload.displayName}, dein FurrBox Zugang wurde vorbereitet. Wenn du deinen eigenen Login nutzen moechtest, lege ueber den Button dein Passwort fest.`)
+    .setTitle("FurrBox Passwort optional aendern")
+    .setDescription(`Hallo ${payload.displayName}, dein FurrBox Zugang wurde vorbereitet. Das von Kitsulife gesetzte Start-Passwort funktioniert bereits. Wenn du ein eigenes neues Passwort nutzen moechtest, kannst du es ueber den Button ersetzen.`)
     .addFields(
       { name: "Nutzername", value: `\`${payload.username}\``, inline: true },
       { name: "Rolle", value: payload.roleName, inline: true },
       { name: "Gueltig bis", value: expiresLabel, inline: false }
     )
-    .setFooter({ text: "FurrBox sendet niemals Passwoerter ueber Discord. Das Passwort wird nur auf der sicheren Setup-Seite gesetzt." })
+    .setFooter({ text: "FurrBox sendet niemals Passwoerter ueber Discord. Der Link ist nur fuer die optionale Passwortaenderung gedacht." })
     .setTimestamp(new Date());
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setStyle(ButtonStyle.Link)
       .setURL(payload.setupUrl)
-      .setLabel("Eigenes Passwort festlegen")
+      .setLabel("Eigenes Passwort setzen")
   );
 
   await user.send({ embeds: [embed], components: [row] });
