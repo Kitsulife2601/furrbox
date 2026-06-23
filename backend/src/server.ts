@@ -92,6 +92,7 @@ type TerminalProfile = {
   reason?: string;
 };
 type PresenceStatus = "online" | "offline";
+type PresenceView = "team" | "global";
 type PresenceUserDto = {
   id: string;
   username: string;
@@ -485,7 +486,8 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
   };
 }
 
-async function listPresenceUsers(): Promise<PresenceUserDto[]> {
+async function listPresenceUsers(view: PresenceView = "global"): Promise<PresenceUserDto[]> {
+  const teamWhere = view === "team" ? `WHERE dm."highestPrivilege" IN ('dev', 'owner', 'moderator', 'supporter')` : "";
   const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
     SELECT
       u."id",
@@ -503,6 +505,7 @@ async function listPresenceUsers(): Promise<PresenceUserDto[]> {
     FROM "User" u
     LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
     LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+    ${teamWhere}
     ORDER BY
       CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
       COALESCE(dm."nickname", dm."displayName", u."displayName", u."username") COLLATE NOCASE ASC
@@ -1130,9 +1133,10 @@ app.get("/api/discord/members", requireAuth, async (_req: AuthedRequest, res, ne
   }
 });
 
-app.get("/api/presence/users", requireAuth, async (_req: AuthedRequest, res, next) => {
+app.get("/api/presence/users", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    res.json({ users: await listPresenceUsers() });
+    const view: PresenceView = req.query.view === "team" ? "team" : "global";
+    res.json({ view, users: await listPresenceUsers(view) });
   } catch (error) {
     next(error);
   }

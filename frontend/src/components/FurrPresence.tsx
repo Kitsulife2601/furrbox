@@ -11,7 +11,7 @@ type PresenceTab = "team" | "global";
 
 const teamRoles = new Set(["Dev", "Owner", "Mod", "Supporter"]);
 
-function displayName(user: PresenceUser) {
+function resolvedName(user: PresenceUser) {
   return user.nickname || user.discordUsername || user.displayName || user.username;
 }
 
@@ -38,14 +38,15 @@ function formatLastSeen(value: string | null | undefined) {
 function sortPresence(users: PresenceUser[]) {
   return [...users].sort((a, b) => {
     if (a.status !== b.status) return a.status === "online" ? -1 : 1;
-    return displayName(a).localeCompare(displayName(b), "de");
+    return resolvedName(a).localeCompare(resolvedName(b), "de");
   });
 }
 
-function StatusBadge({ online, onlineLabel = "Online", offlineLabel = "Offline" }: { online: boolean; onlineLabel?: string; offlineLabel?: string }) {
+function StatusBadge({ online, onlineLabel = "ONLINE", offlineLabel = "OFFLINE" }: { online: boolean; onlineLabel?: string; offlineLabel?: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${online ? "animate-pulse border-cyan-300/45 bg-cyan-300/10 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.28)]" : "border-slate-700 bg-slate-800/50 text-slate-500"}`}>
-      {online ? `● ${onlineLabel}` : offlineLabel}
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${online ? "animate-pulse border-cyan-300/45 bg-cyan-300/10 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.28)]" : "border-slate-700 bg-slate-800/50 text-slate-500"}`}>
+      {online ? <span aria-hidden="true">{"\u25CF"}</span> : null}
+      {online ? onlineLabel : offlineLabel}
     </span>
   );
 }
@@ -67,7 +68,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
   useEffect(() => {
     if (!token) return;
-    listPresenceUsers(token)
+    listPresenceUsers(token, "global")
       .then((nextUsers) => {
         setUsers(nextUsers);
         const ordered = sortPresence(nextUsers);
@@ -123,34 +124,10 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   }
 
   const cards = [
-    {
-      label: "FurrBox Sync",
-      value: connected ? "Online" : "Offline",
-      detail: connected ? "WebSocket verbunden" : "Client reconnecting",
-      online: connected,
-      icon: Server
-    },
-    {
-      label: "Discord Bot",
-      value: discordBotStatus.connected ? "Online" : "Offline",
-      detail: discordBotStatus.connected ? `Seit ${formatLastSeen(discordBotStatus.connectedAt)}` : `Zuletzt ${formatLastSeen(discordBotStatus.disconnectedAt)}`,
-      online: discordBotStatus.connected,
-      icon: Bot
-    },
-    {
-      label: "Team Nodes",
-      value: `${teamOnlineCount}/${teamUsers.length}`,
-      detail: "Dev, Owner, Mod, Supporter",
-      online: teamOnlineCount > 0,
-      icon: ShieldCheck
-    },
-    {
-      label: "Global Registry",
-      value: `${onlineCount}/${globalUsers.length}`,
-      detail: "Alle registrierten Nutzer",
-      online: onlineCount > 0,
-      icon: Users
-    }
+    { label: "FurrBox Sync", value: connected ? "Online" : "Offline", detail: connected ? "WebSocket verbunden" : "Client reconnecting", online: connected, icon: Server },
+    { label: "Discord Bot", value: discordBotStatus.connected ? "Online" : "Offline", detail: discordBotStatus.connected ? `Seit ${formatLastSeen(discordBotStatus.connectedAt)}` : `Zuletzt ${formatLastSeen(discordBotStatus.disconnectedAt)}`, online: discordBotStatus.connected, icon: Bot },
+    { label: "Team Nodes", value: `${teamOnlineCount}/${teamUsers.length}`, detail: "Dev, Owner, Mod, Supporter", online: teamOnlineCount > 0, icon: ShieldCheck },
+    { label: "Global Registry", value: `${onlineCount}/${globalUsers.length}`, detail: "Alle registrierten Nutzer", online: onlineCount > 0, icon: Users }
   ];
 
   return (
@@ -169,7 +146,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Übersicht für FurrBox, Discord Bot und Team-Präsenz</p>
               </div>
             </div>
-            <StatusBadge online={connected && discordBotStatus.connected} onlineLabel="System OK" offlineLabel="Teilweise offline" />
+            <StatusBadge online={connected && discordBotStatus.connected} onlineLabel="SYSTEM OK" offlineLabel="TEILWEISE OFFLINE" />
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-2">
@@ -232,7 +209,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                       onClick={() => setSelected(user)}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-bold text-slate-100">{displayName(user)}</span>
+                        <span className="block truncate text-[13px] font-bold text-slate-100">{resolvedName(user)}</span>
                         <span className="mt-1 block truncate text-[11px] text-slate-500">{user.discordUsername ? `@${user.discordUsername}` : user.username}</span>
                       </span>
                       <span className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${role === "Member" ? "border-slate-600/35 bg-slate-700/10 text-slate-400" : "border-purple-500/35 bg-purple-500/10 text-purple-100"}`}>
@@ -263,12 +240,12 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 <FileText size={15} className="text-[#ff007f]" />
                 Moderation Logs
               </div>
-              <p className="mt-2 truncate text-[12px] text-slate-500">{selected ? `${displayName(selected)} [${cleanRoleName(selected)}]` : "Wähle einen Nutzer aus der Liste."}</p>
+              <p className="mt-2 truncate text-[12px] text-slate-500">{selected ? `${resolvedName(selected)} [${cleanRoleName(selected)}]` : "Wähle einen Nutzer aus der Liste."}</p>
               {selected ? (
                 <div className="mt-3 grid gap-2 rounded-xl border border-white/5 bg-slate-900/35 p-3 text-[11px]">
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">App Status</span><StatusBadge online={selected.status === "online"} /></div>
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Name</span><span className="truncate text-slate-300">{selected.discordUsername || "Nicht synchronisiert"}</span></div>
-                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Bot</span><StatusBadge online={discordBotStatus.connected} onlineLabel="Online" /></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Bot</span><StatusBadge online={discordBotStatus.connected} /></div>
                 </div>
               ) : null}
             </div>

@@ -35,8 +35,8 @@ async function authedFetch<T>(path: string, token: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function listPresenceUsers(token: string): Promise<PresenceUser[]> {
-  const data = await authedFetch<{ users: PresenceUser[] }>("/api/presence/users", token);
+export async function listPresenceUsers(token: string, view: "team" | "global" = "global"): Promise<PresenceUser[]> {
+  const data = await authedFetch<{ users: PresenceUser[] }>(`/api/presence/users?view=${view}`, token);
   return data.users;
 }
 
