@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #070812;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: #070812;
+  color: #e5faff;
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+}
+
+body {
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+input,
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+button {
+  cursor: pointer;
+}
+
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+  }
+}
+
+.mobile-grid-bg {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(0, 240, 255, 0.18), transparent 32%),
+    radial-gradient(circle at 100% 10%, rgba(255, 0, 127, 0.16), transparent 34%),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #070812;
+  background-size: auto, auto, 32px 32px, 32px 32px, auto;
+}
+
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 240, 255, 0.35) transparent;
+}
+
+.scroll-soft::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-soft::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 240, 255, 0.35);
+}

@@ -12,6 +12,7 @@ npm-debug.log*
 furrbox-dev.*.log
 furrbox-backend-test.*.log
 furrbox-frontend-test.*.log
+furrbox-mobile.*.log
 release/
 updates/*
 !updates/.gitkeep

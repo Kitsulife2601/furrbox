@@ -1,0 +1,41 @@
+{
+  "name": "FurrBox Mobile",
+  "short_name": "FurrBox",
+  "description": "Mobile companion interface for FurrBox",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "browser"],
+  "orientation": "portrait",
+  "background_color": "#070812",
+  "theme_color": "#070812",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Chat",
+      "short_name": "Chat",
+      "url": "/?tab=chat",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Dateien",
+      "short_name": "Files",
+      "url": "/?tab=files",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    }
+  ]
+}

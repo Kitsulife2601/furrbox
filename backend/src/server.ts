@@ -189,7 +189,12 @@ const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
 const allowedOrigins = new Set([
   ...corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean),
   "http://localhost:3000",
-  "http://127.0.0.1:3000"
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+  "capacitor://localhost",
+  "ionic://localhost",
+  "https://localhost"
 ]);
 const jwtSecret = process.env.JWT_SECRET || "change-this-local-furrbox-secret";
 const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
@@ -216,7 +221,7 @@ const io = new Server(server, {
       if (isAllowedOrigin(origin)) callback(null, true);
       else callback(new Error(`Origin ${origin} is not allowed.`));
     },
-    methods: ["GET", "POST", "DELETE"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   }
 });
 
