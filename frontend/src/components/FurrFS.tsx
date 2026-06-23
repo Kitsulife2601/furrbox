@@ -11,20 +11,15 @@ import {
   FileImage,
   FileText,
   FolderSync,
-  Image,
   LayoutList,
-  Maximize2,
-  Minus,
   Search,
   SlidersHorizontal,
-  Square,
-  Upload,
-  X
+  Upload
 } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { deleteFile, listFiles, readFileBlobUrl, readFileText, uploadFile } from "@/lib/files";
+import { deleteFile, listFiles, uploadFile } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
-import type { FurrWindowState } from "@/store/useWindowStore";
+import { useWindowStore, type FurrWindowState } from "@/store/useWindowStore";
 
 type TreeNode = {
   id: string;
@@ -154,6 +149,9 @@ function TreeBranch({ node, currentPath, expanded, toggle, navigate, depth = 0 }
 
 export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const { files, socket, connected, token, activeFileScope, uploadProgress, setFiles, setUploadProgress, setActiveFileScope } = useFurrBoxStore();
+  const createWindow = useWindowStore((state) => state.createWindow);
+  const openWindow = useWindowStore((state) => state.openWindow);
+  const updateWindow = useWindowStore((state) => state.updateWindow);
   const [currentPath, setCurrentPath] = useState("Dokumente/virtuelle Privater desktop/release");
   const [history, setHistory] = useState<string[]>([]);
   const [future, setFuture] = useState<string[]>([]);
@@ -161,10 +159,6 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const [query, setQuery] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
-  const [textPreview, setTextPreview] = useState<{ name: string; content: string; type: string } | null>(null);
-  const [viewerMinimized, setViewerMinimized] = useState(false);
-  const [viewerMaximized, setViewerMaximized] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -247,36 +241,27 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       navigate(row.path);
       return;
     }
-    if (row.file.mimeType.startsWith("image/") && token) {
-      const url = await readFileBlobUrl(row.file, token);
-      setViewerMinimized(false);
-      setViewerMaximized(false);
-      setTextPreview(null);
-      setPreview({ name: row.name, url });
-      return;
-    }
-    if (isTextDocument(row.file) && token) {
-      const content = await readFileText(row.file, token);
-      if (preview) URL.revokeObjectURL(preview.url);
-      setViewerMinimized(false);
-      setViewerMaximized(false);
-      setPreview(null);
-      setTextPreview({ name: row.name, content, type: row.type });
+    if (row.file.mimeType.startsWith("image/") || isTextDocument(row.file)) {
+      const viewerId = `viewer:${row.file.id}`;
+      const viewerUrl = `furrfile:${encodeURIComponent(JSON.stringify({ fileId: row.file.id }))}`;
+      const existing = useWindowStore.getState().windows[viewerId];
+      if (existing) {
+        updateWindow(viewerId, { title: row.name, url: viewerUrl, isOpen: true, isMinimized: false });
+        openWindow(viewerId);
+      } else {
+        createWindow({
+          id: viewerId,
+          kind: "viewer",
+          title: row.name,
+          url: viewerUrl,
+          x: 220,
+          y: 96,
+          width: 860,
+          height: 620
+        });
+      }
     }
   }
-
-  function closeViewer() {
-    if (preview) URL.revokeObjectURL(preview.url);
-    setPreview(null);
-    setTextPreview(null);
-    setViewerMinimized(false);
-    setViewerMaximized(false);
-  }
-
-  const activeViewerName = textPreview?.name || preview?.name;
-  const viewerShellClass = viewerMaximized
-    ? "flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950 shadow-[0_0_46px_rgba(0,240,255,0.24)]"
-    : "flex max-h-full w-[min(920px,calc(100vw-64px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-[0_0_40px_rgba(0,240,255,0.2)]";
 
   return (
     <FurrWindow windowState={windowState} icon={<FolderSync size={15} />}>
@@ -424,59 +409,6 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
         </main>
       </div>
 
-      {(preview || textPreview) && viewerMinimized ? (
-        <button
-          type="button"
-          aria-label="Vorschau wiederherstellen"
-          className="absolute bottom-4 left-1/2 z-[10011] flex h-10 -translate-x-1/2 items-center gap-2 rounded-xl border border-cyan-300/30 bg-slate-950/90 px-4 text-[12px] font-bold text-cyan-100 shadow-[0_0_22px_rgba(0,240,255,0.24)] backdrop-blur-xl transition hover:border-[#00f0ff] hover:text-[#00f0ff]"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={() => setViewerMinimized(false)}
-        >
-          {textPreview ? <FileText size={15} /> : <Image size={15} />}
-          {activeViewerName} wiederherstellen
-        </button>
-      ) : null}
-
-      {preview && !viewerMinimized ? (
-        <div className="fixed inset-0 z-[10010] grid place-items-center bg-black/70 p-8 backdrop-blur-sm">
-          <div className={viewerShellClass}>
-            <div className="flex h-12 items-center justify-between border-b border-white/10 px-4 text-white">
-              <div className="flex items-center gap-2 text-[13px] font-semibold"><Image size={16} />{preview.name}</div>
-              <div className="flex items-center">
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setViewerMinimized(true)} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-cyan-500/10 hover:text-[#00f0ff]" aria-label="Vorschau minimieren"><Minus size={15} /></button>
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setViewerMaximized((value) => !value)} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-purple-500/15 hover:text-violet-100" aria-label={viewerMaximized ? "Vorschau wiederherstellen" : "Vorschau maximieren"}>{viewerMaximized ? <Square size={14} /> : <Maximize2 size={15} />}</button>
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={closeViewer} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-[#ff007f]/25 hover:text-pink-100" aria-label="Vorschau schliessen"><X size={16} /></button>
-              </div>
-            </div>
-            <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-slate-950 p-3">
-              <img src={preview.url} alt={preview.name} className="max-h-full max-w-full object-contain" />
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {textPreview && !viewerMinimized ? (
-        <div className="fixed inset-0 z-[10010] grid place-items-center bg-black/70 p-8 backdrop-blur-sm">
-          <div className={viewerShellClass}>
-            <div className="flex h-12 items-center justify-between border-b border-white/10 px-4 text-white">
-              <div className="flex min-w-0 items-center gap-2 text-[13px] font-semibold">
-                <FileText size={16} className="text-[#00f0ff]" />
-                <span className="truncate">{textPreview.name}</span>
-                <span className="rounded border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-purple-100">{textPreview.type}</span>
-              </div>
-              <div className="flex items-center">
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setViewerMinimized(true)} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-cyan-500/10 hover:text-[#00f0ff]" aria-label="Textdokument minimieren"><Minus size={15} /></button>
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setViewerMaximized((value) => !value)} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-purple-500/15 hover:text-violet-100" aria-label={viewerMaximized ? "Textdokument wiederherstellen" : "Textdokument maximieren"}>{viewerMaximized ? <Square size={14} /> : <Maximize2 size={15} />}</button>
-                <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={closeViewer} className="grid h-9 w-10 place-items-center rounded-lg text-slate-300 hover:bg-[#ff007f]/25 hover:text-pink-100" aria-label="Textdokument schliessen"><X size={16} /></button>
-              </div>
-            </div>
-            <div className="border-b border-white/5 bg-slate-900/45 px-4 py-2 text-[11px] text-slate-500">
-              Virtuelles Textdokument aus FurrFS / Moderation_Beweise
-            </div>
-            <pre className="scroll-soft min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-slate-950 p-5 font-mono text-[12px] leading-5 text-slate-200">{textPreview.content || "Dieses Textdokument ist leer."}</pre>
-          </div>
-        </div>
-      ) : null}
     </FurrWindow>
   );
 }

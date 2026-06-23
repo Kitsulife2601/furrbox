@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
+import { FurrFileViewer } from "@/components/FurrFileViewer";
 import { FurrNotification } from "@/components/FurrNotification";
 import { SettingsWindow } from "@/components/SettingsWindow";
 import { Taskbar } from "@/components/Taskbar";
@@ -188,6 +189,7 @@ export function Desktop() {
           if (win.kind === "evidence") return <FurrEvidence key={win.id} windowState={win} />;
           if (ENABLE_PRESENCE_TOOL && FurrPresenceWindow && win.kind === "presence") return <FurrPresenceWindow key={win.id} windowState={win} />;
           if (win.kind === "browser") return <FurrBrowser key={win.id} windowState={win} />;
+          if (win.kind === "viewer") return <FurrFileViewer key={win.id} windowState={win} />;
           return null;
         })}
       </div>

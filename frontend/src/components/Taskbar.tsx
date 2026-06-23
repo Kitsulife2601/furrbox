@@ -1,6 +1,6 @@
 "use client";
 
-import { Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, Wifi, WifiOff } from "lucide-react";
+import { FileText, Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, Wifi, WifiOff } from "lucide-react";
 import { useMemo } from "react";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
@@ -22,6 +22,13 @@ export function Taskbar() {
   const restoreWindow = useWindowStore((state) => state.restoreWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
+  const viewerWindows = useMemo(
+    () =>
+      Object.values(windows)
+        .filter((win) => win.kind === "viewer" && win.isOpen)
+        .sort((a, b) => a.zIndex - b.zIndex),
+    [windows]
+  );
 
   function launch(id: FurrWindowKind) {
     if (id === "browser") {
@@ -101,6 +108,23 @@ export function Taskbar() {
                 onClick={() => launch(app.id)}
               >
                 <Icon size={21} />
+              </button>
+            );
+          })}
+          {viewerWindows.map((win) => {
+            const selected = !win.isMinimized;
+            return (
+              <button
+                key={win.id}
+                className={`relative grid h-11 w-11 place-items-center rounded-xl border transition ${selected ? "border-[#ff007f]/55 bg-[#ff007f]/15 text-pink-100 shadow-[0_0_20px_rgba(255,0,127,0.34)] after:absolute after:-bottom-2 after:h-1 after:w-5 after:rounded-full after:bg-[#ff007f] after:shadow-[0_0_12px_rgba(255,0,127,0.95)]" : "border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff]"}`}
+                aria-label={win.title}
+                title={win.title}
+                onClick={() => {
+                  if (win.isMinimized) restoreWindow(win.id);
+                  else openWindow(win.id);
+                }}
+              >
+                <FileText size={20} />
               </button>
             );
           })}

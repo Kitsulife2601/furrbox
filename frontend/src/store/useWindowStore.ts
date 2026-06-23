@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
+export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "viewer";
 
 export type WindowCoords = {
   x: number;
@@ -62,6 +62,7 @@ export function getWindowMinimumSize(kind: FurrWindowKind) {
   if (kind === "presence") return { minWidth: 900, minHeight: 560 };
   if (kind === "furrfs") return { minWidth: 780, minHeight: 520 };
   if (kind === "evidence") return { minWidth: 760, minHeight: 560 };
+  if (kind === "viewer") return { minWidth: 520, minHeight: 360 };
   if (kind === "terminal") return { minWidth: 640, minHeight: 400 };
   if (kind === "browser") return { minWidth: 760, minHeight: 500 };
   if (kind === "settings") return { minWidth: 420, minHeight: 420 };
