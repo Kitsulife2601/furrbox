@@ -3,7 +3,6 @@
 import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal, UserPlus } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FurrAccountWindow } from "@/components/FurrAccountWindow";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
@@ -45,6 +44,10 @@ const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentTy
 
 const FurrPresenceWindow = ENABLE_PRESENCE_TOOL
   ? dynamic(() => import("@/components/FurrPresence").then((mod) => mod.FurrPresence), { ssr: false })
+  : null;
+
+const FurrAccountWindow = ENABLE_PRESENCE_TOOL
+  ? dynamic(() => import("@/components/FurrAccountWindow").then((mod) => mod.FurrAccountWindow), { ssr: false })
   : null;
 
 function wallpaperClass(wallpaper: string) {
@@ -196,7 +199,7 @@ export function Desktop() {
           if (win.kind === "settings") return <SettingsWindow key={win.id} windowState={win} />;
           if (win.kind === "evidence") return <FurrEvidence key={win.id} windowState={win} />;
           if (ENABLE_PRESENCE_TOOL && FurrPresenceWindow && win.kind === "presence") return <FurrPresenceWindow key={win.id} windowState={win} />;
-          if (ENABLE_PRESENCE_TOOL && win.kind === "accounts") return <FurrAccountWindow key={win.id} windowState={win} />;
+          if (ENABLE_PRESENCE_TOOL && FurrAccountWindow && win.kind === "accounts") return <FurrAccountWindow key={win.id} windowState={win} />;
           if (win.kind === "browser") return <FurrBrowser key={win.id} windowState={win} />;
           if (win.kind === "viewer") return <FurrFileViewer key={win.id} windowState={win} />;
           return null;
