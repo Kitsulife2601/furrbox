@@ -1,15 +1,17 @@
 "use client";
 
-import { Activity, Bot, FileText, Radar, Server, ShieldCheck, Users } from "lucide-react";
+import { Activity, Bot, FileText, Radar, Server, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { listPresenceLogs, listPresenceUsers, type PresenceLog, type PresenceUser } from "@/lib/presence";
+import { forceRegisterUser, listPresenceLogs, listPresenceUsers, type ForceRegisterPayload, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
 type PresenceTab = "team" | "global";
 
 const teamRoles = new Set(["Dev", "Owner", "Mod", "Supporter"]);
+const developerDiscordId = "1312104318006071328";
+const manualRoles: ForceRegisterPayload["role"][] = ["Dev", "Fish Nagie Owner", "Fish Moderator", "Supporter", "Member"];
 
 function resolvedName(user: PresenceUser) {
   return user.nickname || user.discordUsername || user.displayName || user.username;
@@ -90,14 +92,19 @@ function LogText({ content }: { content: string }) {
 }
 
 export function FurrPresence({ windowState }: { windowState: FurrWindowState }) {
-  const { token, socket, connected, discordBotStatus } = useFurrBoxStore();
+  const { token, user, socket, connected, discordBotStatus } = useFurrBoxStore();
   const [activeTab, setActiveTab] = useState<PresenceTab>("team");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [selected, setSelected] = useState<PresenceUser | null>(null);
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualDiscordId, setManualDiscordId] = useState("");
+  const [manualName, setManualName] = useState("");
+  const [manualRole, setManualRole] = useState<ForceRegisterPayload["role"]>("Member");
+  const [manualStatus, setManualStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
+  const isPrimaryDeveloper = user?.discordId === developerDiscordId;
   const teamUsers = useMemo(() => sortPresence(users.filter((user) => teamRoles.has(cleanRoleName(user)))), [users]);
   const globalUsers = useMemo(() => sortPresence(users), [users]);
   const visibleUsers = activeTab === "team" ? teamUsers : globalUsers;
@@ -174,6 +181,32 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     const nextUsers = tab === "team" ? teamUsers : globalUsers;
     setActiveTab(tab);
     setSelected((current) => (current && nextUsers.some((user) => user.id === current.id) ? current : nextUsers[0] ?? null));
+  }
+
+  async function submitManualUser() {
+    if (!token || !isPrimaryDeveloper) return;
+    if (!/^\d{17,22}$/.test(manualDiscordId)) {
+      setManualStatus({ type: "error", message: "Discord-ID muss eine gültige Snowflake sein." });
+      return;
+    }
+    if (manualName.trim().length < 2) {
+      setManualStatus({ type: "error", message: "Bitte Nutzername / Nickname eintragen." });
+      return;
+    }
+    setManualStatus({ type: "saving", message: "Nutzer wird direkt in die Datenbank geschrieben..." });
+    try {
+      await forceRegisterUser(token, { discordId: manualDiscordId, displayName: manualName.trim(), role: manualRole });
+      const nextUsers = await listPresenceUsers(token, "global");
+      setUsers(nextUsers);
+      const injected = nextUsers.find((entry) => entry.discordId === manualDiscordId);
+      setSelected(injected ?? selected);
+      setManualDiscordId("");
+      setManualName("");
+      setManualRole("Member");
+      setManualStatus({ type: "success", message: "Nutzer wurde manuell registriert und live synchronisiert." });
+    } catch (nextError) {
+      setManualStatus({ type: "error", message: nextError instanceof Error ? nextError.message : "Manuelle Registrierung fehlgeschlagen." });
+    }
   }
 
   const cards = [
@@ -303,6 +336,60 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 </div>
               ) : null}
             </div>
+
+            {isPrimaryDeveloper ? (
+              <div className="border-b border-pink-500/20 bg-slate-950/55 p-4">
+                <div className="mb-3 flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.16em] text-cyan-100">
+                  <UserPlus size={15} className="text-[#00f0ff]" />
+                  Manuelles Mitglieder-Management
+                </div>
+                <div className="grid gap-3">
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Discord-ID eingeben</span>
+                    <input
+                      className="h-10 w-full rounded-xl border border-cyan-300/15 bg-black/40 px-3 font-mono text-[12px] text-cyan-100 outline-none focus:border-cyan-300 focus:shadow-[0_0_16px_rgba(0,240,255,0.24)]"
+                      inputMode="numeric"
+                      value={manualDiscordId}
+                      onChange={(event) => setManualDiscordId(event.target.value.replace(/\D/g, ""))}
+                      placeholder="1312104318006071328"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Nutzername / Nickname</span>
+                    <input
+                      className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] text-slate-100 outline-none focus:border-pink-400 focus:shadow-[0_0_16px_rgba(255,0,127,0.22)]"
+                      value={manualName}
+                      onChange={(event) => setManualName(event.target.value)}
+                      placeholder="Display Name"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rolle zuweisen</span>
+                    <select
+                      className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] font-semibold text-slate-100 outline-none focus:border-violet-300"
+                      value={manualRole}
+                      onChange={(event) => setManualRole(event.target.value as ForceRegisterPayload["role"])}
+                    >
+                      {manualRoles.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="h-11 rounded-xl bg-gradient-to-r from-[#ff007f] via-[#8b5cf6] to-[#00f0ff] text-[12px] font-black uppercase tracking-[0.12em] text-white shadow-[0_0_24px_rgba(255,0,127,0.35)] transition hover:shadow-[0_0_34px_rgba(0,240,255,0.42)] disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={manualStatus.type === "saving"}
+                    onClick={submitManualUser}
+                  >
+                    Nutzer manuell in DB eintragen
+                  </button>
+                  {manualStatus.type !== "idle" ? (
+                    <div className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${manualStatus.type === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : manualStatus.type === "error" ? "border-pink-300/20 bg-pink-400/10 text-pink-100" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-100"}`}>
+                      {manualStatus.message}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             <div className="scroll-soft min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {loadingLogs ? <div className="rounded-xl border border-cyan-300/10 bg-cyan-300/5 p-4 text-[12px] text-cyan-100">Lade Reports...</div> : null}

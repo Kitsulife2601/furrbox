@@ -103,6 +103,7 @@ type TerminalProfile = {
 };
 type PresenceStatus = "online" | "offline";
 type PresenceView = "team" | "global";
+type AdminOverrideRole = "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
 type PresenceUserDto = {
   id: string;
   username: string;
@@ -144,6 +145,7 @@ const DISCORD_PERMISSION_IDS = {
   moderator: "1397883231134547989",
   supporter: "1395506316801343558"
 } as const;
+const PRIMARY_DEVELOPER_DISCORD_ID = DISCORD_PERMISSION_IDS.dev;
 
 const port = Number(process.env.PORT || 4000);
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
@@ -270,6 +272,80 @@ function formatRoleName(row: Pick<PresenceRow, "highestPrivilege" | "roleNamesJs
   if (row.highestPrivilege === "moderator") return "Fish Moderator";
   if (row.highestPrivilege === "supporter") return "Supporter";
   return safeJsonArray(row.roleNamesJson)[0] || "User";
+}
+
+function assertPrimaryDeveloper(req: AuthedRequest, res: express.Response) {
+  if (req.user?.discordId !== PRIMARY_DEVELOPER_DISCORD_ID) {
+    res.status(403).json({ error: "Primary developer clearance required." });
+    return false;
+  }
+  return true;
+}
+
+function usernameFromManualName(name: string, discordId: string) {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24);
+  return `${base || "manual_user"}_${discordId.slice(-6)}`.slice(0, 32);
+}
+
+function adminOverrideRoleData(role: AdminOverrideRole) {
+  if (role === "Dev") {
+    return {
+      highestPrivilege: "dev" as DiscordPrivilege,
+      roles: [DISCORD_PERMISSION_IDS.dev],
+      roleNames: ["Dev"],
+      isSupporter: true,
+      isModerator: true,
+      isOwner: true,
+      isDev: true
+    };
+  }
+  if (role === "Fish Nagie Owner") {
+    return {
+      highestPrivilege: "owner" as DiscordPrivilege,
+      roles: [DISCORD_PERMISSION_IDS.owner],
+      roleNames: ["Fish Nagie Owner"],
+      isSupporter: true,
+      isModerator: true,
+      isOwner: true,
+      isDev: false
+    };
+  }
+  if (role === "Fish Moderator") {
+    return {
+      highestPrivilege: "moderator" as DiscordPrivilege,
+      roles: [DISCORD_PERMISSION_IDS.moderator],
+      roleNames: ["Fish Moderator"],
+      isSupporter: true,
+      isModerator: true,
+      isOwner: false,
+      isDev: false
+    };
+  }
+  if (role === "Supporter") {
+    return {
+      highestPrivilege: "supporter" as DiscordPrivilege,
+      roles: [DISCORD_PERMISSION_IDS.supporter],
+      roleNames: ["Supporter"],
+      isSupporter: true,
+      isModerator: false,
+      isOwner: false,
+      isDev: false
+    };
+  }
+  return {
+    highestPrivilege: "none" as DiscordPrivilege,
+    roles: [] as string[],
+    roleNames: [] as string[],
+    isSupporter: false,
+    isModerator: false,
+    isOwner: false,
+    isDev: false
+  };
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -1277,6 +1353,124 @@ app.get("/api/presence/users/:discordId/logs", requireAuth, async (req: AuthedRe
       return;
     }
     res.json({ logs: await listDiscordTextLogsForUser(discordId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/force-register", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!assertPrimaryDeveloper(req, res)) return;
+
+    const discordId = String(req.body.discordId || "").trim();
+    const displayName = String(req.body.displayName || req.body.nickname || "").trim();
+    const roleInput = String(req.body.role || "Member").trim() as AdminOverrideRole;
+    const allowedRoles: AdminOverrideRole[] = ["Dev", "Fish Nagie Owner", "Fish Moderator", "Supporter", "Member"];
+
+    if (!/^\d{17,22}$/.test(discordId)) {
+      res.status(400).json({ error: "Discord-ID muss eine gültige numerische Snowflake sein." });
+      return;
+    }
+    if (displayName.length < 2 || displayName.length > 80) {
+      res.status(400).json({ error: "Nutzername / Nickname muss 2-80 Zeichen lang sein." });
+      return;
+    }
+    if (!allowedRoles.includes(roleInput)) {
+      res.status(400).json({ error: "Unbekannte Rolle." });
+      return;
+    }
+
+    const roleData = adminOverrideRoleData(roleInput);
+    const now = new Date().toISOString();
+    const username = usernameFromManualName(displayName, discordId);
+    const disabledPasswordHash = await bcrypt.hash(`manual:${discordId}:${crypto.randomUUID()}`, 12);
+
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO "User" ("id", "username", "passwordHash", "displayName", "discordId", "createdAt")
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT("discordId") DO UPDATE SET
+        "displayName" = excluded."displayName"
+      `,
+      crypto.randomUUID(),
+      username,
+      disabledPasswordHash,
+      displayName,
+      discordId,
+      now
+    );
+
+    const existingUser = await prisma.user.findUnique({ where: { discordId }, select: { id: true, username: true, displayName: true, discordId: true } });
+    if (!existingUser) throw new Error("Manual user insertion failed.");
+    await fs.mkdir(scopeFolder("PRIVATE", existingUser.id), { recursive: true });
+
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO "DiscordMember" (
+        "discordId", "username", "nickname", "displayName", "rolesJson", "roleNamesJson",
+        "highestPrivilege", "discordStatus", "isDiscordOnline", "lastDiscordPresenceAt",
+        "isSupporter", "isModerator", "isOwner", "isDev", "syncedAt"
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'offline', false, NULL, ?, ?, ?, ?, ?)
+      ON CONFLICT("discordId") DO UPDATE SET
+        "username" = excluded."username",
+        "nickname" = excluded."nickname",
+        "displayName" = excluded."displayName",
+        "rolesJson" = excluded."rolesJson",
+        "roleNamesJson" = excluded."roleNamesJson",
+        "highestPrivilege" = excluded."highestPrivilege",
+        "isSupporter" = excluded."isSupporter",
+        "isModerator" = excluded."isModerator",
+        "isOwner" = excluded."isOwner",
+        "isDev" = excluded."isDev",
+        "syncedAt" = excluded."syncedAt"
+      `,
+      discordId,
+      displayName,
+      displayName,
+      displayName,
+      JSON.stringify(roleData.roles),
+      JSON.stringify(roleData.roleNames),
+      roleData.highestPrivilege,
+      roleData.isSupporter,
+      roleData.isModerator,
+      roleData.isOwner,
+      roleData.isDev,
+      now
+    );
+
+    const memberSnapshot: DiscordMemberSnapshot = {
+      discordId,
+      username: displayName,
+      nickname: displayName,
+      displayName,
+      roles: roleData.roles,
+      roleNames: roleData.roleNames,
+      highestPrivilege: roleData.highestPrivilege,
+      discordStatus: "offline",
+      isDiscordOnline: false,
+      lastDiscordPresenceAt: null,
+      isSupporter: roleData.isSupporter,
+      isModerator: roleData.isModerator,
+      isOwner: roleData.isOwner,
+      isDev: roleData.isDev
+    };
+
+    await emitPresenceSnapshot("admin-force-register");
+    io.emit("discord:members-refreshed", {
+      guildId: "manual-override",
+      count: 1,
+      members: [memberSnapshot],
+      syncedAt: now
+    });
+    io.emit("discord:presence-refreshed", {
+      guildId: "manual-override",
+      count: 1,
+      presences: [{ discordId, discordStatus: "offline", isDiscordOnline: false, updatedAt: now }],
+      syncedAt: now
+    });
+
+    res.status(201).json({ user: existingUser, member: memberSnapshot });
   } catch (error) {
     next(error);
   }

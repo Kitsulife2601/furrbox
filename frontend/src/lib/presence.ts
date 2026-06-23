@@ -28,9 +28,16 @@ export type PresenceLog = {
   content: string;
 };
 
-async function authedFetch<T>(path: string, token: string): Promise<T> {
+export type ForceRegisterPayload = {
+  discordId: string;
+  displayName: string;
+  role: "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
+};
+
+async function authedFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    ...init,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init.headers }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({ error: "Request failed." }));
@@ -47,4 +54,11 @@ export async function listPresenceUsers(token: string, view: "team" | "global" =
 export async function listPresenceLogs(token: string, discordId: string): Promise<PresenceLog[]> {
   const data = await authedFetch<{ logs: PresenceLog[] }>(`/api/presence/users/${encodeURIComponent(discordId)}/logs`, token);
   return data.logs;
+}
+
+export async function forceRegisterUser(token: string, payload: ForceRegisterPayload): Promise<void> {
+  await authedFetch<{ user: unknown; member: unknown }>("/api/admin/force-register", token, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
