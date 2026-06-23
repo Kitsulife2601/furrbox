@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { MessageCircle, Send, Settings2, Shield, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +62,10 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
   );
   const selectedPartner = privateUsers.find((entry) => entry.id === partnerId) || privateUsers[0] || null;
   const activePartnerId = selectedPartner?.id || "";
+  const userRolesById = useMemo(
+    () => Object.fromEntries(users.map((entry) => [entry.id, entry.roleName])),
+    [users]
+  );
 
   const refreshMessages = useCallback(async () => {
     if (!token) return;
@@ -131,7 +135,7 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
   async function sendMessage() {
     if (!token || !draft.trim()) return;
     if (channel === "private" && !activePartnerId) {
-      setStatus("Bitte waehle zuerst einen Nutzer fuer den Privatchat.");
+      setStatus("Bitte wähle zuerst einen Nutzer für den Privatchat.");
       return;
     }
     const content = draft.trim();
@@ -151,7 +155,7 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
     try {
       const settings = await updateChatSettings(token, retentionDays);
       setRetentionDays(settings.retentionDays);
-      setStatus(`Chat wird nach ${settings.retentionDays} Tag(en) automatisch geloescht.`);
+      setStatus(`Chat wird nach ${settings.retentionDays} Tag(en) automatisch gelöscht.`);
       await refreshMessages();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Einstellung konnte nicht gespeichert werden.");
@@ -172,7 +176,7 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
             <p className="text-[11px] text-slate-500">Teamchat und private Nachrichten</p>
           </div>
         </div>
-        <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-pink-500/15 hover:text-pink-100" onClick={onClose} aria-label="Chat schliessen">
+        <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-pink-500/15 hover:text-pink-100" onClick={onClose} aria-label="Chat schließen">
           <X size={15} />
         </button>
       </header>
@@ -217,7 +221,7 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
 
         <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/45 px-3 py-2">
           <Settings2 size={14} className="text-[#00f0ff]" />
-          <span className="min-w-0 flex-1 text-[11px] text-slate-400">Auto-Loeschung nach</span>
+          <span className="min-w-0 flex-1 text-[11px] text-slate-400">Auto-Löschung nach</span>
           <input
             className="h-7 w-16 rounded-lg border border-cyan-300/20 bg-black/35 px-2 text-center text-[12px] text-cyan-100 outline-none disabled:opacity-50"
             type="number"
@@ -239,11 +243,17 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
       <div ref={scrollRef} className="scroll-soft min-h-0 flex-1 space-y-2 overflow-auto p-3">
         {messages.length ? messages.map((message) => {
           const own = message.senderId === user?.id;
+          const senderRoleName = message.senderRoleName || userRolesById[message.senderId] || "Member";
           return (
             <div key={message.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[82%] rounded-2xl border px-3 py-2 ${own ? "border-cyan-300/25 bg-cyan-500/10" : "border-purple-500/25 bg-purple-500/10"}`}>
                 <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
-                  <span className="truncate">{own ? "Du" : message.senderName}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{own ? "Du" : message.senderName}</span>
+                    <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.08em] ${roleBadgeClass(senderRoleName)}`}>
+                      {cleanRoleName(senderRoleName)}
+                    </span>
+                  </span>
                   <span>{new Date(message.createdAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
                 <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-100">{message.content}</p>

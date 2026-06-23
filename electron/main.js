@@ -7,6 +7,14 @@ const FRONTEND_URL = process.env.FURRBOX_FRONTEND_URL || "http://localhost:3000"
 let mainWindow = null;
 let updateReady = false;
 
+function secondsRemaining(progress) {
+  const total = Number(progress.total || 0);
+  const transferred = Number(progress.transferred || 0);
+  const bytesPerSecond = Number(progress.bytesPerSecond || 0);
+  if (!total || !transferred || !bytesPerSecond || transferred >= total) return null;
+  return Math.max(1, Math.ceil((total - transferred) / bytesPerSecond));
+}
+
 function loadFrontend(win) {
   if (app.isPackaged) {
     win.loadFile(path.join(process.resourcesPath, "frontend", "out", "index.html"));
@@ -70,7 +78,15 @@ function configureAutoUpdater() {
   autoUpdater.on("checking-for-update", () => sendUpdaterStatus("checking"));
   autoUpdater.on("update-available", (info) => sendUpdaterStatus("available", { version: info.version }));
   autoUpdater.on("update-not-available", (info) => sendUpdaterStatus("current", { version: info.version }));
-  autoUpdater.on("download-progress", (progress) => sendUpdaterStatus("downloading", { percent: Math.round(progress.percent || 0) }));
+  autoUpdater.on("download-progress", (progress) =>
+    sendUpdaterStatus("downloading", {
+      percent: Math.round(progress.percent || 0),
+      bytesPerSecond: Math.round(progress.bytesPerSecond || 0),
+      transferred: Math.round(progress.transferred || 0),
+      total: Math.round(progress.total || 0),
+      etaSeconds: secondsRemaining(progress)
+    })
+  );
   autoUpdater.on("update-downloaded", (info) => {
     updateReady = true;
     sendUpdaterStatus("ready", { version: info.version });
@@ -136,6 +152,7 @@ ipcMain.handle("updater:check", async () => {
 
 ipcMain.handle("updater:install", () => {
   if (!updateReady) return false;
+  sendUpdaterStatus("installing");
   autoUpdater.quitAndInstall(false, true);
   return true;
 });

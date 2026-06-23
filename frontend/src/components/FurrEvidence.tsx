@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Gavel, Image, ShieldAlert, UploadCloud, Video, X } from "lucide-react";
@@ -20,10 +20,10 @@ function dualPresenceText(user: PresenceUser) {
   if (user.dualPresenceLabel) return user.dualPresenceLabel;
   const isExeOnline = user.isExeOnline ?? user.status === "online";
   const isDiscordOnline = user.isDiscordOnline ?? false;
-  if (isExeOnline && isDiscordOnline) return "🟢 Online (App & DC)";
-  if (isExeOnline) return "🔵 Online (Nur App)";
-  if (isDiscordOnline) return "💜 Online (Nur Discord)";
-  return "⚫ Offline";
+  if (isExeOnline && isDiscordOnline) return "ðŸŸ¢ Online (App & DC)";
+  if (isExeOnline) return "ðŸ”µ Online (Nur App)";
+  if (isDiscordOnline) return "ðŸ’œ Online (Nur Discord)";
+  return "âš« Offline";
 }
 
 function memberOptionLabel(user: PresenceUser) {

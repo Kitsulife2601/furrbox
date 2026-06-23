@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, ShieldCheck, ShieldPlus, Trash2, UserPlus, Users } from "lucide-react";
@@ -81,7 +81,7 @@ export function FurrAccountManager({
       return;
     }
 
-    setStatus({ type: "saving", message: "Account wird mit Start-Passwort angelegt und der Bot fragt nach optionaler Aenderung..." });
+    setStatus({ type: "saving", message: "Account wird mit Start-Passwort angelegt und der Bot fragt nach optionaler Änderung..." });
     try {
       await createAdminUser(token, { username: cleanUsername, discordId, password, role });
       setUsername("");
@@ -98,19 +98,19 @@ export function FurrAccountManager({
 
   async function removeAccount(account: PresenceUser) {
     if (account.discordId === developerDiscordId) {
-      setStatus({ type: "error", message: "Der primaere Entwickler-Account kann nicht geloescht werden." });
+      setStatus({ type: "error", message: "Der primäre Entwickler-Account kann nicht gelöscht werden." });
       return;
     }
-    if (!window.confirm(`Account "${displayName(account)}" wirklich vollstaendig loeschen?`)) return;
+    if (!window.confirm(`Account "${displayName(account)}" wirklich vollständig löschen?`)) return;
     setDeletingUserId(account.id);
-    setStatus({ type: "saving", message: "Account wird geloescht..." });
+    setStatus({ type: "saving", message: "Account wird gelöscht..." });
     try {
       await deleteAdminUser(token, account.id);
-      setStatus({ type: "success", message: "Account wurde geloescht und live synchronisiert." });
+      setStatus({ type: "success", message: "Account wurde gelöscht und live synchronisiert." });
       await refreshAccounts();
       await onCreated();
     } catch (error) {
-      setStatus({ type: "error", message: error instanceof Error ? error.message : "Account konnte nicht geloescht werden." });
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Account konnte nicht gelöscht werden." });
     } finally {
       setDeletingUserId(null);
     }
@@ -177,7 +177,7 @@ export function FurrAccountManager({
             Account erstellen & Bot fragen
           </button>
           <p className="text-[11px] leading-relaxed text-slate-500">
-            Das Start-Passwort bleibt gueltig. Der Bot fragt den Nutzer nur, ob er es durch ein eigenes Passwort ersetzen moechte.
+            Das Start-Passwort bleibt gültig. Der Bot fragt den Nutzer nur, ob er es durch ein eigenes Passwort ersetzen möchte.
           </p>
           {status.type !== "idle" ? (
             <div className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${status.type === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : status.type === "error" ? "border-pink-300/20 bg-pink-400/10 text-pink-100" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-100"}`}>
@@ -231,10 +231,10 @@ export function FurrAccountManager({
                       disabled={protectedAccount || deletingUserId === account.id}
                       onClick={() => removeAccount(account)}
                       type="button"
-                      title={protectedAccount ? "Primaerer Entwickler kann nicht geloescht werden" : "Account loeschen"}
+                      title={protectedAccount ? "Primärer Entwickler kann nicht gelöscht werden" : "Account löschen"}
                     >
                       <Trash2 size={13} />
-                      Loeschen
+                      Löschen
                     </button>
                   </div>
                 </article>

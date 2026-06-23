@@ -41,7 +41,7 @@ export function FurrAccountWindow({ windowState }: { windowState: FurrWindowStat
             <div className="max-w-sm rounded-2xl border border-pink-400/25 bg-pink-500/10 p-6 shadow-[0_0_26px_rgba(255,0,127,0.16)]">
               <ShieldAlert className="mx-auto mb-3 text-[#ff007f]" size={34} />
               <h4 className="text-[13px] font-black uppercase tracking-[0.16em] text-pink-100">Zugriff verweigert</h4>
-              <p className="mt-3 text-[12px] leading-5 text-slate-400">Nur der primaere Entwickler kann neue FurrBox-Accounts anlegen.</p>
+              <p className="mt-3 text-[12px] leading-5 text-slate-400">Nur der primäre Entwickler kann neue FurrBox-Accounts anlegen.</p>
             </div>
           </div>
         )}

@@ -1,4 +1,4 @@
-import { PrismaClient, type FileScope, type User } from "@prisma/client";
+﻿import { PrismaClient, type FileScope, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
@@ -105,6 +105,7 @@ type TerminalProfile = {
 };
 type PresenceStatus = "online" | "offline";
 type PresenceView = "team" | "global";
+type ClientPlatform = "desktop" | "android" | "ios";
 type AdminOverrideRole = "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
 type AccountInvitePayload = {
   discordId: string;
@@ -128,6 +129,8 @@ type PresenceUserDto = {
   isDiscordOnline: boolean;
   discordStatus: DiscordPresenceStatus;
   dualPresenceLabel: string;
+  onlinePlatforms: ClientPlatform[];
+  platformLabel: string;
   connectedAt: string | null;
   lastHeartbeatAt: string | null;
   lastSeenAt: string | null;
@@ -192,6 +195,8 @@ const allowedOrigins = new Set([
   "http://127.0.0.1:3000",
   "http://localhost:3001",
   "http://127.0.0.1:3001",
+  "http://localhost",
+  "http://127.0.0.1",
   "capacitor://localhost",
   "ionic://localhost",
   "https://localhost"
@@ -239,6 +244,7 @@ let publicStorageBroadcastTimer: NodeJS.Timeout | null = null;
 let botSocketId: string | null = null;
 let botConnectedAt: string | null = null;
 const activePresenceSockets = new Map<string, Set<string>>();
+const activePresencePlatforms = new Map<string, Map<string, ClientPlatform>>();
 const moderationWaiters = new Map<string, { resolve: (result: ModerationResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 const messageInspectWaiters = new Map<string, { resolve: (result: MessageInspectResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 const FOLDER_MARKER_MIME = "application/x-furrbox-folder";
@@ -531,21 +537,21 @@ async function findActiveAccountInvite(rawToken: string) {
 }
 
 function renderSetupPage(options: { token: string; username?: string; displayName?: string; invalid?: boolean; completed?: boolean; error?: string }) {
-  const title = options.completed ? "FurrBox Passwort aktualisiert" : options.invalid ? "FurrBox Link ungueltig" : "FurrBox Passwort aendern";
+  const title = options.completed ? "FurrBox Passwort aktualisiert" : options.invalid ? "FurrBox Link ungültig" : "FurrBox Passwort ändern";
   const safeToken = escapeHtml(options.token);
   const safeName = escapeHtml(options.displayName || options.username || "FurrBox Nutzer");
   const safeError = options.error ? escapeHtml(options.error) : "";
   const content = options.invalid
-    ? `<p class="muted">Dieser Link ist abgelaufen oder wurde bereits benutzt. Dein vorhandenes Passwort bleibt gueltig. Bitte Kitsulife um einen neuen Link, falls du es aendern moechtest.</p>`
+    ? `<p class="muted">Dieser Link ist abgelaufen oder wurde bereits benutzt. Dein vorhandenes Passwort bleibt gültig. Bitte Kitsulife um einen neuen Link, falls du es ändern möchtest.</p>`
     : options.completed
       ? `<p class="muted">Dein neues Passwort wurde gespeichert. Du kannst dich jetzt in FurrBox mit deinem Nutzernamen anmelden.</p>`
       : `
-        <p class="muted">Hallo <strong>${safeName}</strong>. Dein Start-Passwort funktioniert bereits. Wenn du moechtest, kannst du es hier durch ein eigenes neues Passwort ersetzen.</p>
+        <p class="muted">Hallo <strong>${safeName}</strong>. Dein Start-Passwort funktioniert bereits. Wenn du möchtest, kannst du es hier durch ein eigenes neues Passwort ersetzen.</p>
         <form method="post" action="/setup/${safeToken}">
           <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Neues Passwort" required />
           <input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Passwort wiederholen" required />
           ${safeError ? `<div class="error">${safeError}</div>` : ""}
-          <button type="submit">Passwort aendern</button>
+          <button type="submit">Passwort ändern</button>
         </form>
       `;
 
@@ -947,10 +953,27 @@ async function syncDiscordPresences(presences: DiscordPresenceSnapshot[]) {
 }
 
 function dualPresenceLabel(isExeOnline: boolean, isDiscordOnline: boolean) {
-  if (isExeOnline && isDiscordOnline) return "🟢 Online (App & DC)";
-  if (isExeOnline) return "🔵 Online (Nur App)";
-  if (isDiscordOnline) return "💜 Online (Nur Discord)";
-  return "⚫ Offline";
+  if (isExeOnline && isDiscordOnline) return "ðŸŸ¢ Online (App & DC)";
+  if (isExeOnline) return "ðŸ”µ Online (Nur App)";
+  if (isDiscordOnline) return "ðŸ’œ Online (Nur Discord)";
+  return "âš« Offline";
+}
+
+function normalizeClientPlatform(value: unknown): ClientPlatform {
+  return value === "android" || value === "ios" || value === "desktop" ? value : "desktop";
+}
+
+function platformDisplayName(platform: ClientPlatform) {
+  if (platform === "android") return "Android";
+  if (platform === "ios") return "iOS";
+  return "Desktop";
+}
+
+function onlinePlatformsForUser(userId: string): ClientPlatform[] {
+  const platforms = activePresencePlatforms.get(userId);
+  if (!platforms?.size) return [];
+  const unique = new Set<ClientPlatform>(platforms.values());
+  return (["desktop", "android", "ios"] as ClientPlatform[]).filter((platform) => unique.has(platform));
 }
 
 function toPresenceDto(row: PresenceRow): PresenceUserDto {
@@ -958,6 +981,7 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
   const isExeOnline = row.status === "online";
   const discordStatus = row.discordStatus ?? "offline";
   const isDiscordOnline = Boolean(row.isDiscordOnline) || ["online", "idle", "dnd"].includes(discordStatus);
+  const onlinePlatforms = onlinePlatformsForUser(row.id);
   return {
     id: row.id,
     username: row.username,
@@ -972,6 +996,8 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
     isDiscordOnline,
     discordStatus,
     dualPresenceLabel: dualPresenceLabel(isExeOnline, isDiscordOnline),
+    onlinePlatforms,
+    platformLabel: onlinePlatforms.length ? onlinePlatforms.map(platformDisplayName).join(" | ") : "Offline",
     connectedAt: iso(row.connectedAt),
     lastHeartbeatAt: iso(row.lastHeartbeatAt),
     lastSeenAt: iso(row.lastSeenAt)
@@ -1096,7 +1122,7 @@ async function emitPresenceSnapshot(reason: string) {
 async function emitPresenceUpdate(userId: string, reason: string) {
   const user = await getPresenceUser(userId);
   if (!user) return;
-  io.to("presence").emit("presence:update", { ...user, reason, emittedAt: new Date().toISOString() });
+  io.to("presence").emit("presence:update", { user, ...user, reason, emittedAt: new Date().toISOString() });
 }
 
 async function hasTeamNotificationAccess(user: AuthUser | undefined) {
@@ -1176,11 +1202,14 @@ async function emitChatMessage(message: ChatMessageDto) {
   if (message.recipientId) io.to(`user:${message.recipientId}`).emit("chat:message", message);
 }
 
-async function markUserOnline(user: AuthUser, socketId: string) {
+async function markUserOnline(user: AuthUser, socketId: string, platform: ClientPlatform) {
   const now = new Date().toISOString();
   const sockets = activePresenceSockets.get(user.id) ?? new Set<string>();
   sockets.add(socketId);
   activePresenceSockets.set(user.id, sockets);
+  const platforms = activePresencePlatforms.get(user.id) ?? new Map<string, ClientPlatform>();
+  platforms.set(socketId, platform);
+  activePresencePlatforms.set(user.id, platforms);
   await prisma.$executeRawUnsafe(`
     INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "connectedAt", "lastHeartbeatAt", "updatedAt")
     VALUES (?, ?, 'online', ?, ?, ?, ?)
@@ -1195,8 +1224,11 @@ async function markUserOnline(user: AuthUser, socketId: string) {
   await emitPresenceUpdate(user.id, "connected");
 }
 
-async function markUserHeartbeat(user: AuthUser, socketId: string) {
+async function markUserHeartbeat(user: AuthUser, socketId: string, platform: ClientPlatform) {
   const now = new Date().toISOString();
+  const platforms = activePresencePlatforms.get(user.id) ?? new Map<string, ClientPlatform>();
+  platforms.set(socketId, platform);
+  activePresencePlatforms.set(user.id, platforms);
   await prisma.$executeRawUnsafe(`
     INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "connectedAt", "lastHeartbeatAt", "updatedAt")
     VALUES (?, ?, 'online', ?, ?, ?, ?)
@@ -1213,8 +1245,11 @@ async function markUserHeartbeat(user: AuthUser, socketId: string) {
 async function markUserOffline(user: AuthUser, socketId: string) {
   const sockets = activePresenceSockets.get(user.id);
   sockets?.delete(socketId);
+  const platforms = activePresencePlatforms.get(user.id);
+  platforms?.delete(socketId);
   if (sockets && sockets.size > 0) return;
   activePresenceSockets.delete(user.id);
+  activePresencePlatforms.delete(user.id);
   const now = new Date().toISOString();
   await prisma.$executeRawUnsafe(`
     INSERT INTO "UserPresence" ("userId", "discordId", "status", "socketId", "lastSeenAt", "updatedAt")
@@ -1867,7 +1902,7 @@ app.post("/setup/:token", async (req, res, next) => {
       return;
     }
     if (password !== confirmPassword) {
-      res.status(400).type("html").send(renderSetupPage({ token, username: invite.username, displayName: invite.displayName, error: "Die Passwoerter stimmen nicht ueberein." }));
+      res.status(400).type("html").send(renderSetupPage({ token, username: invite.username, displayName: invite.displayName, error: "Die Passwörter stimmen nicht überein." }));
       return;
     }
 
@@ -1889,7 +1924,7 @@ app.post("/api/onboarding/complete", async (req, res, next) => {
     const password = String(req.body.password || "");
     const invite = /^[a-f0-9]{64}$/i.test(token) ? await findActiveAccountInvite(token) : null;
     if (!invite) {
-      res.status(400).json({ error: "Einladung ist ungueltig oder abgelaufen." });
+      res.status(400).json({ error: "Einladung ist ungültig oder abgelaufen." });
       return;
     }
     if (password.length < 8) {
@@ -2305,7 +2340,7 @@ app.delete("/api/admin/delete-user", requireAuth, async (req: AuthedRequest, res
       return;
     }
     if (targetUser.discordId === PRIMARY_DEVELOPER_DISCORD_ID) {
-      res.status(403).json({ error: "Der primaere Entwickler-Account kann nicht geloescht werden." });
+      res.status(403).json({ error: "Der primäre Entwickler-Account kann nicht gelöscht werden." });
       return;
     }
 
@@ -2798,9 +2833,10 @@ io.on("connection", async (socket) => {
   }
 
   const user = socket.data.user as AuthUser;
+  const clientPlatform = normalizeClientPlatform(socket.handshake.auth.platform);
   socket.join(`user:${user.id}`);
   socket.join("public");
-  await markUserOnline(user, socket.id);
+  await markUserOnline(user, socket.id, clientPlatform);
 
   socket.emit("ui-state", uiState);
   socket.emit("discord:bot-status", {
@@ -2828,8 +2864,8 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("presence:heartbeat", async () => {
-    await markUserHeartbeat(user, socket.id);
-    socket.emit("presence:heartbeat-ack", { at: new Date().toISOString() });
+    await markUserHeartbeat(user, socket.id, clientPlatform);
+    socket.emit("presence:heartbeat-ack", { at: new Date().toISOString(), platform: clientPlatform });
   });
 
   socket.on("shared-file:create-text", async ({ name, content }: { name?: string; content?: string }) => {

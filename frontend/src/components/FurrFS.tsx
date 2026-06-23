@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -225,7 +225,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
             socket?.emit("file-uploaded", { scope: activeFileScope });
             return refresh();
           })
-          .catch((error) => setLoadError(error instanceof Error ? error.message : "Ordner konnte nicht geloescht werden."));
+          .catch((error) => setLoadError(error instanceof Error ? error.message : "Ordner konnte nicht gelöscht werden."));
         return;
       }
       deleteFile(detail.targetId, token)
@@ -233,7 +233,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
           socket?.emit("file-uploaded", { scope: activeFileScope });
           return refresh();
         })
-        .catch((error) => setLoadError(error instanceof Error ? error.message : "Datei konnte nicht geloescht werden."));
+        .catch((error) => setLoadError(error instanceof Error ? error.message : "Datei konnte nicht gelöscht werden."));
     };
     window.addEventListener("furrfs:delete", onDelete);
     return () => window.removeEventListener("furrfs:delete", onDelete);
@@ -380,7 +380,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
 
   async function deleteSelectedRow() {
     if (!token || !selectedRow) return;
-    const confirmed = window.confirm(`${selectedRow.name} wirklich loeschen?`);
+    const confirmed = window.confirm(`${selectedRow.name} wirklich löschen?`);
     if (!confirmed) return;
     setBusy(true);
     try {
@@ -390,7 +390,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       socket?.emit("file-uploaded", { scope: activeFileScope });
       await refresh();
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Element konnte nicht geloescht werden.");
+      setLoadError(error instanceof Error ? error.message : "Element konnte nicht gelöscht werden.");
     } finally {
       setBusy(false);
     }
@@ -494,7 +494,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Copy size={15} />Kopieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100" onClick={() => pasteInputRef.current?.click()}><Clipboard size={15} />Einfuegen</button>
                 <input ref={pasteInputRef} className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
-                <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100 disabled:opacity-35" disabled={!selectedRow || busy} onClick={deleteSelectedRow}><Trash2 size={15} />Loeschen</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100 disabled:opacity-35" disabled={!selectedRow || busy} onClick={deleteSelectedRow}><Trash2 size={15} />Löschen</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><LayoutList size={15} />Anzeigen</button>
               </div>

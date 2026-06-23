@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Activity, Bot, FileText, Radar, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -80,6 +80,16 @@ function SplitStatusBadge({ user }: { user: PresenceUser }) {
   return <span className="inline-flex rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">INAKTIV</span>;
 }
 
+function PlatformBadge({ user }: { user: PresenceUser }) {
+  const label = user.platformLabel || (user.onlinePlatforms?.length ? user.onlinePlatforms.join(" | ") : "Offline");
+  const active = Boolean(user.onlinePlatforms?.length);
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${active ? "border-pink-300/45 bg-pink-500/10 text-pink-100 shadow-[0_0_14px_rgba(255,0,127,0.22)]" : "border-slate-700 bg-slate-800/50 text-slate-500"}`}>
+      {label}
+    </span>
+  );
+}
+
 function LogText({ content }: { content: string }) {
   const lines = content.split(/\r?\n/);
   return (
@@ -108,7 +118,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     [registeredTeamUsers]
   );
   const teamOnlineCount = teamUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
-  const rowGrid = isPrimaryDeveloper ? "grid-cols-[1.25fr_0.55fr_0.85fr_0.95fr_44px]" : "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
+  const rowGrid = isPrimaryDeveloper ? "grid-cols-[1.18fr_0.5fr_0.75fr_0.72fr_0.9fr_44px]" : "grid-cols-[1.25fr_0.55fr_0.82fr_0.75fr_1fr]";
 
   async function refreshRegistry() {
     if (!token) return;
@@ -162,17 +172,17 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   async function deleteUser(target: PresenceUser) {
     if (!token || !isPrimaryDeveloper || deletingUserId) return;
     if (target.discordId === developerDiscordId) {
-      setError("Der primaere Entwickler-Account kann nicht geloescht werden.");
+      setError("Der primäre Entwickler-Account kann nicht gelöscht werden.");
       return;
     }
-    if (!window.confirm(`Account "${resolvedName(target)}" wirklich vollstaendig loeschen?`)) return;
+    if (!window.confirm(`Account "${resolvedName(target)}" wirklich vollständig löschen?`)) return;
     setDeletingUserId(target.id);
     setError(null);
     try {
       await deleteAdminUser(token, target.id);
       await refreshRegistry();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Account konnte nicht geloescht werden.");
+      setError(nextError instanceof Error ? nextError.message : "Account konnte nicht gelöscht werden.");
     } finally {
       setDeletingUserId(null);
     }
@@ -197,7 +207,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
               </span>
               <div className="min-w-0">
                 <h3 className="truncate text-[15px] font-black tracking-[0.18em] text-cyan-100">NETWORK MONITOR // LIVE NODES</h3>
-                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Uebersicht fuer FurrBox, Discord Bot und Team-Praesenz</p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Übersicht für FurrBox, Discord Bot und Team-Präsenz</p>
               </div>
             </div>
             <StatusBadge online={connected && discordBotStatus.connected} onlineLabel="SYSTEM OK" offlineLabel="TEILWEISE OFFLINE" />
@@ -238,6 +248,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                   <span>Name / Nickname</span>
                   <span>Rolle</span>
                   <span>Status</span>
+                  <span>Plattform</span>
                   <span>Discord ID</span>
                   {isPrimaryDeveloper ? <span>Aktion</span> : null}
                 </div>
@@ -269,6 +280,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                         <SplitStatusBadge user={entry} />
                         {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(entry.lastSeenAt)}</span> : null}
                       </span>
+                      <span><PlatformBadge user={entry} /></span>
                       <span className="truncate font-mono text-[11px] text-slate-500">{entry.discordId || "Nicht verbunden"}</span>
                       {isPrimaryDeveloper ? (
                         <button
@@ -278,8 +290,8 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                             event.stopPropagation();
                             deleteUser(entry);
                           }}
-                          aria-label="Lokalen FurrBox-Account loeschen"
-                          title={entry.discordId === developerDiscordId ? "Primaerer Entwickler kann nicht geloescht werden" : "Lokalen FurrBox-Account loeschen"}
+                          aria-label="Lokalen FurrBox-Account löschen"
+                          title={entry.discordId === developerDiscordId ? "Primärer Entwickler kann nicht gelöscht werden" : "Lokalen FurrBox-Account löschen"}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -307,6 +319,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
               {selected ? (
                 <div className="mt-3 grid gap-2 rounded-xl border border-white/5 bg-slate-900/35 p-3 text-[11px]">
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">App Status</span><StatusBadge online={isAppOnline(selected)} /></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Plattformen</span><PlatformBadge user={selected} /></div>
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Bot Status</span><StatusBadge online={isDiscordOnline(selected)} /></div>
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Name</span><span className="truncate text-slate-300">{selected.discordUsername || "Nicht synchronisiert"}</span></div>
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Bot Bridge</span><StatusBadge online={discordBotStatus.connected} /></div>
@@ -316,7 +329,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
             <div className="scroll-soft min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {loadingLogs ? <div className="rounded-xl border border-cyan-300/10 bg-cyan-300/5 p-4 text-[12px] text-cyan-100">Lade Reports...</div> : null}
-              {!loadingLogs && logs.length === 0 ? <div className="rounded-xl border border-white/5 bg-slate-900/45 p-4 text-[12px] text-slate-500">Keine Text-Reports fuer diesen Nutzer gefunden.</div> : null}
+              {!loadingLogs && logs.length === 0 ? <div className="rounded-xl border border-white/5 bg-slate-900/45 p-4 text-[12px] text-slate-500">Keine Text-Reports für diesen Nutzer gefunden.</div> : null}
               {logs.map((log) => (
                 <article key={log.virtualPath} className="rounded-xl border border-purple-500/20 bg-slate-950/70 p-3 shadow-[0_0_20px_rgba(139,92,246,0.12)]">
                   <div className="mb-2 flex items-center justify-between gap-3">

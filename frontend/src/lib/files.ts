@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { API_URL } from "@/lib/config";
 import type { FurrFile } from "@/store/furrbox-store";
@@ -103,8 +103,8 @@ export async function deleteFolder(token: string, scope: "private" | "public", v
     body: JSON.stringify({ scope, virtualPath })
   });
   if (!response.ok && response.status !== 204) {
-    const body = await response.json().catch(() => ({ error: "Ordner konnte nicht geloescht werden." }));
-    throw new Error(body.error || "Ordner konnte nicht geloescht werden.");
+    const body = await response.json().catch(() => ({ error: "Ordner konnte nicht gelöscht werden." }));
+    throw new Error(body.error || "Ordner konnte nicht gelöscht werden.");
   }
 }
 

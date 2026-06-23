@@ -40,7 +40,7 @@ export function initFurrSocket(token: string) {
   activeToken = token;
 
   const socket = io(API_URL, {
-    auth: { token },
+    auth: { token, platform: "desktop" },
     transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: Infinity,

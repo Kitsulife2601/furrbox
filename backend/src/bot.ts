@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+﻿import { PrismaClient } from "@prisma/client";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -501,14 +501,14 @@ async function sendAccountOnboardingInvite(payload: AccountOnboardingInvitePaylo
   const user = await client.users.fetch(payload.discordId);
   const embed = new EmbedBuilder()
     .setColor(0x00f0ff)
-    .setTitle("FurrBox Passwort optional aendern")
-    .setDescription(`Hallo ${payload.displayName}, dein FurrBox Zugang wurde vorbereitet. Das von Kitsulife gesetzte Start-Passwort funktioniert bereits. Wenn du ein eigenes neues Passwort nutzen moechtest, kannst du es ueber den Button ersetzen.`)
+    .setTitle("FurrBox Passwort optional ändern")
+    .setDescription(`Hallo ${payload.displayName}, dein FurrBox Zugang wurde vorbereitet. Das von Kitsulife gesetzte Start-Passwort funktioniert bereits. Wenn du ein eigenes neues Passwort nutzen möchtest, kannst du es über den Button ersetzen.`)
     .addFields(
       { name: "Nutzername", value: `\`${payload.username}\``, inline: true },
       { name: "Rolle", value: payload.roleName, inline: true },
       { name: "Gueltig bis", value: expiresLabel, inline: false }
     )
-    .setFooter({ text: "FurrBox sendet niemals Passwoerter ueber Discord. Der Link ist nur fuer die optionale Passwortaenderung gedacht." })
+    .setFooter({ text: "FurrBox sendet niemals Passwörter über Discord. Der Link ist nur für die optionale Passwortänderung gedacht." })
     .setTimestamp(new Date());
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

@@ -16,6 +16,8 @@ export type PresenceUser = {
   isDiscordOnline: boolean;
   discordStatus: "online" | "idle" | "dnd" | "offline";
   dualPresenceLabel: string;
+  onlinePlatforms: Array<"desktop" | "android" | "ios">;
+  platformLabel: string;
   connectedAt: string | null;
   lastHeartbeatAt: string | null;
   lastSeenAt: string | null;

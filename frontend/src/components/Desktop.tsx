@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal, UserPlus } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -26,7 +26,7 @@ declare global {
     furrboxUpdater?: {
       check: () => Promise<{ ok: boolean; updateInfo?: { version?: string } | null; error?: string }>;
       install: () => Promise<boolean>;
-      onStatus: (callback: (payload: { status: string; version?: string; percent?: number; message?: string; edition?: string; channel?: string }) => void) => () => void;
+      onStatus: (callback: (payload: { status: string; version?: string; percent?: number; etaSeconds?: number | null; bytesPerSecond?: number; transferred?: number; total?: number; message?: string; edition?: string; channel?: string }) => void) => () => void;
     };
   }
 }
@@ -62,6 +62,27 @@ function wallpaperClass(wallpaper: string) {
 
 const installedVersionStorageKey = "furrbox:last-installed-version-toast";
 const updaterReadyStorageKey = "furrbox:last-ready-update-toast";
+const updateNotificationKey = "furrbox:update-download";
+
+function formatEta(seconds?: number | null) {
+  if (!seconds || seconds < 1) return "Restzeit wird berechnet";
+  if (seconds < 60) return `noch ${seconds} Sek.`;
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  return restSeconds ? `noch ${minutes} Min. ${restSeconds} Sek.` : `noch ${minutes} Min.`;
+}
+
+function formatBytes(bytes?: number) {
+  if (!bytes || bytes < 1) return null;
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
 
 export function Desktop() {
   const { activeWindow, wallpaper, token, user, patchUi } = useFurrBoxStore();
@@ -140,12 +161,14 @@ export function Desktop() {
   useEffect(() => {
     if (!window.furrboxUpdater) return;
     return window.furrboxUpdater.onStatus((payload) => {
+      const dismissUpdateNotification = useNotificationStore.getState().dismissByKey;
       if (payload.status === "error") {
         console.warn("FurrBox updater error:", payload.message || "Update check failed.");
+        dismissUpdateNotification(updateNotificationKey);
         notify({
           version: FURRBOX_VERSION,
           title: "Updater nicht erreichbar",
-          description: payload.message || "Die Update-Pruefung konnte nicht abgeschlossen werden."
+          description: payload.message || "Die Update-Prüfung konnte nicht abgeschlossen werden."
         });
         return;
       }
@@ -154,29 +177,45 @@ export function Desktop() {
         notify({
           version: `v${payload.version}`,
           title: "Update gefunden",
-          description: `${payload.edition || "FurrBox"} laedt Version v${payload.version} im Hintergrund.`
+          description: `${payload.edition || "FurrBox"} lädt Version v${payload.version} im Hintergrund.`,
+          progressPercent: 0,
+          meta: "Download startet",
+          persist: true,
+          dedupeKey: updateNotificationKey
         });
         return;
       }
 
-      if (payload.status === "downloading" && typeof payload.percent === "number" && payload.percent >= 100) {
+      if (payload.status === "downloading" && typeof payload.percent === "number") {
+        const transferred = formatBytes(payload.transferred);
+        const total = formatBytes(payload.total);
         notify({
-          version: FURRBOX_VERSION,
-          title: "Update heruntergeladen",
-          description: "Das Update wird vorbereitet und kann gleich installiert werden."
+          version: payload.version ? `v${payload.version}` : FURRBOX_VERSION,
+          title: "Update wird heruntergeladen",
+          description: `${payload.edition || "FurrBox"} wird im Hintergrund aktualisiert.`,
+          progressPercent: payload.percent,
+          meta: `${formatEta(payload.etaSeconds)}${transferred && total ? ` - ${transferred} / ${total}` : ""}`,
+          persist: true,
+          dedupeKey: updateNotificationKey
         });
         return;
       }
 
       if (payload.status === "ready" && payload.version) {
+        dismissUpdateNotification(updateNotificationKey);
         const storageKey = `${payload.channel || "default"}:${payload.version}`;
         if (window.localStorage.getItem(updaterReadyStorageKey) === storageKey) return;
         window.localStorage.setItem(updaterReadyStorageKey, storageKey);
         notify({
           version: `v${payload.version}`,
           title: "Update bereit",
-          description: `${payload.edition || "FurrBox"} v${payload.version} ist heruntergeladen. Beim naechsten Neustart wird es installiert.`
+          description: `${payload.edition || "FurrBox"} v${payload.version} ist heruntergeladen. Beim nächsten Neustart wird es installiert.`
         });
+        return;
+      }
+
+      if (payload.status === "installing" || payload.status === "current") {
+        dismissUpdateNotification(updateNotificationKey);
       }
     });
   }, [notify]);
