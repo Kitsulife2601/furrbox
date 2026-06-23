@@ -547,10 +547,26 @@ async function ensurePrimaryDeveloperAccount() {
   const passwordHash = await bcrypt.hash(PRIMARY_DEVELOPER_PASSWORD, 12);
   const existingByDiscordId = await prisma.user.findUnique({ where: { discordId: PRIMARY_DEVELOPER_DISCORD_ID } }).catch(() => null);
   const existingByUsername = await prisma.user.findUnique({ where: { username: PRIMARY_DEVELOPER_USERNAME.toLowerCase() } }).catch(() => null);
+  const targetUser = existingByUsername ?? existingByDiscordId;
 
-  const user = existingByDiscordId
+  if (existingByDiscordId && existingByUsername && existingByDiscordId.id !== existingByUsername.id) {
+    await prisma.user.update({
+      where: { id: existingByDiscordId.id },
+      data: {
+        username: `legacy_${existingByDiscordId.id.slice(0, 8)}`,
+        displayName: `${existingByDiscordId.displayName || existingByDiscordId.username} Legacy`,
+        discordId: null
+      }
+    });
+    await prisma.userPresence.updateMany({
+      where: { userId: existingByDiscordId.id },
+      data: { discordId: null, status: "offline", socketId: null }
+    });
+  }
+
+  const user = targetUser
     ? await prisma.user.update({
-        where: { id: existingByDiscordId.id },
+        where: { id: targetUser.id },
         data: {
           username: PRIMARY_DEVELOPER_USERNAME.toLowerCase(),
           displayName: PRIMARY_DEVELOPER_USERNAME,
@@ -559,25 +575,15 @@ async function ensurePrimaryDeveloperAccount() {
         },
         select: { id: true, username: true, displayName: true, discordId: true }
       })
-    : existingByUsername
-      ? await prisma.user.update({
-          where: { id: existingByUsername.id },
-          data: {
-            displayName: PRIMARY_DEVELOPER_USERNAME,
-            discordId: PRIMARY_DEVELOPER_DISCORD_ID,
-            passwordHash
-          },
-          select: { id: true, username: true, displayName: true, discordId: true }
-        })
-      : await prisma.user.create({
-          data: {
-            username: PRIMARY_DEVELOPER_USERNAME.toLowerCase(),
-            displayName: PRIMARY_DEVELOPER_USERNAME,
-            discordId: PRIMARY_DEVELOPER_DISCORD_ID,
-            passwordHash
-          },
-          select: { id: true, username: true, displayName: true, discordId: true }
-        });
+    : await prisma.user.create({
+        data: {
+          username: PRIMARY_DEVELOPER_USERNAME.toLowerCase(),
+          displayName: PRIMARY_DEVELOPER_USERNAME,
+          discordId: PRIMARY_DEVELOPER_DISCORD_ID,
+          passwordHash
+        },
+        select: { id: true, username: true, displayName: true, discordId: true }
+      });
 
   await fs.mkdir(scopeFolder("PRIVATE", user.id), { recursive: true });
   await prisma.discordMember.upsert({
