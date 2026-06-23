@@ -61,6 +61,9 @@ model DiscordMember {
   rolesJson        String
   roleNamesJson    String   @default("[]")
   highestPrivilege String
+  discordStatus    String   @default("offline")
+  isDiscordOnline  Boolean  @default(false)
+  lastDiscordPresenceAt DateTime?
   isSupporter      Boolean  @default(false)
   isModerator      Boolean  @default(false)
   isOwner          Boolean  @default(false)
@@ -68,6 +71,7 @@ model DiscordMember {
   syncedAt         DateTime @updatedAt
 
   @@index([highestPrivilege])
+  @@index([discordStatus])
 }
 
 model DiscordWarning {

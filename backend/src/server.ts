@@ -35,6 +35,7 @@ type UiState = {
   startOpen: boolean;
 };
 type DiscordPrivilege = "none" | "supporter" | "moderator" | "owner" | "dev";
+type DiscordPresenceStatus = "online" | "idle" | "dnd" | "offline";
 type DiscordMemberSnapshot = {
   discordId: string;
   username: string;
@@ -43,10 +44,19 @@ type DiscordMemberSnapshot = {
   roles: string[];
   roleNames: string[];
   highestPrivilege: DiscordPrivilege;
+  discordStatus?: DiscordPresenceStatus;
+  isDiscordOnline?: boolean;
+  lastDiscordPresenceAt?: string | null;
   isSupporter: boolean;
   isModerator: boolean;
   isOwner: boolean;
   isDev: boolean;
+};
+type DiscordPresenceSnapshot = {
+  discordId: string;
+  discordStatus: DiscordPresenceStatus;
+  isDiscordOnline: boolean;
+  updatedAt?: string;
 };
 type ModerationAction = "ban" | "warn" | "timeout" | "mute";
 type ModerationRequest = {
@@ -103,6 +113,10 @@ type PresenceUserDto = {
   roleName: string;
   roleNames: string[];
   status: PresenceStatus;
+  isExeOnline: boolean;
+  isDiscordOnline: boolean;
+  discordStatus: DiscordPresenceStatus;
+  dualPresenceLabel: string;
   connectedAt: string | null;
   lastHeartbeatAt: string | null;
   lastSeenAt: string | null;
@@ -116,6 +130,9 @@ type PresenceRow = {
   nickname: string | null;
   roleNamesJson: string | null;
   highestPrivilege: string | null;
+  discordStatus: DiscordPresenceStatus | null;
+  isDiscordOnline: boolean | number | null;
+  lastDiscordPresenceAt: Date | string | null;
   status: PresenceStatus | null;
   connectedAt: Date | string | null;
   lastHeartbeatAt: Date | string | null;
@@ -390,6 +407,9 @@ async function ensureDatabase() {
       "rolesJson" TEXT NOT NULL,
       "roleNamesJson" TEXT NOT NULL DEFAULT '[]',
       "highestPrivilege" TEXT NOT NULL,
+      "discordStatus" TEXT NOT NULL DEFAULT 'offline',
+      "isDiscordOnline" BOOLEAN NOT NULL DEFAULT false,
+      "lastDiscordPresenceAt" DATETIME,
       "isSupporter" BOOLEAN NOT NULL DEFAULT false,
       "isModerator" BOOLEAN NOT NULL DEFAULT false,
       "isOwner" BOOLEAN NOT NULL DEFAULT false,
@@ -399,7 +419,11 @@ async function ensureDatabase() {
   `);
   await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "nickname" TEXT;`).catch(() => undefined);
   await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "roleNamesJson" TEXT NOT NULL DEFAULT '[]';`).catch(() => undefined);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "discordStatus" TEXT NOT NULL DEFAULT 'offline';`).catch(() => undefined);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "isDiscordOnline" BOOLEAN NOT NULL DEFAULT false;`).catch(() => undefined);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "DiscordMember" ADD COLUMN "lastDiscordPresenceAt" DATETIME;`).catch(() => undefined);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordMember_highestPrivilege_idx" ON "DiscordMember"("highestPrivilege");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DiscordMember_discordStatus_idx" ON "DiscordMember"("discordStatus");`);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "DiscordWarning" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -444,6 +468,9 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
           rolesJson: JSON.stringify(member.roles),
           roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
+          discordStatus: member.discordStatus ?? "offline",
+          isDiscordOnline: Boolean(member.isDiscordOnline),
+          lastDiscordPresenceAt: member.lastDiscordPresenceAt ? new Date(member.lastDiscordPresenceAt) : null,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
           isOwner: member.isOwner,
@@ -457,6 +484,9 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
           rolesJson: JSON.stringify(member.roles),
           roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
+          discordStatus: member.discordStatus ?? "offline",
+          isDiscordOnline: Boolean(member.isDiscordOnline),
+          lastDiscordPresenceAt: member.lastDiscordPresenceAt ? new Date(member.lastDiscordPresenceAt) : null,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
           isOwner: member.isOwner,
@@ -468,8 +498,35 @@ async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
   await emitPresenceSnapshot("discord-sync");
 }
 
+async function syncDiscordPresences(presences: DiscordPresenceSnapshot[]) {
+  const now = new Date().toISOString();
+  await prisma.$transaction(
+    presences.map((presence) =>
+      prisma.discordMember.updateMany({
+        where: { discordId: presence.discordId },
+        data: {
+          discordStatus: presence.discordStatus,
+          isDiscordOnline: presence.isDiscordOnline,
+          lastDiscordPresenceAt: presence.updatedAt ? new Date(presence.updatedAt) : new Date(now)
+        }
+      })
+    )
+  );
+  await emitPresenceSnapshot("discord-presence-sync");
+}
+
+function dualPresenceLabel(isExeOnline: boolean, isDiscordOnline: boolean) {
+  if (isExeOnline && isDiscordOnline) return "🟢 Online (App & DC)";
+  if (isExeOnline) return "🔵 Online (Nur App)";
+  if (isDiscordOnline) return "💜 Online (Nur Discord)";
+  return "⚫ Offline";
+}
+
 function toPresenceDto(row: PresenceRow): PresenceUserDto {
   const roleNames = safeJsonArray(row.roleNamesJson);
+  const isExeOnline = row.status === "online";
+  const discordStatus = row.discordStatus ?? "offline";
+  const isDiscordOnline = Boolean(row.isDiscordOnline) || ["online", "idle", "dnd"].includes(discordStatus);
   return {
     id: row.id,
     username: row.username,
@@ -479,7 +536,11 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
     nickname: row.nickname,
     roleName: formatRoleName(row),
     roleNames,
-    status: row.status === "online" ? "online" : "offline",
+    status: isExeOnline ? "online" : "offline",
+    isExeOnline,
+    isDiscordOnline,
+    discordStatus,
+    dualPresenceLabel: dualPresenceLabel(isExeOnline, isDiscordOnline),
     connectedAt: iso(row.connectedAt),
     lastHeartbeatAt: iso(row.lastHeartbeatAt),
     lastSeenAt: iso(row.lastSeenAt)
@@ -498,6 +559,9 @@ async function listPresenceUsers(view: PresenceView = "global"): Promise<Presenc
       dm."nickname",
       dm."roleNamesJson",
       dm."highestPrivilege",
+      COALESCE(dm."discordStatus", 'offline') AS "discordStatus",
+      COALESCE(dm."isDiscordOnline", false) AS "isDiscordOnline",
+      dm."lastDiscordPresenceAt",
       COALESCE(up."status", 'offline') AS "status",
       up."connectedAt",
       up."lastHeartbeatAt",
@@ -524,6 +588,9 @@ async function getPresenceUser(userId: string) {
       dm."nickname",
       dm."roleNamesJson",
       dm."highestPrivilege",
+      COALESCE(dm."discordStatus", 'offline') AS "discordStatus",
+      COALESCE(dm."isDiscordOnline", false) AS "isDiscordOnline",
+      dm."lastDiscordPresenceAt",
       COALESCE(up."status", 'offline') AS "status",
       up."connectedAt",
       up."lastHeartbeatAt",
@@ -751,32 +818,79 @@ async function resolveDiscordDisplayName(discordId: string) {
   return member?.nickname || member?.displayName || member?.username || discordId;
 }
 
-async function writeDiscordReportFile(targetName: string, metadata: Record<string, unknown>) {
-  const safeTarget = sanitizePathSegment(targetName);
-  const virtualPath = `Dokumente/Moderation_Beweise/Discord_Logs/${safeTarget}_Report.txt`;
-  const physicalPath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", `${safeTarget}_Report.txt`);
-  await fs.mkdir(path.dirname(physicalPath), { recursive: true });
-  const messageProof = metadata.messageProof as { content?: string; authorName?: string; channelName?: string; createdAt?: string } | null;
-  const payload = Buffer.from([
-    "FurrBox Discord Evidence Report",
-    "------------------------------------------------------------",
-    `Date: ${new Date(String(metadata.createdAt || new Date().toISOString())).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
-    "Action: EVIDENCE REPORT",
-    `Moderator Name: ${(metadata.createdBy as { displayName?: string; username?: string } | undefined)?.displayName || (metadata.createdBy as { username?: string } | undefined)?.username || "Unknown"} [FurrBox User]`,
-    `Target Name: ${String(metadata.targetDisplayName || metadata.targetPrimary || "Unknown")}`,
-    `Violation Category: ${String(metadata.violationCategory || "Other")}`,
-    "------------------------------------------------------------",
-    "Reason:",
-    String(metadata.notes || "No additional notes."),
-    "------------------------------------------------------------",
-    messageProof?.content ? "Message Proof:" : "",
-    messageProof?.content ? `Author: ${messageProof.authorName || "Unknown"}` : "",
-    messageProof?.content ? `Channel: ${messageProof.channelName || "Unknown"}` : "",
-    messageProof?.content ? `Created At: ${messageProof.createdAt || "Unknown"}` : "",
-    messageProof?.content ? messageProof.content : "",
-    "------------------------------------------------------------",
+type EvidenceReportMetadata = {
+  caseId?: string;
+  platform: "Discord" | "VRChat";
+  targetPrimary: string;
+  targetDiscordId: string;
+  targetDisplayName: string;
+  targetSecondary: string;
+  messageId: string;
+  messageProof: MessageInspectResult | null;
+  violationCategory: string;
+  notes: string;
+  createdBy: AuthUser | undefined;
+  createdAt: string;
+};
+
+function formatGermanDateTime(isoDate: string) {
+  return new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(isoDate)).replace(",", " -") + " Uhr";
+}
+
+async function moderatorRoleNameFor(discordId?: string | null) {
+  if (!discordId) return "FurrBox User";
+  const member = await prisma.discordMember.findUnique({ where: { discordId } }).catch(() => null);
+  if (!member) return "FurrBox User";
+  return formatRoleName({ highestPrivilege: member.highestPrivilege, roleNamesJson: member.roleNamesJson });
+}
+
+async function buildEvidenceReportText(metadata: EvidenceReportMetadata) {
+  const moderatorName = metadata.createdBy?.displayName || metadata.createdBy?.username || "Unbekannt";
+  const moderatorRole = await moderatorRoleNameFor(metadata.createdBy?.discordId);
+  const targetName = metadata.targetDisplayName || metadata.targetPrimary || "Unbekannt";
+  const targetId = metadata.targetDiscordId || "Nicht angegeben";
+  const channel = metadata.messageProof?.channelName
+    ? `#${metadata.messageProof.channelName}${metadata.messageProof.channelId ? ` (ID: ${metadata.messageProof.channelId})` : ""}`
+    : metadata.targetSecondary || "Nicht angegeben";
+  const messageContent = metadata.messageProof?.content?.trim() || "Keine Discord-Nachricht geladen.";
+  const notes = metadata.notes || "Keine Moderator-Notizen eingetragen.";
+
+  return [
+    "==================================================",
+    "        FURRBOX SYSTEM-MODERATIONSPROTOKOLL",
+    "==================================================",
+    "[FALL-INFORMATIONEN]",
+    `Zeitpunkt     : ${formatGermanDateTime(metadata.createdAt)}`,
+    `Plattform     : ${metadata.platform}`,
+    `Zielperson    : ${targetName} (ID: ${targetId})`,
+    `Moderator     : ${moderatorName} (Rolle: ${moderatorRole})`,
+    "",
+    "[BEWEISMITTEL & QUELLEN]",
+    `Kategorie     : ${metadata.violationCategory}`,
+    `Nachrichten-ID: ${metadata.messageId || "Nicht angegeben"}`,
+    `Server/Channel: ${channel}`,
+    "Inhalt der Nachricht:",
+    "--------------------------------------------------",
+    `"${messageContent}"`,
+    "--------------------------------------------------",
+    "",
+    "[MODERATOR NOTIZEN]",
+    notes,
+    "==================================================",
     ""
-  ].filter(Boolean).join("\r\n"), "utf8");
+  ].join("\r\n");
+}
+
+async function writeStoredTextFile(virtualPath: string, physicalPath: string, content: string) {
+  const payload = Buffer.from(content, "utf8");
+  await fs.mkdir(path.dirname(physicalPath), { recursive: true });
   await fs.writeFile(physicalPath, payload);
   const existing = await prisma.storedFile.findFirst({ where: { scope: "PUBLIC", name: virtualPath } });
   return existing
@@ -791,6 +905,19 @@ async function writeDiscordReportFile(targetName: string, metadata: Record<strin
           ownerId: null
         }
       });
+}
+
+async function writeCaseReportFile(virtualCasePath: string, physicalCasePath: string, metadata: EvidenceReportMetadata) {
+  const virtualPath = `${virtualCasePath}/Moderationsprotokoll.txt`;
+  const physicalPath = path.join(physicalCasePath, "Moderationsprotokoll.txt");
+  return writeStoredTextFile(virtualPath, physicalPath, await buildEvidenceReportText(metadata));
+}
+
+async function writeDiscordReportFile(targetName: string, metadata: EvidenceReportMetadata) {
+  const safeTarget = sanitizePathSegment(targetName);
+  const virtualPath = `Dokumente/Moderation_Beweise/Discord_Logs/${safeTarget}_Report.txt`;
+  const physicalPath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", "Discord_Logs", `${safeTarget}_Report.txt`);
+  return writeStoredTextFile(virtualPath, physicalPath, await buildEvidenceReportText(metadata));
 }
 
 async function listDiscordTextLogsForUser(discordId: string) {
@@ -1249,7 +1376,7 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
     const physicalCasePath = path.join(publicStorageDir(), "Dokumente", "Moderation_Beweise", platform, caseId);
     await fs.mkdir(physicalCasePath, { recursive: true });
 
-    const metadata = {
+    const metadata: EvidenceReportMetadata = {
       caseId,
       platform,
       targetPrimary,
@@ -1261,12 +1388,7 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
       violationCategory,
       notes,
       createdBy: req.user,
-      createdAt: new Date().toISOString(),
-      evidenceFiles: uploadedFiles.map((file) => ({
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size
-      }))
+      createdAt: new Date().toISOString()
     };
 
     const createdFiles = [];
@@ -1287,21 +1409,8 @@ app.post("/api/evidence", requireAuth, evidenceUpload.array("evidence", 32), asy
       createdFiles.push(row);
     }
 
-    const metadataName = "case_metadata.json";
-    const metadataBuffer = Buffer.from(JSON.stringify(metadata, null, 2), "utf8");
-    const storedMetadataName = `${Date.now()}-${crypto.randomUUID()}-${metadataName}`;
-    await fs.writeFile(path.join(physicalCasePath, storedMetadataName), metadataBuffer);
-    const metadataRow = await prisma.storedFile.create({
-      data: {
-        name: path.join("Dokumente", "Moderation_Beweise", platform, caseId, storedMetadataName),
-        originalName: `${virtualCasePath}/${metadataName}`,
-        size: metadataBuffer.length,
-        mimeType: "application/json",
-        scope: "PUBLIC",
-        ownerId: null
-      }
-    });
-    createdFiles.push(metadataRow);
+    const caseReportRow = await writeCaseReportFile(virtualCasePath, physicalCasePath, metadata);
+    createdFiles.push(caseReportRow);
 
     if (platform === "Discord") {
       const reportRow = await writeDiscordReportFile(resolvedTargetName, metadata);
@@ -1395,6 +1504,17 @@ io.on("connection", async (socket) => {
         guildId,
         count: members.length,
         members,
+        syncedAt: new Date().toISOString()
+      });
+    });
+
+    socket.on("discord:presence:sync", async ({ guildId, presences }: { guildId?: string; presences?: DiscordPresenceSnapshot[] }) => {
+      if (!Array.isArray(presences)) return;
+      await syncDiscordPresences(presences);
+      io.emit("discord:presence-refreshed", {
+        guildId,
+        count: presences.length,
+        presences,
         syncedAt: new Date().toISOString()
       });
     });

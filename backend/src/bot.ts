@@ -56,11 +56,15 @@ type DiscordMemberSnapshot = {
   roles: string[];
   roleNames: string[];
   highestPrivilege: DiscordPrivilege;
+  discordStatus: "online" | "idle" | "dnd" | "offline";
+  isDiscordOnline: boolean;
+  lastDiscordPresenceAt: string | null;
   isSupporter: boolean;
   isModerator: boolean;
   isOwner: boolean;
   isDev: boolean;
 };
+type DiscordPresenceStatus = "online" | "idle" | "dnd" | "offline";
 
 const ROLE_IDS = {
   dev: "1312104318006071328",
@@ -96,7 +100,8 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildPresences
   ],
   partials: [Partials.Channel]
 });
@@ -153,12 +158,23 @@ function privilegeFor(member: GuildMember): DiscordPrivilege {
   return "none";
 }
 
+function presenceFor(member: GuildMember) {
+  const rawStatus = member.presence?.status;
+  const status: DiscordPresenceStatus = rawStatus === "online" || rawStatus === "idle" || rawStatus === "dnd" ? rawStatus : "offline";
+  return {
+    discordStatus: status,
+    isDiscordOnline: status === "online" || status === "idle" || status === "dnd",
+    lastDiscordPresenceAt: new Date().toISOString()
+  };
+}
+
 function snapshotMember(member: GuildMember): DiscordMemberSnapshot {
   const privilege = privilegeFor(member);
   const roles = member.roles.cache.filter((role) => role.id !== member.guild.id).map((role) => role.id);
   const roleNames = roles.map((roleId) => ROLE_DISPLAY_NAMES[roleId]).filter((roleName): roleName is string => Boolean(roleName));
   if (member.id === ROLE_IDS.dev && !roleNames.includes("Dev")) roleNames.unshift("Dev");
   if (member.id === ROLE_IDS.owner && !roleNames.includes("Fish Nagie Owner")) roleNames.unshift("Fish Nagie Owner");
+  const presence = presenceFor(member);
   return {
     discordId: member.id,
     username: member.user.tag,
@@ -167,6 +183,9 @@ function snapshotMember(member: GuildMember): DiscordMemberSnapshot {
     roles,
     roleNames,
     highestPrivilege: privilege,
+    discordStatus: presence.discordStatus,
+    isDiscordOnline: presence.isDiscordOnline,
+    lastDiscordPresenceAt: presence.lastDiscordPresenceAt,
     isSupporter: privilege === "supporter" || privilege === "moderator" || privilege === "owner" || privilege === "dev",
     isModerator: privilege === "moderator" || privilege === "owner" || privilege === "dev",
     isOwner: privilege === "owner" || privilege === "dev",
@@ -185,6 +204,9 @@ async function persistMember(member: GuildMember) {
       rolesJson: JSON.stringify(snapshot.roles),
       roleNamesJson: JSON.stringify(snapshot.roleNames),
       highestPrivilege: snapshot.highestPrivilege,
+      discordStatus: snapshot.discordStatus,
+      isDiscordOnline: snapshot.isDiscordOnline,
+      lastDiscordPresenceAt: snapshot.lastDiscordPresenceAt ? new Date(snapshot.lastDiscordPresenceAt) : null,
       isSupporter: snapshot.isSupporter,
       isModerator: snapshot.isModerator,
       isOwner: snapshot.isOwner,
@@ -198,6 +220,9 @@ async function persistMember(member: GuildMember) {
       rolesJson: JSON.stringify(snapshot.roles),
       roleNamesJson: JSON.stringify(snapshot.roleNames),
       highestPrivilege: snapshot.highestPrivilege,
+      discordStatus: snapshot.discordStatus,
+      isDiscordOnline: snapshot.isDiscordOnline,
+      lastDiscordPresenceAt: snapshot.lastDiscordPresenceAt ? new Date(snapshot.lastDiscordPresenceAt) : null,
       isSupporter: snapshot.isSupporter,
       isModerator: snapshot.isModerator,
       isOwner: snapshot.isOwner,
@@ -221,6 +246,9 @@ async function syncGuild(guild: Guild) {
           rolesJson: JSON.stringify(member.roles),
           roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
+          discordStatus: member.discordStatus,
+          isDiscordOnline: member.isDiscordOnline,
+          lastDiscordPresenceAt: member.lastDiscordPresenceAt ? new Date(member.lastDiscordPresenceAt) : null,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
           isOwner: member.isOwner,
@@ -234,6 +262,9 @@ async function syncGuild(guild: Guild) {
           rolesJson: JSON.stringify(member.roles),
           roleNamesJson: JSON.stringify(member.roleNames),
           highestPrivilege: member.highestPrivilege,
+          discordStatus: member.discordStatus,
+          isDiscordOnline: member.isDiscordOnline,
+          lastDiscordPresenceAt: member.lastDiscordPresenceAt ? new Date(member.lastDiscordPresenceAt) : null,
           isSupporter: member.isSupporter,
           isModerator: member.isModerator,
           isOwner: member.isOwner,
@@ -497,6 +528,23 @@ client.on("guildMemberUpdate", async (_oldMember, newMember) => {
 
 client.on("guildMemberAdd", async (member) => {
   if (!member.user.bot) await persistMember(member);
+});
+
+client.on("presenceUpdate", async (_oldPresence, newPresence) => {
+  const member = newPresence.member;
+  if (!member || member.user.bot) return;
+  const status: DiscordPresenceStatus = newPresence.status === "online" || newPresence.status === "idle" || newPresence.status === "dnd" ? newPresence.status : "offline";
+  socket.emit("discord:presence:sync", {
+    guildId: member.guild.id,
+    presences: [
+      {
+        discordId: member.id,
+        discordStatus: status,
+        isDiscordOnline: status === "online" || status === "idle" || status === "dnd",
+        updatedAt: new Date().toISOString()
+      }
+    ]
+  });
 });
 
 client.on("guildMemberRemove", async (member) => {

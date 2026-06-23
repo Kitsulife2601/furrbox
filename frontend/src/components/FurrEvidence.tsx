@@ -3,13 +3,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Gavel, Image, ShieldAlert, UploadCloud, Video, X } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { inspectDiscordMessage, listDiscordMembers, saveEvidenceCase, type DiscordMemberOption, type DiscordMessageProof } from "@/lib/evidence";
+import { inspectDiscordMessage, saveEvidenceCase, type DiscordMessageProof } from "@/lib/evidence";
+import { listPresenceUsers, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
 type Platform = "Discord" | "VRChat";
 
 const categories = ["Harassment", "ToS Violation", "Chat Spam", "Threats", "NSFW Content", "Impersonation", "Other"];
+
+function memberDisplayName(user: PresenceUser) {
+  return user.nickname || user.discordUsername || user.displayName || user.username || "Unbekannter Nutzer";
+}
+
+function dualPresenceText(user: PresenceUser) {
+  if (user.dualPresenceLabel) return user.dualPresenceLabel;
+  const isExeOnline = user.isExeOnline ?? user.status === "online";
+  const isDiscordOnline = user.isDiscordOnline ?? false;
+  if (isExeOnline && isDiscordOnline) return "🟢 Online (App & DC)";
+  if (isExeOnline) return "🔵 Online (Nur App)";
+  if (isDiscordOnline) return "💜 Online (Nur Discord)";
+  return "⚫ Offline";
+}
+
+function memberOptionLabel(user: PresenceUser) {
+  return `${memberDisplayName(user)} - ${user.roleName} - ${dualPresenceText(user)}`;
+}
 
 function fileIcon(file: File) {
   if (file.type.startsWith("image/")) return <Image size={18} />;
@@ -22,7 +41,8 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
   const [platform, setPlatform] = useState<Platform>("Discord");
   const [targetPrimary, setTargetPrimary] = useState("");
   const [selectedDiscordId, setSelectedDiscordId] = useState("");
-  const [discordMembers, setDiscordMembers] = useState<DiscordMemberOption[]>([]);
+  const [registeredMembers, setRegisteredMembers] = useState<PresenceUser[]>([]);
+  const [teamMembers, setTeamMembers] = useState<PresenceUser[]>([]);
   const [memberLoadError, setMemberLoadError] = useState("");
   const [targetSecondary, setTargetSecondary] = useState("");
   const [messageId, setMessageId] = useState("");
@@ -34,7 +54,10 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
-  const selectedMember = useMemo(() => discordMembers.find((member) => member.discordId === selectedDiscordId), [discordMembers, selectedDiscordId]);
+  const selectedMember = useMemo(() => {
+    const merged = [...teamMembers, ...registeredMembers];
+    return merged.find((member) => member.discordId === selectedDiscordId) || null;
+  }, [registeredMembers, selectedDiscordId, teamMembers]);
 
   const targetLabels = useMemo(() => {
     if (platform === "Discord") return { primary: "Discord Nutzer", secondary: "Server / Channel / Message Link" };
@@ -43,13 +66,42 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
 
   useEffect(() => {
     if (!token || platform !== "Discord") return;
-    listDiscordMembers(token)
-      .then((members) => {
-        setDiscordMembers(members);
+    Promise.all([listPresenceUsers(token, "global"), listPresenceUsers(token, "team")])
+      .then(([globalMembers, team]) => {
+        setRegisteredMembers(globalMembers.filter((member) => member.discordId));
+        setTeamMembers(team.filter((member) => member.discordId));
         setMemberLoadError("");
       })
-      .catch((error) => setMemberLoadError(error instanceof Error ? error.message : "Discord-Mitglieder konnten nicht geladen werden."));
+      .catch((error) => setMemberLoadError(error instanceof Error ? error.message : "Presence-Nutzer konnten nicht geladen werden."));
   }, [platform, token]);
+
+  useEffect(() => {
+    if (!socket || !token || platform !== "Discord") return;
+    const refreshMembers = () => {
+      Promise.all([listPresenceUsers(token, "global"), listPresenceUsers(token, "team")])
+        .then(([globalMembers, team]) => {
+          setRegisteredMembers(globalMembers.filter((member) => member.discordId));
+          setTeamMembers(team.filter((member) => member.discordId));
+        })
+        .catch(() => undefined);
+    };
+    socket.on("presence:snapshot", refreshMembers);
+    socket.on("presence:update", refreshMembers);
+    socket.on("discord:presence-refreshed", refreshMembers);
+    socket.on("discord:members-refreshed", refreshMembers);
+    return () => {
+      socket.off("presence:snapshot", refreshMembers);
+      socket.off("presence:update", refreshMembers);
+      socket.off("discord:presence-refreshed", refreshMembers);
+      socket.off("discord:members-refreshed", refreshMembers);
+    };
+  }, [platform, socket, token]);
+
+  function selectDiscordMember(discordId: string) {
+    setSelectedDiscordId(discordId);
+    const member = [...teamMembers, ...registeredMembers].find((candidate) => candidate.discordId === discordId);
+    setTargetPrimary(member ? memberDisplayName(member) : "");
+  }
 
   async function inspectMessage() {
     if (!token || !/^\d{17,22}$/.test(messageId)) {
@@ -79,7 +131,7 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
       setStatus({ type: "error", message: "Du musst angemeldet sein." });
       return;
     }
-    const resolvedTarget = platform === "Discord" ? selectedMember?.label || "" : targetPrimary.trim();
+    const resolvedTarget = platform === "Discord" && selectedMember ? memberDisplayName(selectedMember) : targetPrimary.trim();
     if (!resolvedTarget || (!files.length && !messageProof?.found)) {
       setStatus({ type: "error", message: "Zielperson und mindestens eine Datei oder geladene Nachrichten-ID sind erforderlich." });
       return;
@@ -90,8 +142,8 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
       const result = await saveEvidenceCase(token, {
         platform,
         targetPrimary: resolvedTarget,
-        targetDiscordId: platform === "Discord" ? selectedMember?.discordId : undefined,
-        targetDisplayName: platform === "Discord" ? selectedMember?.label : undefined,
+        targetDiscordId: platform === "Discord" ? selectedMember?.discordId || undefined : undefined,
+        targetDisplayName: platform === "Discord" && selectedMember ? memberDisplayName(selectedMember) : undefined,
         targetSecondary,
         messageId: messageId.trim() || undefined,
         messageProof,
@@ -166,26 +218,53 @@ export function FurrEvidence({ windowState }: { windowState: FurrWindowState }) 
           <label className="mb-3 block">
             <span className="mb-1 block text-[12px] font-medium text-slate-400">{targetLabels.primary}</span>
             {platform === "Discord" ? (
-              <select
-                className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300"
-                value={selectedDiscordId}
-                onChange={(event) => {
-                  setSelectedDiscordId(event.target.value);
-                  setTargetPrimary(discordMembers.find((member) => member.discordId === event.target.value)?.label || "");
-                }}
-              >
-                <option value="">Synchronisierten Discord-Nutzer auswählen</option>
-                {discordMembers.map((member) => (
-                  <option key={member.discordId} value={member.discordId}>
-                    {member.label}{member.roleNames.length ? ` - ${member.roleNames.join(", ")}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-3 rounded-2xl border border-cyan-300/10 bg-slate-950/80 p-3 shadow-[0_0_20px_rgba(0,240,255,0.08)]">
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">Alle registrierten Fischmember</span>
+                  <select
+                    className="h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[12px] font-semibold text-slate-100 outline-none focus:border-cyan-300 focus:shadow-[0_0_16px_rgba(0,240,255,0.22)]"
+                    value={registeredMembers.some((member) => member.discordId === selectedDiscordId) ? selectedDiscordId : ""}
+                    onChange={(event) => selectDiscordMember(event.target.value)}
+                  >
+                    <option value="">Globalen Nutzer auswählen</option>
+                    {registeredMembers.map((member) => (
+                      <option key={`global-${member.id}`} value={member.discordId || ""}>
+                        {memberOptionLabel(member)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-fuchsia-200">Team-Rollen Matrix</span>
+                  <select
+                    className="h-11 w-full rounded-xl border border-fuchsia-300/20 bg-slate-950 px-3 text-[12px] font-semibold text-slate-100 outline-none focus:border-fuchsia-300 focus:shadow-[0_0_16px_rgba(255,0,127,0.22)]"
+                    value={teamMembers.some((member) => member.discordId === selectedDiscordId) ? selectedDiscordId : ""}
+                    onChange={(event) => selectDiscordMember(event.target.value)}
+                  >
+                    <option value="">Team-Mitglied auswählen</option>
+                    {teamMembers.map((member) => (
+                      <option key={`team-${member.id}`} value={member.discordId || ""}>
+                        {memberOptionLabel(member)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {selectedMember ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <div className="truncate text-[13px] font-black text-white">{memberDisplayName(selectedMember)}</div>
+                    <div className="mt-1 flex items-center justify-between gap-3 text-[11px]">
+                      <span className="text-cyan-200">{dualPresenceText(selectedMember)}</span>
+                      <span className="rounded-md border border-violet-400/30 px-2 py-0.5 text-violet-100">{selectedMember.roleName}</span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <input className="h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-[13px] outline-none focus:border-cyan-300" value={targetPrimary} onChange={(event) => setTargetPrimary(event.target.value)} />
             )}
             {platform === "Discord" && memberLoadError ? <span className="mt-1 block text-[11px] text-red-300">{memberLoadError}</span> : null}
-            {platform === "Discord" && selectedMember ? <span className="mt-1 block text-[11px] text-cyan-200">{selectedMember.roleNames.length ? selectedMember.roleNames.join(" / ") : "Keine FurrBox-Rolle synchronisiert"}</span> : null}
           </label>
 
           <label className="mb-3 block">

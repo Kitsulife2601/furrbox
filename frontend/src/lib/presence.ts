@@ -12,6 +12,10 @@ export type PresenceUser = {
   roleName: string;
   roleNames: string[];
   status: PresenceStatus;
+  isExeOnline: boolean;
+  isDiscordOnline: boolean;
+  discordStatus: "online" | "idle" | "dnd" | "offline";
+  dualPresenceLabel: string;
   connectedAt: string | null;
   lastHeartbeatAt: string | null;
   lastSeenAt: string | null;

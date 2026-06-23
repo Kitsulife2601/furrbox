@@ -37,9 +37,19 @@ function formatLastSeen(value: string | null | undefined) {
 
 function sortPresence(users: PresenceUser[]) {
   return [...users].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "online" ? -1 : 1;
+    const aScore = (isAppOnline(a) ? 2 : 0) + (isDiscordOnline(a) ? 1 : 0);
+    const bScore = (isAppOnline(b) ? 2 : 0) + (isDiscordOnline(b) ? 1 : 0);
+    if (aScore !== bScore) return bScore - aScore;
     return resolvedName(a).localeCompare(resolvedName(b), "de");
   });
+}
+
+function isAppOnline(user: PresenceUser) {
+  return user.isExeOnline ?? user.status === "online";
+}
+
+function isDiscordOnline(user: PresenceUser) {
+  return user.isDiscordOnline ?? ["online", "idle", "dnd"].includes(user.discordStatus);
 }
 
 function StatusBadge({ online, onlineLabel = "ONLINE", offlineLabel = "OFFLINE" }: { online: boolean; onlineLabel?: string; offlineLabel?: string }) {
@@ -48,6 +58,34 @@ function StatusBadge({ online, onlineLabel = "ONLINE", offlineLabel = "OFFLINE" 
       {online ? <span aria-hidden="true">{"\u25CF"}</span> : null}
       {online ? onlineLabel : offlineLabel}
     </span>
+  );
+}
+
+function SplitStatusBadge({ user }: { user: PresenceUser }) {
+  const appOnline = isAppOnline(user);
+  const dcOnline = isDiscordOnline(user);
+  if (appOnline && dcOnline) {
+    return <span className="inline-flex rounded-full border border-cyan-300/45 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.34)]">🟢 APP | 🟢 DC</span>;
+  }
+  if (appOnline) {
+    return <span className="inline-flex rounded-full border border-sky-300/45 bg-sky-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.28)]">🟢 APP | ⚫ DC</span>;
+  }
+  if (dcOnline) {
+    return <span className="inline-flex rounded-full border border-violet-300/45 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-200 shadow-[0_0_16px_rgba(139,92,246,0.32)]">⚫ APP | 🟢 DC</span>;
+  }
+  return <span className="inline-flex rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">⚫ INAKTIV</span>;
+}
+
+function LogText({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/);
+  return (
+    <div className="max-h-64 overflow-auto rounded-lg border border-white/5 bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
+      {lines.map((line, index) => (
+        <div key={`${index}-${line}`} className={line.startsWith("=") || line.startsWith("-") || line.startsWith("[") ? "text-cyan-100" : "text-slate-300"}>
+          {line || "\u00A0"}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -63,8 +101,8 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const teamUsers = useMemo(() => sortPresence(users.filter((user) => teamRoles.has(cleanRoleName(user)))), [users]);
   const globalUsers = useMemo(() => sortPresence(users), [users]);
   const visibleUsers = activeTab === "team" ? teamUsers : globalUsers;
-  const onlineCount = users.filter((user) => user.status === "online").length;
-  const teamOnlineCount = teamUsers.filter((user) => user.status === "online").length;
+  const onlineCount = users.filter((user) => isAppOnline(user) || isDiscordOnline(user)).length;
+  const teamOnlineCount = teamUsers.filter((user) => isAppOnline(user) || isDiscordOnline(user)).length;
 
   useEffect(() => {
     if (!token) return;
@@ -79,7 +117,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   }, [token]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !token) return;
     const snapshotHandler = ({ users: nextUsers }: { users: PresenceUser[] }) => {
       setUsers(nextUsers);
       setSelected((current) => {
@@ -94,15 +132,30 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
       });
       setSelected((current) => (current?.id === updated.id ? updated : current));
     };
+    const refreshHandler = () => {
+      listPresenceUsers(token, "global")
+        .then((nextUsers) => {
+          setUsers(nextUsers);
+          setSelected((current) => {
+            if (!current) return sortPresence(nextUsers)[0] ?? null;
+            return nextUsers.find((user) => user.id === current.id) ?? current;
+          });
+        })
+        .catch((nextError: Error) => setError(nextError.message));
+    };
     socket.emit("presence:subscribe");
     socket.on("presence:snapshot", snapshotHandler);
     socket.on("presence:update", updateHandler);
+    socket.on("discord:presence-refreshed", refreshHandler);
+    socket.on("discord:members-refreshed", refreshHandler);
     return () => {
       socket.emit("presence:unsubscribe");
       socket.off("presence:snapshot", snapshotHandler);
       socket.off("presence:update", updateHandler);
+      socket.off("discord:presence-refreshed", refreshHandler);
+      socket.off("discord:members-refreshed", refreshHandler);
     };
-  }, [socket]);
+  }, [socket, token]);
 
   useEffect(() => {
     if (!token || !selected?.discordId) {
@@ -191,7 +244,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
           <section className="min-h-0 min-w-0 border-r border-purple-500/15">
             <div className="scroll-soft h-full overflow-auto">
               <div className="min-w-[760px]">
-                <div className="grid grid-cols-[1.45fr_0.65fr_0.8fr_1fr] border-b border-purple-500/20 bg-purple-500/5 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <div className="grid grid-cols-[1.35fr_0.62fr_0.95fr_1fr] border-b border-purple-500/20 bg-purple-500/5 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
                   <span>Name / Nickname</span>
                   <span>Rolle</span>
                   <span>Status</span>
@@ -199,13 +252,13 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 </div>
 
                 {visibleUsers.map((user) => {
-                  const isOnline = user.status === "online";
+                  const appOnline = isAppOnline(user);
                   const active = selected?.id === user.id;
                   const role = cleanRoleName(user);
                   return (
                     <button
                       key={user.id}
-                      className={`grid w-full grid-cols-[1.45fr_0.65fr_0.8fr_1fr] items-center gap-3 border-b border-white/5 px-4 py-3 text-left transition ${active ? "bg-[#ff007f]/12 shadow-[inset_3px_0_0_#ff007f]" : "hover:bg-cyan-500/5"}`}
+                      className={`grid w-full grid-cols-[1.35fr_0.62fr_0.95fr_1fr] items-center gap-3 border-b border-white/5 px-4 py-3 text-left transition ${active ? "bg-[#ff007f]/12 shadow-[inset_3px_0_0_#ff007f]" : "hover:bg-cyan-500/5"}`}
                       onClick={() => setSelected(user)}
                     >
                       <span className="min-w-0">
@@ -217,8 +270,8 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                         {role}
                       </span>
                       <span>
-                        <StatusBadge online={isOnline} />
-                        {!isOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(user.lastSeenAt)}</span> : null}
+                        <SplitStatusBadge user={user} />
+                        {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(user.lastSeenAt)}</span> : null}
                       </span>
                       <span className="truncate font-mono text-[11px] text-slate-500">{user.discordId || "Nicht verbunden"}</span>
                     </button>
@@ -243,9 +296,10 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
               <p className="mt-2 truncate text-[12px] text-slate-500">{selected ? `${resolvedName(selected)} [${cleanRoleName(selected)}]` : "Wähle einen Nutzer aus der Liste."}</p>
               {selected ? (
                 <div className="mt-3 grid gap-2 rounded-xl border border-white/5 bg-slate-900/35 p-3 text-[11px]">
-                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">App Status</span><StatusBadge online={selected.status === "online"} /></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">App Status</span><StatusBadge online={isAppOnline(selected)} /></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Bot Status</span><StatusBadge online={isDiscordOnline(selected)} /></div>
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Name</span><span className="truncate text-slate-300">{selected.discordUsername || "Nicht synchronisiert"}</span></div>
-                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Discord Bot</span><StatusBadge online={discordBotStatus.connected} /></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Bot Bridge</span><StatusBadge online={discordBotStatus.connected} /></div>
                 </div>
               ) : null}
             </div>
@@ -259,7 +313,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                     <h4 className="truncate text-[12px] font-black text-slate-100">{log.fileName}</h4>
                     <span className="shrink-0 text-[10px] text-slate-500">{new Date(log.updatedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}</span>
                   </div>
-                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-white/5 bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-300">{log.content}</pre>
+                  <LogText content={log.content} />
                 </article>
               ))}
             </div>
