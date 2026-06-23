@@ -9,6 +9,7 @@ export type ChatMessage = {
   channel: ChatChannel;
   senderId: string;
   senderName: string;
+  senderRoleName?: string;
   recipientId: string | null;
   recipientName: string | null;
   content: string;

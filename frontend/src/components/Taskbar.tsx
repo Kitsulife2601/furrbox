@@ -45,6 +45,24 @@ function isDocument(file: FurrFile) {
   return documentMimeHints.some((hint) => file.mimeType.startsWith(hint) || file.mimeType === hint);
 }
 
+function cleanChatRoleName(roleName: string) {
+  const role = roleName.toLowerCase();
+  if (role.includes("dev")) return "Entwickler";
+  if (role.includes("owner")) return "Owner";
+  if (role.includes("moderator")) return "Moderator";
+  if (role.includes("supporter")) return "Supporter";
+  return "Member";
+}
+
+function chatRoleBadgeClass(roleName: string) {
+  const role = roleName.toLowerCase();
+  if (role.includes("dev")) return "border-pink-400/50 bg-pink-500/15 text-pink-100";
+  if (role.includes("owner")) return "border-amber-300/50 bg-amber-400/15 text-amber-100";
+  if (role.includes("moderator")) return "border-violet-400/50 bg-violet-500/15 text-violet-100";
+  if (role.includes("supporter")) return "border-cyan-300/50 bg-cyan-500/15 text-cyan-100";
+  return "border-slate-500/35 bg-slate-700/20 text-slate-300";
+}
+
 export function Taskbar() {
   const { activeWindow, connected, files, socket, startOpen, user, logout, patchUi } = useFurrBoxStore();
   const windows = useWindowStore((state) => state.windows);
@@ -356,6 +374,11 @@ export function Taskbar() {
             <span className="min-w-0 flex-1">
               <span className="flex items-center justify-between gap-3">
                 <span className="truncate text-[13px] font-black text-cyan-100">{chatPreview.senderName}</span>
+                {chatPreview.senderRoleName ? (
+                  <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${chatRoleBadgeClass(chatPreview.senderRoleName)}`}>
+                    {cleanChatRoleName(chatPreview.senderRoleName)}
+                  </span>
+                ) : null}
                 <span className="shrink-0 rounded-md border border-purple-400/25 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-purple-100">
                   {chatPreview.channel === "private" ? "Privat" : "Team"}
                 </span>
