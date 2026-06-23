@@ -691,6 +691,23 @@ async function emitPresenceUpdate(userId: string, reason: string) {
   io.to("presence").emit("presence:update", { ...user, reason, emittedAt: new Date().toISOString() });
 }
 
+async function hasTeamNotificationAccess(user: AuthUser | undefined) {
+  if (!user?.discordId) return false;
+  if (user.discordId === PRIMARY_DEVELOPER_DISCORD_ID) return true;
+  const member = await prisma.discordMember.findUnique({ where: { discordId: user.discordId } }).catch(() => null);
+  return Boolean(member && ["dev", "owner", "moderator", "supporter"].includes(member.highestPrivilege));
+}
+
+async function emitTeamNotification(payload: { version: string; title: string; description: string }) {
+  const sockets = Array.from(io.sockets.sockets.values());
+  await Promise.all(
+    sockets.map(async (socket) => {
+      if (socket.data.bot) return;
+      if (await hasTeamNotificationAccess(socket.data.user as AuthUser | undefined)) socket.emit("system:notification", payload);
+    })
+  );
+}
+
 async function markUserOnline(user: AuthUser, socketId: string) {
   const now = new Date().toISOString();
   const sockets = activePresenceSockets.get(user.id) ?? new Set<string>();
@@ -1468,6 +1485,11 @@ app.post("/api/admin/force-register", requireAuth, async (req: AuthedRequest, re
       count: 1,
       presences: [{ discordId, discordStatus: "offline", isDiscordOnline: false, updatedAt: now }],
       syncedAt: now
+    });
+    await emitTeamNotification({
+      version: "FurrBox",
+      title: "System-Update: Neuer Knotenpunkt registriert!",
+      description: `${displayName} wurde manuell in die FurrBox-Datenbank eingetragen.`
     });
 
     res.status(201).json({ user: existingUser, member: memberSnapshot });

@@ -99,3 +99,40 @@ input {
   border: 3px solid transparent;
   background-clip: content-box;
 }
+
+@keyframes furr-toast {
+  0% {
+    opacity: 0;
+    transform: translateX(26px) translateY(-8px) scale(0.98);
+  }
+  9%,
+  82% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-34px) translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes furr-toast-bar {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.animate-furr-toast {
+  animation-name: furr-toast;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-fill-mode: forwards;
+}
+
+.animate-furr-toast-bar {
+  animation-name: furr-toast-bar;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}

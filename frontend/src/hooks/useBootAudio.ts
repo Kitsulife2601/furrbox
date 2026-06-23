@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 type BootAudioOptions = {
   enabled?: boolean;
   volume?: number;
+  onPlayed?: () => void;
 };
 
 function playSynthFallback(volume: number) {
@@ -32,7 +33,7 @@ function playSynthFallback(volume: number) {
   });
 }
 
-export function useBootAudio({ enabled = true, volume = 0.22 }: BootAudioOptions = {}) {
+export function useBootAudio({ enabled = true, volume = 0.22, onPlayed }: BootAudioOptions = {}) {
   const played = useRef(false);
 
   useEffect(() => {
@@ -44,5 +45,6 @@ export function useBootAudio({ enabled = true, volume = 0.22 }: BootAudioOptions
     audio.loop = false;
     audio.preload = "auto";
     audio.play().catch(() => playSynthFallback(volume));
-  }, [enabled, volume]);
+    window.setTimeout(() => onPlayed?.(), 650);
+  }, [enabled, onPlayed, volume]);
 }

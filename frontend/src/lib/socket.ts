@@ -3,6 +3,7 @@
 import { io } from "socket.io-client";
 import { API_URL } from "@/lib/config";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
+import { useNotificationStore, type FurrNotificationPayload } from "@/store/useNotificationStore";
 
 let initialized = false;
 let activeToken: string | null = null;
@@ -107,6 +108,14 @@ export function initFurrSocket(token: string) {
       connected: Boolean(status?.connected),
       connectedAt: typeof status?.connectedAt === "string" ? status.connectedAt : undefined,
       disconnectedAt: typeof status?.disconnectedAt === "string" ? status.disconnectedAt : undefined
+    });
+  });
+
+  socket.on("system:notification", (payload: Partial<FurrNotificationPayload>) => {
+    useNotificationStore.getState().notify({
+      version: typeof payload.version === "string" ? payload.version : "FurrBox",
+      title: typeof payload.title === "string" ? payload.title : "System-Update",
+      description: typeof payload.description === "string" ? payload.description : "Neues Systemereignis empfangen."
     });
   });
 }

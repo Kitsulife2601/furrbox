@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
+import { FurrNotification } from "@/components/FurrNotification";
 import { SettingsWindow } from "@/components/SettingsWindow";
 import { Taskbar } from "@/components/Taskbar";
 import { TerminalWindow } from "@/components/TerminalWindow";
@@ -13,7 +14,9 @@ import { WindowsContextMenu } from "@/components/WindowsContextMenu";
 import { useBootAudio } from "@/hooks/useBootAudio";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { initFurrSocket } from "@/lib/socket";
+import { FURRBOX_VERSION } from "@/lib/version";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
 import { useWallpaperStore } from "@/store/useWallpaperStore";
 
@@ -38,12 +41,22 @@ function wallpaperClass(wallpaper: string) {
 
 export function Desktop() {
   const { activeWindow, wallpaper, token, patchUi } = useFurrBoxStore();
+  const notify = useNotificationStore((state) => state.notify);
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
   const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
 
-  useBootAudio({ enabled: Boolean(token), volume: 0.22 });
+  useBootAudio({
+    enabled: Boolean(token),
+    volume: 0.22,
+    onPlayed: () =>
+      notify({
+        version: FURRBOX_VERSION,
+        title: "FurrBox gestartet",
+        description: "Cyberpunk Desktop, Sync-Layer und lokale Systeme sind bereit."
+      })
+  });
 
   useEffect(() => {
     if (token) initFurrSocket(token);
@@ -124,6 +137,7 @@ export function Desktop() {
 
       <Taskbar />
       <WindowsContextMenu />
+      <FurrNotification />
     </main>
   );
 }
