@@ -274,7 +274,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
 
   const quickAccessFolders = useMemo(
     () => [
-      { name: "Desktop", path: "Dokumente/virtuelle Privater desktop", subtitle: "Virtuelle Arbeitsflaeche" },
+      { name: "Desktop", path: "Dokumente/virtuelle Privater desktop", subtitle: "Virtuelle Arbeitsfläche" },
       { name: "Downloads", path: "Downloads", subtitle: "Eingehende Dateien" },
       { name: "Dokumente", path: "Dokumente", subtitle: "Private Dokumente" },
       { name: "Bilder", path: "Bilder", subtitle: "Screenshots und Medien" },
@@ -492,7 +492,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-cyan-300/15 px-3 text-[13px] text-cyan-100 hover:border-cyan-300/40 hover:bg-cyan-500/10" onClick={createNewTextDocument}><FileText size={15} />Textdokument</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Scissors size={15} />Ausschneiden</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Copy size={15} />Kopieren</button>
-                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100" onClick={() => pasteInputRef.current?.click()}><Clipboard size={15} />Einfuegen</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100" onClick={() => pasteInputRef.current?.click()}><Clipboard size={15} />Einfügen</button>
                 <input ref={pasteInputRef} className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100 disabled:opacity-35" disabled={!selectedRow || busy} onClick={deleteSelectedRow}><Trash2 size={15} />Löschen</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
