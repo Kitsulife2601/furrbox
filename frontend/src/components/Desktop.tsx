@@ -49,6 +49,8 @@ function wallpaperClass(wallpaper: string) {
   return "desktop-wallpaper";
 }
 
+const installedVersionStorageKey = "furrbox:last-installed-version-toast";
+
 export function Desktop() {
   const { activeWindow, wallpaper, token, patchUi } = useFurrBoxStore();
   const notify = useNotificationStore((state) => state.notify);
@@ -91,12 +93,16 @@ export function Desktop() {
   useBootAudio({
     enabled: Boolean(token),
     volume: 0.22,
-    onPlayed: () =>
+    onPlayed: () => {
+      const lastNotifiedVersion = window.localStorage.getItem(installedVersionStorageKey);
+      if (lastNotifiedVersion === FURRBOX_VERSION) return;
+      window.localStorage.setItem(installedVersionStorageKey, FURRBOX_VERSION);
       notify({
         version: FURRBOX_VERSION,
-        title: "FurrBox gestartet",
-        description: "Cyberpunk Desktop, Sync-Layer und lokale Systeme sind bereit."
-      })
+        title: "Version installiert",
+        description: `${FURRBOX_VERSION} wurde erfolgreich installiert und ist jetzt aktiv.`
+      });
+    }
   });
 
   useEffect(() => {
@@ -106,51 +112,11 @@ export function Desktop() {
   useEffect(() => {
     if (!window.furrboxUpdater) return;
     return window.furrboxUpdater.onStatus((payload) => {
-      const version = payload.version ? `v${payload.version}` : FURRBOX_VERSION;
-      if (payload.status === "checking") {
-        notify({
-          version: FURRBOX_VERSION,
-          title: "Updater prueft Version",
-          description: "FurrBox sucht nach einer neuen Version."
-        });
-      }
-      if (payload.status === "available") {
-        notify({
-          version,
-          title: "Update gefunden",
-          description: `${payload.edition || "FurrBox"} laedt Version ${version} im Hintergrund herunter.`
-        });
-      }
-      if (payload.status === "downloading") {
-        notify({
-          version,
-          title: "Update wird geladen",
-          description: `Download-Fortschritt: ${payload.percent ?? 0}%.`
-        });
-      }
-      if (payload.status === "ready") {
-        notify({
-          version,
-          title: "Update bereit",
-          description: "Die neue FurrBox-Version wird beim Beenden installiert."
-        });
-      }
-      if (payload.status === "current") {
-        notify({
-          version,
-          title: "FurrBox ist aktuell",
-          description: "Auf diesem Update-Kanal ist keine neuere Version verfuegbar."
-        });
-      }
       if (payload.status === "error") {
-        notify({
-          version: FURRBOX_VERSION,
-          title: "Updater Fehler",
-          description: payload.message || "Die Update-Pruefung konnte nicht abgeschlossen werden."
-        });
+        console.warn("FurrBox updater error:", payload.message || "Update check failed.");
       }
     });
-  }, [notify]);
+  }, []);
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden ${wallpaperClass(wallpaper)}`} data-furr-context="desktop">
