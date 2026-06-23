@@ -72,7 +72,7 @@ function formatSize(size: number) {
 function fileType(file: FurrFile) {
   if (file.mimeType.startsWith("image/")) return "Bilddatei";
   if (file.mimeType.startsWith("video/")) return "Videoclip";
-  if (file.mimeType.includes("json")) return "JSON-Datei";
+  if (file.mimeType.includes("json")) return "Textdokument";
   if (file.mimeType.startsWith("text/")) return "Textdokument";
   if (file.mimeType.includes("zip") || file.mimeType.includes("compressed")) return "Komprimierter Ordner";
   return "Datei";
