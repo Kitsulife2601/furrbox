@@ -159,10 +159,16 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const [query, setQuery] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!token) return;
-    setFiles(await listFiles(token, activeFileScope));
+    try {
+      setLoadError(null);
+      setFiles(await listFiles(token, activeFileScope));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "FurrFS konnte den Sync-Server nicht erreichen.");
+    }
   }, [activeFileScope, setFiles, token]);
 
   useEffect(() => {
@@ -287,7 +293,12 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 className={`h-8 rounded-md text-[12px] font-semibold transition ${activeFileScope === item.scope ? "bg-[#00f0ff]/12 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.18)]" : "text-slate-400 hover:text-slate-100"}`}
                 onClick={() => {
                   setActiveFileScope(item.scope);
-                  if (token) listFiles(token, item.scope).then(setFiles);
+                  if (token) {
+                    setLoadError(null);
+                    listFiles(token, item.scope)
+                      .then(setFiles)
+                      .catch((error) => setLoadError(error instanceof Error ? error.message : "FurrFS konnte den Sync-Server nicht erreichen."));
+                  }
                 }}
               >
                 {item.label}
@@ -382,7 +393,14 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 <span>Typ</span>
                 <span>Größe</span>
               </div>
-              {rows.length === 0 ? (
+              {loadError ? (
+                <div className="grid h-44 place-items-center px-8 text-center text-[13px] text-pink-100">
+                  <div className="rounded-xl border border-pink-400/20 bg-pink-500/10 px-4 py-3 shadow-[0_0_18px_rgba(255,0,127,0.16)]">
+                    <p className="font-bold">FurrFS konnte keine Dateien laden.</p>
+                    <p className="mt-1 text-[12px] text-pink-100/70">{loadError}</p>
+                  </div>
+                </div>
+              ) : rows.length === 0 ? (
                 <div className="grid h-44 place-items-center text-[13px] text-slate-400">{busy ? `Upload ${uploadProgress}%` : "Dieser Ordner ist leer."}</div>
               ) : (
                 rows.map((row) => (

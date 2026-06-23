@@ -9,7 +9,10 @@ export async function listFiles(token: string, scope?: "private" | "public"): Pr
     cache: "no-store",
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!response.ok) throw new Error("Failed to list files.");
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ error: "Failed to list files." }));
+    throw new Error(body.error || `Failed to list files (${response.status}).`);
+  }
   const data = (await response.json()) as { files: FurrFile[] };
   return data.files;
 }
