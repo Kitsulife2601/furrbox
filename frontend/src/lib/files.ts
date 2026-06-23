@@ -14,10 +14,11 @@ export async function listFiles(token: string, scope?: "private" | "public"): Pr
   return data.files;
 }
 
-export async function uploadFile(file: File, token: string, scope: "private" | "public", onProgress: (value: number) => void): Promise<FurrFile> {
+export async function uploadFile(file: File, token: string, scope: "private" | "public", onProgress: (value: number) => void, virtualPath?: string): Promise<FurrFile> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("scope", scope);
+  if (virtualPath) formData.append("virtualPath", virtualPath);
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();

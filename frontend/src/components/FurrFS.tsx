@@ -230,7 +230,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       try {
         for (const file of selected) {
           setUploadProgress(3);
-          await uploadFile(file, token, activeFileScope, setUploadProgress);
+          await uploadFile(file, token, activeFileScope, setUploadProgress, currentPath);
           socket?.emit("file-uploaded", { scope: activeFileScope });
         }
         await refresh();
@@ -239,7 +239,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
         setBusy(false);
       }
     },
-    [activeFileScope, refresh, setUploadProgress, socket, token]
+    [activeFileScope, currentPath, refresh, setUploadProgress, socket, token]
   );
 
   async function openRow(row: ExplorerRow) {

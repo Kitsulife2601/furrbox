@@ -223,6 +223,17 @@ function splitVirtualPath(originalName: string) {
   };
 }
 
+function virtualOriginalName(originalName: string, virtualPathInput: unknown) {
+  const fileName = sanitizeName(path.basename(originalName.replace(/\\/g, "/")));
+  const virtualPath = String(virtualPathInput || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => sanitizeName(part.trim()))
+    .filter(Boolean)
+    .join("/");
+  return virtualPath ? `${virtualPath}/${fileName}` : fileName;
+}
+
 function scopeFromInput(input: unknown): FileScope {
   return input === "public" || input === "PUBLIC" ? "PUBLIC" : "PRIVATE";
 }
@@ -1914,10 +1925,11 @@ app.post("/api/files", requireAuth, upload.single("file"), async (req: AuthedReq
     }
 
     const scope = scopeFromInput(req.body.scope);
+    const originalName = virtualOriginalName(req.file.originalname, req.body.virtualPath);
     const file = await prisma.storedFile.create({
       data: {
         name: req.file.filename,
-        originalName: req.file.originalname,
+        originalName,
         size: req.file.size,
         mimeType: req.file.mimetype || "application/octet-stream",
         scope,
