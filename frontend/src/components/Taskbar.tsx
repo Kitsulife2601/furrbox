@@ -1,7 +1,8 @@
 "use client";
 
-import { Bell, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
+import { Bell, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MessageCircle, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
+import { FurrChatPanel } from "@/components/FurrChatPanel";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { useFurrBoxStore, type FurrFile, type WindowKey } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
@@ -52,6 +53,7 @@ export function Taskbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [infoOpen, setInfoOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
   const canManageAccounts = ENABLE_PRESENCE_TOOL && isDeveloperSession(user);
@@ -283,6 +285,8 @@ export function Taskbar() {
         </div>
       ) : null}
 
+      <FurrChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+
       <footer className="absolute bottom-3 left-1/2 z-50 flex h-16 w-[min(980px,calc(100vw-32px))] -translate-x-1/2 items-center justify-between rounded-2xl border border-purple-500/30 bg-slate-900/60 px-5 shadow-[0_0_30px_rgba(139,92,246,0.35),0_0_16px_rgba(0,240,255,0.12)] backdrop-blur-2xl" data-furr-context="taskbar">
         <div className="relative w-56">
           <div className={`flex h-10 items-center gap-2 rounded-xl border bg-slate-950/55 px-3 transition ${searchOpen ? "border-cyan-300/40 shadow-[0_0_18px_rgba(0,240,255,0.18)]" : "border-white/5"}`}>
@@ -344,6 +348,14 @@ export function Taskbar() {
               </button>
             );
           })}
+          <button
+            className={`relative grid h-11 w-11 place-items-center rounded-xl border transition ${chatOpen ? "border-cyan-300/55 bg-cyan-500/15 text-cyan-100 shadow-[0_0_20px_rgba(0,240,255,0.34)] after:absolute after:-bottom-2 after:h-1 after:w-5 after:rounded-full after:bg-[#00f0ff] after:shadow-[0_0_12px_rgba(0,240,255,0.95)]" : "border-white/5 text-slate-300 hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-[#00f0ff]"}`}
+            aria-label="FurrChat"
+            title="FurrChat"
+            onClick={() => setChatOpen((open) => !open)}
+          >
+            <MessageCircle size={21} />
+          </button>
         </div>
 
         <button className="flex w-48 items-center justify-end gap-3 rounded-xl px-2 py-1 text-slate-200 transition hover:bg-cyan-500/10" onClick={() => setInfoOpen((open) => !open)} aria-label="Info-Center oeffnen">

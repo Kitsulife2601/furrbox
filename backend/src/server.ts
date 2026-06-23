@@ -149,6 +149,26 @@ type PresenceRow = {
   lastHeartbeatAt: Date | string | null;
   lastSeenAt: Date | string | null;
 };
+type ChatMessageRow = {
+  id: string;
+  channel: "team" | "private";
+  senderId: string;
+  senderName: string;
+  recipientId: string | null;
+  recipientName: string | null;
+  content: string;
+  createdAt: Date | string;
+};
+type ChatMessageDto = {
+  id: string;
+  channel: "team" | "private";
+  senderId: string;
+  senderName: string;
+  recipientId: string | null;
+  recipientName: string | null;
+  content: string;
+  createdAt: string;
+};
 const DISCORD_PERMISSION_IDS = {
   dev: "1312104318006071328",
   owner: "1395506854549000202",
@@ -743,6 +763,33 @@ async function ensureDatabase() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_targetId_idx" ON "ModerationAudit"("targetId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_moderatorId_idx" ON "ModerationAudit"("moderatorId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_createdAt_idx" ON "ModerationAudit"("createdAt");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ChatMessage" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "channel" TEXT NOT NULL,
+      "senderId" TEXT NOT NULL,
+      "recipientId" TEXT,
+      "content" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ChatMessage_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ChatMessage_recipientId_fkey" FOREIGN KEY ("recipientId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ChatMessage_channel_createdAt_idx" ON "ChatMessage"("channel", "createdAt");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ChatMessage_senderId_idx" ON "ChatMessage"("senderId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ChatMessage_recipientId_idx" ON "ChatMessage"("recipientId");`);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ChatSettings" (
+      "key" TEXT NOT NULL PRIMARY KEY,
+      "value" TEXT NOT NULL,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "ChatSettings" ("key", "value", "updatedAt")
+    VALUES ('retentionDays', '7', CURRENT_TIMESTAMP)
+    ON CONFLICT("key") DO NOTHING;
+  `);
 }
 
 async function ensurePrimaryDeveloperAccount() {
@@ -1001,6 +1048,66 @@ async function emitTeamNotification(payload: { version: string; title: string; d
       if (await hasTeamNotificationAccess(socket.data.user as AuthUser | undefined)) socket.emit("system:notification", payload);
     })
   );
+}
+
+function toChatDto(row: ChatMessageRow): ChatMessageDto {
+  return {
+    id: row.id,
+    channel: row.channel,
+    senderId: row.senderId,
+    senderName: row.senderName,
+    recipientId: row.recipientId,
+    recipientName: row.recipientName,
+    content: row.content,
+    createdAt: iso(row.createdAt) || new Date().toISOString()
+  };
+}
+
+async function chatRetentionDays() {
+  const rows = await prisma.$queryRawUnsafe<Array<{ value: string }>>(`SELECT "value" FROM "ChatSettings" WHERE "key" = 'retentionDays' LIMIT 1`);
+  const parsed = Number(rows[0]?.value ?? 7);
+  return Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 365) : 7;
+}
+
+async function purgeExpiredChatMessages() {
+  const days = await chatRetentionDays();
+  await prisma.$executeRawUnsafe(`DELETE FROM "ChatMessage" WHERE "createdAt" < datetime('now', ?)`, `-${days} days`);
+}
+
+async function listChatMessages(user: AuthUser, channel: "team" | "private", partnerId?: string) {
+  await purgeExpiredChatMessages();
+  const rows = channel === "team"
+    ? await prisma.$queryRawUnsafe<ChatMessageRow[]>(`
+        SELECT cm."id", cm."channel", cm."senderId", sender."displayName" AS "senderName",
+          cm."recipientId", recipient."displayName" AS "recipientName", cm."content", cm."createdAt"
+        FROM "ChatMessage" cm
+        JOIN "User" sender ON sender."id" = cm."senderId"
+        LEFT JOIN "User" recipient ON recipient."id" = cm."recipientId"
+        WHERE cm."channel" = 'team'
+        ORDER BY cm."createdAt" ASC
+        LIMIT 250
+      `)
+    : await prisma.$queryRawUnsafe<ChatMessageRow[]>(`
+        SELECT cm."id", cm."channel", cm."senderId", sender."displayName" AS "senderName",
+          cm."recipientId", recipient."displayName" AS "recipientName", cm."content", cm."createdAt"
+        FROM "ChatMessage" cm
+        JOIN "User" sender ON sender."id" = cm."senderId"
+        LEFT JOIN "User" recipient ON recipient."id" = cm."recipientId"
+        WHERE cm."channel" = 'private'
+          AND ((cm."senderId" = ? AND cm."recipientId" = ?) OR (cm."senderId" = ? AND cm."recipientId" = ?))
+        ORDER BY cm."createdAt" ASC
+        LIMIT 250
+      `, user.id, partnerId || "", partnerId || "", user.id);
+  return rows.map(toChatDto);
+}
+
+async function emitChatMessage(message: ChatMessageDto) {
+  if (message.channel === "team") {
+    io.emit("chat:message", message);
+    return;
+  }
+  io.to(`user:${message.senderId}`).emit("chat:message", message);
+  if (message.recipientId) io.to(`user:${message.recipientId}`).emit("chat:message", message);
 }
 
 async function markUserOnline(user: AuthUser, socketId: string) {
@@ -1798,6 +1905,84 @@ app.get("/api/presence/users/:discordId/logs", requireAuth, async (req: AuthedRe
       return;
     }
     res.json({ logs: await listDiscordTextLogsForUser(discordId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/chat/settings", requireAuth, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ retentionDays: await chatRetentionDays() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/chat/settings", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!assertPrimaryDeveloper(req, res)) return;
+    const retentionDays = Math.min(Math.max(Math.trunc(Number(req.body.retentionDays || 7)), 1), 365);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ChatSettings" ("key", "value", "updatedAt")
+      VALUES ('retentionDays', ?, CURRENT_TIMESTAMP)
+      ON CONFLICT("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = CURRENT_TIMESTAMP
+    `, String(retentionDays));
+    await purgeExpiredChatMessages();
+    io.emit("chat:settings", { retentionDays });
+    res.json({ retentionDays });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/chat/messages", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const channel = req.query.channel === "private" ? "private" : "team";
+    const partnerId = typeof req.query.partnerId === "string" ? req.query.partnerId : undefined;
+    if (channel === "private" && !partnerId) {
+      res.status(400).json({ error: "Private chat requires partnerId." });
+      return;
+    }
+    res.json({ messages: await listChatMessages(req.user!, channel, partnerId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/chat/messages", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    await purgeExpiredChatMessages();
+    const channel = req.body.channel === "private" ? "private" : "team";
+    const content = String(req.body.content || "").trim();
+    const recipientId = channel === "private" ? String(req.body.recipientId || "").trim() : null;
+    if (!content) {
+      res.status(400).json({ error: "Message content is required." });
+      return;
+    }
+    if (content.length > 2000) {
+      res.status(400).json({ error: "Message is too long." });
+      return;
+    }
+    if (channel === "private") {
+      const recipient = recipientId ? await prisma.user.findUnique({ where: { id: recipientId }, select: { id: true } }) : null;
+      if (!recipient || recipient.id === req.user!.id) {
+        res.status(400).json({ error: "Valid private recipient is required." });
+        return;
+      }
+    }
+
+    const id = crypto.randomUUID();
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ChatMessage" ("id", "channel", "senderId", "recipientId", "content", "createdAt")
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, id, channel, req.user!.id, recipientId, content);
+    const message = (await listChatMessages(req.user!, channel, recipientId || undefined)).find((item) => item.id === id);
+    if (!message) {
+      res.status(500).json({ error: "Message could not be loaded after save." });
+      return;
+    }
+    await emitChatMessage(message);
+    res.status(201).json({ message });
   } catch (error) {
     next(error);
   }
