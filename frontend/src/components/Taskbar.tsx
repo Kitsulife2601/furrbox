@@ -90,10 +90,7 @@ export function Taskbar() {
       )}
 
       <footer className="absolute bottom-3 left-1/2 z-50 flex h-16 w-[min(980px,calc(100vw-32px))] -translate-x-1/2 items-center justify-between rounded-2xl border border-purple-500/30 bg-slate-900/60 px-5 shadow-[0_0_30px_rgba(139,92,246,0.35),0_0_16px_rgba(0,240,255,0.12)] backdrop-blur-2xl" data-furr-context="taskbar">
-        <div className="flex w-48 items-center gap-2">
-          {connected ? <Wifi size={17} className="text-[#00f0ff] drop-shadow-[0_0_7px_rgba(0,240,255,0.8)]" /> : <WifiOff size={17} className="text-[#ff007f] drop-shadow-[0_0_7px_rgba(255,0,127,0.8)]" />}
-          <span className="text-[12px] font-semibold text-slate-200">{connected ? "Secure sync online" : "Reconnecting"}</span>
-        </div>
+        <div className="w-48" aria-hidden="true" />
 
         <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
           <button
@@ -141,9 +138,22 @@ export function Taskbar() {
           })}
         </div>
 
-        <div className="w-48 text-right text-[12px] font-semibold leading-tight text-slate-200">
-          <div>{time}</div>
-          <div>{new Date().toLocaleDateString()}</div>
+        <div className="flex w-48 items-center justify-end gap-3 text-slate-200">
+          <div
+            className={`grid h-9 w-9 place-items-center rounded-xl border bg-slate-950/55 transition ${
+              connected
+                ? "border-cyan-300/25 text-[#00f0ff] shadow-[0_0_14px_rgba(0,240,255,0.26)]"
+                : "border-pink-400/25 text-[#ff007f] shadow-[0_0_14px_rgba(255,0,127,0.24)]"
+            }`}
+            title={connected ? "Secure sync online" : "Reconnecting"}
+            aria-label={connected ? "Secure sync online" : "Reconnecting"}
+          >
+            {connected ? <Wifi size={17} className="drop-shadow-[0_0_7px_rgba(0,240,255,0.8)]" /> : <WifiOff size={17} className="drop-shadow-[0_0_7px_rgba(255,0,127,0.8)]" />}
+          </div>
+          <div className="text-right text-[12px] font-semibold leading-tight">
+            <div>{time}</div>
+            <div>{new Date().toLocaleDateString()}</div>
+          </div>
         </div>
       </footer>
     </>
