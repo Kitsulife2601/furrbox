@@ -1,10 +1,10 @@
 "use client";
 
-import { Activity, Bot, FileText, Radar, Server, ShieldCheck } from "lucide-react";
+import { Activity, Bot, FileText, Radar, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FurrAccountManager } from "@/components/FurrAccountManager";
 import { FurrWindow } from "@/components/FurrWindow";
-import { listPresenceLogs, listPresenceUsers, type PresenceLog, type PresenceUser } from "@/lib/presence";
+import { deleteAdminUser, listPresenceLogs, listPresenceUsers, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -100,6 +100,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
   const teamUsers = useMemo(
@@ -107,7 +108,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     [registeredTeamUsers]
   );
   const teamOnlineCount = teamUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
-  const rowGrid = "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
+  const rowGrid = isPrimaryDeveloper ? "grid-cols-[1.25fr_0.55fr_0.85fr_0.95fr_44px]" : "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
 
   async function refreshRegistry() {
     if (!token) return;
@@ -157,6 +158,25 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
       .catch((nextError: Error) => setError(nextError.message))
       .finally(() => setLoadingLogs(false));
   }, [selected?.discordId, token]);
+
+  async function deleteUser(target: PresenceUser) {
+    if (!token || !isPrimaryDeveloper || deletingUserId) return;
+    if (target.discordId === developerDiscordId) {
+      setError("Der primaere Entwickler-Account kann nicht geloescht werden.");
+      return;
+    }
+    if (!window.confirm(`Account "${resolvedName(target)}" wirklich vollstaendig loeschen?`)) return;
+    setDeletingUserId(target.id);
+    setError(null);
+    try {
+      await deleteAdminUser(token, target.id);
+      await refreshRegistry();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Account konnte nicht geloescht werden.");
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
 
   const cards = [
     { label: "FurrBox Sync", value: connected ? "Online" : "Offline", detail: connected ? "WebSocket verbunden" : "Client reconnecting", online: connected, icon: Server },
@@ -219,6 +239,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                   <span>Rolle</span>
                   <span>Status</span>
                   <span>Discord ID</span>
+                  {isPrimaryDeveloper ? <span>Aktion</span> : null}
                 </div>
 
                 {teamUsers.map((entry) => {
@@ -249,6 +270,20 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                         {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(entry.lastSeenAt)}</span> : null}
                       </span>
                       <span className="truncate font-mono text-[11px] text-slate-500">{entry.discordId || "Nicht verbunden"}</span>
+                      {isPrimaryDeveloper ? (
+                        <button
+                          className="grid h-8 w-8 place-items-center rounded-lg border border-pink-400/25 bg-pink-500/10 text-[#ff007f] shadow-[0_0_12px_rgba(255,0,127,0.22)] transition hover:bg-pink-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={deletingUserId === entry.id || entry.discordId === developerDiscordId}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteUser(entry);
+                          }}
+                          aria-label="Lokalen FurrBox-Account loeschen"
+                          title={entry.discordId === developerDiscordId ? "Primaerer Entwickler kann nicht geloescht werden" : "Lokalen FurrBox-Account loeschen"}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
