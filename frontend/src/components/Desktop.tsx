@@ -20,6 +20,16 @@ import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWindowStore, type FurrWindowKind } from "@/store/useWindowStore";
 import { useWallpaperStore } from "@/store/useWallpaperStore";
 
+declare global {
+  interface Window {
+    furrboxUpdater?: {
+      check: () => Promise<{ ok: boolean; updateInfo?: { version?: string } | null; error?: string }>;
+      install: () => Promise<boolean>;
+      onStatus: (callback: (payload: { status: string; version?: string; percent?: number; message?: string; edition?: string; channel?: string }) => void) => () => void;
+    };
+  }
+}
+
 const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: "furrfs", label: "FurrFS", icon: Files },
   { id: "terminal", label: "Terminal", icon: Terminal },
@@ -61,6 +71,55 @@ export function Desktop() {
   useEffect(() => {
     if (token) initFurrSocket(token);
   }, [token]);
+
+  useEffect(() => {
+    if (!window.furrboxUpdater) return;
+    return window.furrboxUpdater.onStatus((payload) => {
+      const version = payload.version ? `v${payload.version}` : FURRBOX_VERSION;
+      if (payload.status === "checking") {
+        notify({
+          version: FURRBOX_VERSION,
+          title: "Updater prueft Version",
+          description: "FurrBox sucht nach einer neuen Version."
+        });
+      }
+      if (payload.status === "available") {
+        notify({
+          version,
+          title: "Update gefunden",
+          description: `${payload.edition || "FurrBox"} laedt Version ${version} im Hintergrund herunter.`
+        });
+      }
+      if (payload.status === "downloading") {
+        notify({
+          version,
+          title: "Update wird geladen",
+          description: `Download-Fortschritt: ${payload.percent ?? 0}%.`
+        });
+      }
+      if (payload.status === "ready") {
+        notify({
+          version,
+          title: "Update bereit",
+          description: "Die neue FurrBox-Version wird beim Beenden installiert."
+        });
+      }
+      if (payload.status === "current") {
+        notify({
+          version,
+          title: "FurrBox ist aktuell",
+          description: "Auf diesem Update-Kanal ist keine neuere Version verfuegbar."
+        });
+      }
+      if (payload.status === "error") {
+        notify({
+          version: FURRBOX_VERSION,
+          title: "Updater Fehler",
+          description: payload.message || "Die Update-Pruefung konnte nicht abgeschlossen werden."
+        });
+      }
+    });
+  }, [notify]);
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden ${wallpaperClass(wallpaper)}`} data-furr-context="desktop">

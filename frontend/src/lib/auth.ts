@@ -23,10 +23,6 @@ export function login(username: string, password: string) {
   return authRequest("/api/auth/login", { username, password });
 }
 
-export function register(username: string, discordId: string, password: string) {
-  return authRequest("/api/auth/register", { username, discordId, displayName: username, password });
-}
-
 export async function me(token: string): Promise<UserProfile> {
   const response = await fetch(`${API_URL}/api/auth/me`, {
     headers: { Authorization: `Bearer ${token}` }

@@ -13,8 +13,9 @@ import si from "systeminformation";
 import { Server } from "socket.io";
 import { spawnSync } from "node:child_process";
 
-type AuthUser = Pick<User, "id" | "username" | "displayName" | "discordId">;
-type JwtPayload = { sub: string; username: string; displayName: string; discordId?: string | null };
+type SessionRole = "Super_Admin" | "User";
+type AuthUser = Pick<User, "id" | "username" | "displayName" | "discordId"> & { sessionRole: SessionRole };
+type JwtPayload = { sub: string; username: string; displayName: string; discordId?: string | null; sessionRole?: SessionRole };
 type AuthedRequest = express.Request & { user?: AuthUser };
 type FileDto = {
   id: string;
@@ -146,6 +147,8 @@ const DISCORD_PERMISSION_IDS = {
   supporter: "1395506316801343558"
 } as const;
 const PRIMARY_DEVELOPER_DISCORD_ID = DISCORD_PERMISSION_IDS.dev;
+const PRIMARY_DEVELOPER_USERNAME = "Kitsulife";
+const PRIMARY_DEVELOPER_PASSWORD = "KnutMarie25!";
 
 const port = Number(process.env.PORT || 4000);
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
@@ -353,8 +356,16 @@ function iso(value: Date | string | null | undefined) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function sessionRoleFor(discordId: string | null | undefined): SessionRole {
+  return discordId === PRIMARY_DEVELOPER_DISCORD_ID ? "Super_Admin" : "User";
+}
+
+function toAuthUser(user: Pick<User, "id" | "username" | "displayName" | "discordId">): AuthUser {
+  return { ...user, sessionRole: sessionRoleFor(user.discordId) };
+}
+
 function issueToken(user: AuthUser) {
-  return jwt.sign({ sub: user.id, username: user.username, displayName: user.displayName, discordId: user.discordId }, jwtSecret, { expiresIn: "12h" });
+  return jwt.sign({ sub: user.id, username: user.username, displayName: user.displayName, discordId: user.discordId, sessionRole: user.sessionRole }, jwtSecret, { expiresIn: "12h" });
 }
 
 async function getUserFromToken(token?: string): Promise<AuthUser | null> {
@@ -365,7 +376,7 @@ async function getUserFromToken(token?: string): Promise<AuthUser | null> {
       where: { id: payload.sub },
       select: { id: true, username: true, displayName: true, discordId: true }
     });
-    return user;
+    return user ? toAuthUser(user) : null;
   } catch {
     return null;
   }
@@ -530,6 +541,81 @@ async function ensureDatabase() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_targetId_idx" ON "ModerationAudit"("targetId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_moderatorId_idx" ON "ModerationAudit"("moderatorId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ModerationAudit_createdAt_idx" ON "ModerationAudit"("createdAt");`);
+}
+
+async function ensurePrimaryDeveloperAccount() {
+  const passwordHash = await bcrypt.hash(PRIMARY_DEVELOPER_PASSWORD, 12);
+  const existingByDiscordId = await prisma.user.findUnique({ where: { discordId: PRIMARY_DEVELOPER_DISCORD_ID } }).catch(() => null);
+  const existingByUsername = await prisma.user.findUnique({ where: { username: PRIMARY_DEVELOPER_USERNAME.toLowerCase() } }).catch(() => null);
+
+  const user = existingByDiscordId
+    ? await prisma.user.update({
+        where: { id: existingByDiscordId.id },
+        data: {
+          username: PRIMARY_DEVELOPER_USERNAME.toLowerCase(),
+          displayName: PRIMARY_DEVELOPER_USERNAME,
+          discordId: PRIMARY_DEVELOPER_DISCORD_ID,
+          passwordHash
+        },
+        select: { id: true, username: true, displayName: true, discordId: true }
+      })
+    : existingByUsername
+      ? await prisma.user.update({
+          where: { id: existingByUsername.id },
+          data: {
+            displayName: PRIMARY_DEVELOPER_USERNAME,
+            discordId: PRIMARY_DEVELOPER_DISCORD_ID,
+            passwordHash
+          },
+          select: { id: true, username: true, displayName: true, discordId: true }
+        })
+      : await prisma.user.create({
+          data: {
+            username: PRIMARY_DEVELOPER_USERNAME.toLowerCase(),
+            displayName: PRIMARY_DEVELOPER_USERNAME,
+            discordId: PRIMARY_DEVELOPER_DISCORD_ID,
+            passwordHash
+          },
+          select: { id: true, username: true, displayName: true, discordId: true }
+        });
+
+  await fs.mkdir(scopeFolder("PRIVATE", user.id), { recursive: true });
+  await prisma.discordMember.upsert({
+    where: { discordId: PRIMARY_DEVELOPER_DISCORD_ID },
+    update: {
+      username: PRIMARY_DEVELOPER_USERNAME,
+      nickname: PRIMARY_DEVELOPER_USERNAME,
+      displayName: PRIMARY_DEVELOPER_USERNAME,
+      rolesJson: JSON.stringify([DISCORD_PERMISSION_IDS.dev]),
+      roleNamesJson: JSON.stringify(["Dev"]),
+      highestPrivilege: "dev",
+      isSupporter: true,
+      isModerator: true,
+      isOwner: true,
+      isDev: true
+    },
+    create: {
+      discordId: PRIMARY_DEVELOPER_DISCORD_ID,
+      username: PRIMARY_DEVELOPER_USERNAME,
+      nickname: PRIMARY_DEVELOPER_USERNAME,
+      displayName: PRIMARY_DEVELOPER_USERNAME,
+      rolesJson: JSON.stringify([DISCORD_PERMISSION_IDS.dev]),
+      roleNamesJson: JSON.stringify(["Dev"]),
+      highestPrivilege: "dev",
+      discordStatus: "offline",
+      isDiscordOnline: false,
+      lastDiscordPresenceAt: null,
+      isSupporter: true,
+      isModerator: true,
+      isOwner: true,
+      isDev: true
+    }
+  });
+  await prisma.userPresence.upsert({
+    where: { userId: user.id },
+    update: { discordId: PRIMARY_DEVELOPER_DISCORD_ID },
+    create: { userId: user.id, discordId: PRIMARY_DEVELOPER_DISCORD_ID, status: "offline" }
+  });
 }
 
 async function syncDiscordMembers(members: DiscordMemberSnapshot[]) {
@@ -1272,42 +1358,6 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "furrbox-backend", storageDir, updatesDir, databaseUrl });
 });
 
-app.post("/api/auth/register", async (req, res, next) => {
-  try {
-    const username = String(req.body.username || "").trim().toLowerCase();
-    const discordId = String(req.body.discordId || "").trim();
-    const displayName = String(req.body.displayName || username).trim();
-    const password = String(req.body.password || "");
-
-    if (!/^[a-z0-9_.-]{3,32}$/.test(username)) {
-      res.status(400).json({ error: "Username must be 3-32 characters: letters, numbers, dot, dash, underscore." });
-      return;
-    }
-    if (password.length < 8) {
-      res.status(400).json({ error: "Password must be at least 8 characters." });
-      return;
-    }
-    if (!/^\d{17,22}$/.test(discordId)) {
-      res.status(400).json({ error: "Discord ID must be a numeric Discord snowflake." });
-      return;
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: { username, displayName, discordId, passwordHash },
-      select: { id: true, username: true, displayName: true, discordId: true }
-    });
-    await fs.mkdir(scopeFolder("PRIVATE", user.id), { recursive: true });
-    res.status(201).json({ token: issueToken(user), user });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Unique constraint")) {
-      res.status(409).json({ error: "That username is already taken." });
-      return;
-    }
-    next(error);
-  }
-});
-
 app.post("/api/auth/login", async (req, res, next) => {
   try {
     const username = String(req.body.username || "").trim().toLowerCase();
@@ -1317,7 +1367,7 @@ app.post("/api/auth/login", async (req, res, next) => {
       res.status(401).json({ error: "Invalid username or password." });
       return;
     }
-    const profile = { id: user.id, username: user.username, displayName: user.displayName, discordId: user.discordId };
+    const profile = toAuthUser(user);
     res.json({ token: issueToken(profile), user: profile });
   } catch (error) {
     next(error);
@@ -1498,6 +1548,148 @@ app.post("/api/admin/force-register", requireAuth, async (req: AuthedRequest, re
   }
 });
 
+app.post("/api/admin/create-user", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!assertPrimaryDeveloper(req, res)) return;
+
+    const username = String(req.body.username || "").trim().toLowerCase();
+    const discordId = String(req.body.discordId || "").trim();
+    const password = String(req.body.password || "");
+    const roleInput = String(req.body.role || "Member").trim() as AdminOverrideRole;
+    const allowedRoles: AdminOverrideRole[] = ["Fish Nagie Owner", "Fish Moderator", "Supporter", "Member"];
+
+    if (!/^[a-z0-9_.-]{3,32}$/.test(username)) {
+      res.status(400).json({ error: "Wunschnutzername muss 3-32 Zeichen lang sein." });
+      return;
+    }
+    if (!/^\d{17,22}$/.test(discordId)) {
+      res.status(400).json({ error: "Discord-ID muss eine numerische Snowflake sein." });
+      return;
+    }
+    if (password.length < 8) {
+      res.status(400).json({ error: "Passwort muss mindestens 8 Zeichen lang sein." });
+      return;
+    }
+    if (!allowedRoles.includes(roleInput)) {
+      res.status(400).json({ error: "Unbekannte Rolle." });
+      return;
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ username }, { discordId }] },
+      select: { username: true, discordId: true }
+    });
+    if (existingUser) {
+      res.status(409).json({ error: "Nutzername oder Discord-ID ist bereits vergeben." });
+      return;
+    }
+
+    const roleData = adminOverrideRoleData(roleInput);
+    const passwordHash = await bcrypt.hash(password, 12);
+    const createdUser = await prisma.user.create({
+      data: {
+        username,
+        displayName: username,
+        discordId,
+        passwordHash,
+        presence: { create: { discordId, status: "offline" } }
+      },
+      select: { id: true, username: true, displayName: true, discordId: true }
+    });
+    await fs.mkdir(scopeFolder("PRIVATE", createdUser.id), { recursive: true });
+
+    await prisma.discordMember.upsert({
+      where: { discordId },
+      update: {
+        username,
+        nickname: username,
+        displayName: username,
+        rolesJson: JSON.stringify(roleData.roles),
+        roleNamesJson: JSON.stringify(roleData.roleNames),
+        highestPrivilege: roleData.highestPrivilege,
+        isSupporter: roleData.isSupporter,
+        isModerator: roleData.isModerator,
+        isOwner: roleData.isOwner,
+        isDev: roleData.isDev
+      },
+      create: {
+        discordId,
+        username,
+        nickname: username,
+        displayName: username,
+        rolesJson: JSON.stringify(roleData.roles),
+        roleNamesJson: JSON.stringify(roleData.roleNames),
+        highestPrivilege: roleData.highestPrivilege,
+        discordStatus: "offline",
+        isDiscordOnline: false,
+        lastDiscordPresenceAt: null,
+        isSupporter: roleData.isSupporter,
+        isModerator: roleData.isModerator,
+        isOwner: roleData.isOwner,
+        isDev: roleData.isDev
+      }
+    });
+
+    const snapshotUser = await getPresenceUser(createdUser.id);
+    await emitPresenceSnapshot("admin-create-user");
+    io.emit("registryUpdate", { action: "create", user: snapshotUser, emittedAt: new Date().toISOString() });
+    io.emit("discord:members-refreshed", {
+      guildId: "account-manager",
+      count: 1,
+      members: [],
+      syncedAt: new Date().toISOString()
+    });
+    await emitTeamNotification({
+      version: "FurrBox",
+      title: "System-Update: Neuer Account erstellt",
+      description: `${username} wurde durch Kitsulife in der Datenbank angelegt.`
+    });
+
+    res.status(201).json({ user: snapshotUser ?? toAuthUser(createdUser) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/delete-user", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!assertPrimaryDeveloper(req, res)) return;
+
+    const targetUserId = String(req.body.targetUserId || "").trim();
+    if (!targetUserId) {
+      res.status(400).json({ error: "targetUserId is required." });
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, username: true, displayName: true, discordId: true }
+    });
+    if (!targetUser) {
+      res.status(404).json({ error: "Account wurde nicht gefunden." });
+      return;
+    }
+    if (targetUser.discordId === PRIMARY_DEVELOPER_DISCORD_ID) {
+      res.status(403).json({ error: "Der primaere Entwickler-Account kann nicht geloescht werden." });
+      return;
+    }
+
+    await prisma.user.delete({ where: { id: targetUser.id } });
+    await fs.rm(scopeFolder("PRIVATE", targetUser.id), { recursive: true, force: true }).catch(() => undefined);
+    activePresenceSockets.delete(targetUser.id);
+    for (const socket of io.sockets.sockets.values()) {
+      const socketUser = socket.data.user as AuthUser | undefined;
+      if (socketUser?.id === targetUser.id) socket.disconnect(true);
+    }
+
+    await emitPresenceSnapshot("admin-delete-user");
+    io.emit("registryUpdate", { action: "delete", userId: targetUser.id, emittedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/admin/update-member-id", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     if (!assertPrimaryDeveloper(req, res)) return;
@@ -1567,6 +1759,7 @@ app.post("/api/admin/update-member-id", requireAuth, async (req: AuthedRequest, 
     });
 
     await emitPresenceSnapshot("admin-update-member-id");
+    io.emit("registryUpdate", { action: "update-member-id", userId: updatedUser.id, emittedAt: new Date().toISOString() });
     io.emit("discord:members-refreshed", {
       guildId: "manual-id-update",
       count: 1,
@@ -1983,7 +2176,9 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   res.status(500).json({ error: message });
 });
 
-Promise.all([ensureStorage(), ensureDatabase()]).then(() => {
+Promise.all([ensureStorage(), ensureDatabase()])
+  .then(() => ensurePrimaryDeveloperAccount())
+  .then(() => {
   ensurePublicStorageWatcher();
   server.listen(port, () => {
     console.log(`FurrBox backend listening on http://localhost:${port}`);

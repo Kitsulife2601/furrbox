@@ -1,9 +1,10 @@
 "use client";
 
-import { Activity, Bot, Check, FileText, Pencil, Radar, Server, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Activity, Bot, Check, FileText, Pencil, Radar, Server, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { FurrAccountManager } from "@/components/FurrAccountManager";
 import { FurrWindow } from "@/components/FurrWindow";
-import { forceRegisterUser, listPresenceLogs, listPresenceUsers, updateMemberDiscordId, type ForceRegisterPayload, type PresenceLog, type PresenceUser } from "@/lib/presence";
+import { deleteAdminUser, listPresenceLogs, listPresenceUsers, updateMemberDiscordId, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -11,7 +12,6 @@ type PresenceTab = "team" | "global";
 
 const teamRoles = new Set(["Dev", "Owner", "Mod", "Supporter"]);
 const developerDiscordId = "1312104318006071328";
-const manualRoles: ForceRegisterPayload["role"][] = ["Dev", "Fish Nagie Owner", "Fish Moderator", "Supporter", "Member"];
 
 function resolvedName(user: PresenceUser) {
   return user.nickname || user.discordUsername || user.displayName || user.username;
@@ -37,6 +37,14 @@ function formatLastSeen(value: string | null | undefined) {
   return new Date(value).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
 }
 
+function isAppOnline(user: PresenceUser) {
+  return user.isExeOnline ?? user.status === "online";
+}
+
+function isDiscordOnline(user: PresenceUser) {
+  return user.isDiscordOnline ?? ["online", "idle", "dnd"].includes(user.discordStatus);
+}
+
 function sortPresence(users: PresenceUser[]) {
   return [...users].sort((a, b) => {
     const aScore = (isAppOnline(a) ? 2 : 0) + (isDiscordOnline(a) ? 1 : 0);
@@ -44,14 +52,6 @@ function sortPresence(users: PresenceUser[]) {
     if (aScore !== bScore) return bScore - aScore;
     return resolvedName(a).localeCompare(resolvedName(b), "de");
   });
-}
-
-function isAppOnline(user: PresenceUser) {
-  return user.isExeOnline ?? user.status === "online";
-}
-
-function isDiscordOnline(user: PresenceUser) {
-  return user.isDiscordOnline ?? ["online", "idle", "dnd"].includes(user.discordStatus);
 }
 
 function StatusBadge({ online, onlineLabel = "ONLINE", offlineLabel = "OFFLINE" }: { online: boolean; onlineLabel?: string; offlineLabel?: string }) {
@@ -67,15 +67,15 @@ function SplitStatusBadge({ user }: { user: PresenceUser }) {
   const appOnline = isAppOnline(user);
   const dcOnline = isDiscordOnline(user);
   if (appOnline && dcOnline) {
-    return <span className="inline-flex rounded-full border border-cyan-300/45 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.34)]">🟢 APP | 🟢 DC</span>;
+    return <span className="inline-flex rounded-full border border-cyan-300/45 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.34)]">APP | DC</span>;
   }
   if (appOnline) {
-    return <span className="inline-flex rounded-full border border-sky-300/45 bg-sky-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.28)]">🟢 APP | ⚫ DC</span>;
+    return <span className="inline-flex rounded-full border border-sky-300/45 bg-sky-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.28)]">APP | DC OFF</span>;
   }
   if (dcOnline) {
-    return <span className="inline-flex rounded-full border border-violet-300/45 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-200 shadow-[0_0_16px_rgba(139,92,246,0.32)]">⚫ APP | 🟢 DC</span>;
+    return <span className="inline-flex rounded-full border border-violet-300/45 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-200 shadow-[0_0_16px_rgba(139,92,246,0.32)]">APP OFF | DC</span>;
   }
-  return <span className="inline-flex rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">⚫ INAKTIV</span>;
+  return <span className="inline-flex rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">INAKTIV</span>;
 }
 
 function LogText({ content }: { content: string }) {
@@ -130,7 +130,10 @@ function DiscordIdCell({
         <button
           className="grid h-7 w-7 shrink-0 place-items-center rounded border border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-40"
           disabled={saving || !/^\d{17,19}$/.test(value)}
-          onClick={onSave}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSave();
+          }}
           aria-label="Discord ID speichern"
         >
           <Check size={14} />
@@ -166,31 +169,31 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [manualDiscordId, setManualDiscordId] = useState("");
-  const [manualName, setManualName] = useState("");
-  const [manualRole, setManualRole] = useState<ForceRegisterPayload["role"]>("Member");
-  const [manualStatus, setManualStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
   const [editingDiscordUserId, setEditingDiscordUserId] = useState<string | null>(null);
   const [editingDiscordValue, setEditingDiscordValue] = useState("");
   const [savingDiscordId, setSavingDiscordId] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const isPrimaryDeveloper = user?.discordId === developerDiscordId;
-  const teamUsers = useMemo(() => sortPresence(users.filter((user) => teamRoles.has(cleanRoleName(user)))), [users]);
+  const teamUsers = useMemo(() => sortPresence(users.filter((entry) => teamRoles.has(cleanRoleName(entry)))), [users]);
   const globalUsers = useMemo(() => sortPresence(users), [users]);
   const visibleUsers = activeTab === "team" ? teamUsers : globalUsers;
-  const onlineCount = users.filter((user) => isAppOnline(user) || isDiscordOnline(user)).length;
-  const teamOnlineCount = teamUsers.filter((user) => isAppOnline(user) || isDiscordOnline(user)).length;
+  const onlineCount = users.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
+  const teamOnlineCount = teamUsers.filter((entry) => isAppOnline(entry) || isDiscordOnline(entry)).length;
+  const rowGrid = isPrimaryDeveloper && activeTab === "global" ? "grid-cols-[1.3fr_0.55fr_0.85fr_0.9fr_44px]" : "grid-cols-[1.35fr_0.62fr_0.95fr_1fr]";
+
+  async function refreshRegistry() {
+    if (!token) return;
+    const nextUsers = await listPresenceUsers(token, "global");
+    setUsers(nextUsers);
+    setSelected((current) => {
+      if (!current) return sortPresence(nextUsers)[0] ?? null;
+      return nextUsers.find((entry) => entry.id === current.id) ?? sortPresence(nextUsers)[0] ?? null;
+    });
+  }
 
   useEffect(() => {
-    if (!token) return;
-    listPresenceUsers(token, "global")
-      .then((nextUsers) => {
-        setUsers(nextUsers);
-        const ordered = sortPresence(nextUsers);
-        const initialTeam = ordered.find((user) => teamRoles.has(cleanRoleName(user)));
-        setSelected((current) => current ?? initialTeam ?? ordered[0] ?? null);
-      })
-      .catch((nextError: Error) => setError(nextError.message));
+    refreshRegistry().catch((nextError: Error) => setError(nextError.message));
   }, [token]);
 
   useEffect(() => {
@@ -199,38 +202,29 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
       setUsers(nextUsers);
       setSelected((current) => {
         if (!current) return sortPresence(nextUsers)[0] ?? null;
-        return nextUsers.find((user) => user.id === current.id) ?? current;
+        return nextUsers.find((entry) => entry.id === current.id) ?? current;
       });
     };
     const updateHandler = (updated: PresenceUser) => {
-      setUsers((current) => {
-        const without = current.filter((user) => user.id !== updated.id);
-        return sortPresence([updated, ...without]);
-      });
+      setUsers((current) => sortPresence([updated, ...current.filter((entry) => entry.id !== updated.id)]));
       setSelected((current) => (current?.id === updated.id ? updated : current));
     };
     const refreshHandler = () => {
-      listPresenceUsers(token, "global")
-        .then((nextUsers) => {
-          setUsers(nextUsers);
-          setSelected((current) => {
-            if (!current) return sortPresence(nextUsers)[0] ?? null;
-            return nextUsers.find((user) => user.id === current.id) ?? current;
-          });
-        })
-        .catch((nextError: Error) => setError(nextError.message));
+      refreshRegistry().catch((nextError: Error) => setError(nextError.message));
     };
     socket.emit("presence:subscribe");
     socket.on("presence:snapshot", snapshotHandler);
     socket.on("presence:update", updateHandler);
     socket.on("discord:presence-refreshed", refreshHandler);
     socket.on("discord:members-refreshed", refreshHandler);
+    socket.on("registryUpdate", refreshHandler);
     return () => {
       socket.emit("presence:unsubscribe");
       socket.off("presence:snapshot", snapshotHandler);
       socket.off("presence:update", updateHandler);
       socket.off("discord:presence-refreshed", refreshHandler);
       socket.off("discord:members-refreshed", refreshHandler);
+      socket.off("registryUpdate", refreshHandler);
     };
   }, [socket, token]);
 
@@ -252,33 +246,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     setActiveTab(tab);
     setEditingDiscordUserId(null);
     setEditingDiscordValue("");
-    setSelected((current) => (current && nextUsers.some((user) => user.id === current.id) ? current : nextUsers[0] ?? null));
-  }
-
-  async function submitManualUser() {
-    if (!token || !isPrimaryDeveloper) return;
-    if (!/^\d{17,22}$/.test(manualDiscordId)) {
-      setManualStatus({ type: "error", message: "Discord-ID muss eine gültige Snowflake sein." });
-      return;
-    }
-    if (manualName.trim().length < 2) {
-      setManualStatus({ type: "error", message: "Bitte Nutzername / Nickname eintragen." });
-      return;
-    }
-    setManualStatus({ type: "saving", message: "Nutzer wird direkt in die Datenbank geschrieben..." });
-    try {
-      await forceRegisterUser(token, { discordId: manualDiscordId, displayName: manualName.trim(), role: manualRole });
-      const nextUsers = await listPresenceUsers(token, "global");
-      setUsers(nextUsers);
-      const injected = nextUsers.find((entry) => entry.discordId === manualDiscordId);
-      setSelected(injected ?? selected);
-      setManualDiscordId("");
-      setManualName("");
-      setManualRole("Member");
-      setManualStatus({ type: "success", message: "Nutzer wurde manuell registriert und live synchronisiert." });
-    } catch (nextError) {
-      setManualStatus({ type: "error", message: nextError instanceof Error ? nextError.message : "Manuelle Registrierung fehlgeschlagen." });
-    }
+    setSelected((current) => (current && nextUsers.some((entry) => entry.id === current.id) ? current : nextUsers[0] ?? null));
   }
 
   function startDiscordIdEdit(target: PresenceUser) {
@@ -298,16 +266,32 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
     setError(null);
     try {
       await updateMemberDiscordId(token, { targetUserId: target.id, discordId: editingDiscordValue });
-      const nextUsers = await listPresenceUsers(token, "global");
-      setUsers(nextUsers);
-      const updated = nextUsers.find((entry) => entry.id === target.id);
-      setSelected(updated ?? selected);
+      await refreshRegistry();
       setEditingDiscordUserId(null);
       setEditingDiscordValue("");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Discord ID konnte nicht gespeichert werden.");
     } finally {
       setSavingDiscordId(false);
+    }
+  }
+
+  async function deleteUser(target: PresenceUser) {
+    if (!token || !isPrimaryDeveloper || deletingUserId) return;
+    if (target.discordId === developerDiscordId) {
+      setError("Der primaere Entwickler-Account kann nicht geloescht werden.");
+      return;
+    }
+    if (!window.confirm(`Account "${resolvedName(target)}" wirklich vollstaendig loeschen?`)) return;
+    setDeletingUserId(target.id);
+    setError(null);
+    try {
+      await deleteAdminUser(token, target.id);
+      await refreshRegistry();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Account konnte nicht geloescht werden.");
+    } finally {
+      setDeletingUserId(null);
     }
   }
 
@@ -331,7 +315,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
               </span>
               <div className="min-w-0">
                 <h3 className="truncate text-[15px] font-black tracking-[0.18em] text-cyan-100">NETWORK MONITOR // LIVE NODES</h3>
-                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Übersicht für FurrBox, Discord Bot und Team-Präsenz</p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Uebersicht fuer FurrBox, Discord Bot und Team-Praesenz</p>
               </div>
             </div>
             <StatusBadge online={connected && discordBotStatus.connected} onlineLabel="SYSTEM OK" offlineLabel="TEILWEISE OFFLINE" />
@@ -375,58 +359,72 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
         {error ? <div className="border-b border-pink-500/20 bg-pink-500/10 px-5 py-2 text-[12px] font-semibold text-pink-100">{error}</div> : null}
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(620px,1.55fr)_minmax(300px,0.9fr)] gap-0">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(680px,1.55fr)_minmax(300px,0.9fr)] gap-0">
           <section className="min-h-0 min-w-0 border-r border-purple-500/15">
             <div className="scroll-soft h-full overflow-auto">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[1.35fr_0.62fr_0.95fr_1fr] border-b border-purple-500/20 bg-purple-500/5 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <div className="min-w-[840px]">
+                <div className={`grid ${rowGrid} border-b border-purple-500/20 bg-purple-500/5 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400`}>
                   <span>Name / Nickname</span>
                   <span>Rolle</span>
                   <span>Status</span>
                   <span>Discord ID</span>
+                  {isPrimaryDeveloper && activeTab === "global" ? <span>Aktion</span> : null}
                 </div>
 
-                {visibleUsers.map((user) => {
-                  const appOnline = isAppOnline(user);
-                  const active = selected?.id === user.id;
-                  const role = cleanRoleName(user);
+                {visibleUsers.map((entry) => {
+                  const appOnline = isAppOnline(entry);
+                  const active = selected?.id === entry.id;
+                  const role = cleanRoleName(entry);
                   return (
                     <div
-                      key={user.id}
-                      className={`grid w-full grid-cols-[1.35fr_0.62fr_0.95fr_1fr] items-center gap-3 border-b border-white/5 px-4 py-3 text-left transition ${active ? "bg-[#ff007f]/12 shadow-[inset_3px_0_0_#ff007f]" : "hover:bg-cyan-500/5"}`}
-                      onClick={() => setSelected(user)}
+                      key={entry.id}
+                      className={`grid w-full ${rowGrid} items-center gap-3 border-b border-white/5 px-4 py-3 text-left transition ${active ? "bg-[#ff007f]/12 shadow-[inset_3px_0_0_#ff007f]" : "hover:bg-cyan-500/5"}`}
+                      onClick={() => setSelected(entry)}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") setSelected(user);
+                        if (event.key === "Enter" || event.key === " ") setSelected(entry);
                       }}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-bold text-slate-100">{resolvedName(user)}</span>
-                        <span className="mt-1 block truncate text-[11px] text-slate-500">{user.discordUsername ? `@${user.discordUsername}` : user.username}</span>
+                        <span className="block truncate text-[13px] font-bold text-slate-100">{resolvedName(entry)}</span>
+                        <span className="mt-1 block truncate text-[11px] text-slate-500">{entry.discordUsername ? `@${entry.discordUsername}` : entry.username}</span>
                       </span>
                       <span className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${role === "Member" ? "border-slate-600/35 bg-slate-700/10 text-slate-400" : "border-purple-500/35 bg-purple-500/10 text-purple-100"}`}>
                         <ShieldCheck size={11} />
                         {role}
                       </span>
                       <span>
-                        <SplitStatusBadge user={user} />
-                        {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(user.lastSeenAt)}</span> : null}
+                        <SplitStatusBadge user={entry} />
+                        {!appOnline ? <span className="mt-1 block text-[10px] text-slate-600">{formatLastSeen(entry.lastSeenAt)}</span> : null}
                       </span>
                       <DiscordIdCell
-                        user={user}
+                        user={entry}
                         canEdit={isPrimaryDeveloper && activeTab === "global"}
-                        editing={editingDiscordUserId === user.id}
+                        editing={editingDiscordUserId === entry.id}
                         value={editingDiscordValue}
                         saving={savingDiscordId}
-                        onStart={() => startDiscordIdEdit(user)}
+                        onStart={() => startDiscordIdEdit(entry)}
                         onChange={setEditingDiscordValue}
                         onCancel={() => {
                           setEditingDiscordUserId(null);
                           setEditingDiscordValue("");
                         }}
-                        onSave={() => saveDiscordIdEdit(user)}
+                        onSave={() => saveDiscordIdEdit(entry)}
                       />
+                      {isPrimaryDeveloper && activeTab === "global" ? (
+                        <button
+                          className="grid h-8 w-8 place-items-center rounded-lg border border-pink-400/25 bg-pink-500/10 text-[#ff007f] shadow-[0_0_12px_rgba(255,0,127,0.22)] transition hover:bg-pink-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={deletingUserId === entry.id || entry.discordId === developerDiscordId}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteUser(entry);
+                          }}
+                          aria-label="Account loeschen"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -446,7 +444,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 <FileText size={15} className="text-[#ff007f]" />
                 Moderation Logs
               </div>
-              <p className="mt-2 truncate text-[12px] text-slate-500">{selected ? `${resolvedName(selected)} [${cleanRoleName(selected)}]` : "Wähle einen Nutzer aus der Liste."}</p>
+              <p className="mt-2 truncate text-[12px] text-slate-500">{selected ? `${resolvedName(selected)} [${cleanRoleName(selected)}]` : "Waehle einen Nutzer aus der Liste."}</p>
               {selected ? (
                 <div className="mt-3 grid gap-2 rounded-xl border border-white/5 bg-slate-900/35 p-3 text-[11px]">
                   <div className="flex items-center justify-between gap-3"><span className="text-slate-500">App Status</span><StatusBadge online={isAppOnline(selected)} /></div>
@@ -457,63 +455,11 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
               ) : null}
             </div>
 
-            {isPrimaryDeveloper ? (
-              <div className="border-b border-pink-500/20 bg-slate-950/55 p-4">
-                <div className="mb-3 flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.16em] text-cyan-100">
-                  <UserPlus size={15} className="text-[#00f0ff]" />
-                  Manuelles Mitglieder-Management
-                </div>
-                <div className="grid gap-3">
-                  <label className="block">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Discord-ID eingeben</span>
-                    <input
-                      className="h-10 w-full rounded-xl border border-cyan-300/15 bg-black/40 px-3 font-mono text-[12px] text-cyan-100 outline-none focus:border-cyan-300 focus:shadow-[0_0_16px_rgba(0,240,255,0.24)]"
-                      inputMode="numeric"
-                      value={manualDiscordId}
-                      onChange={(event) => setManualDiscordId(event.target.value.replace(/\D/g, ""))}
-                      placeholder="1312104318006071328"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Nutzername / Nickname</span>
-                    <input
-                      className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] text-slate-100 outline-none focus:border-pink-400 focus:shadow-[0_0_16px_rgba(255,0,127,0.22)]"
-                      value={manualName}
-                      onChange={(event) => setManualName(event.target.value)}
-                      placeholder="Display Name"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rolle zuweisen</span>
-                    <select
-                      className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-[12px] font-semibold text-slate-100 outline-none focus:border-violet-300"
-                      value={manualRole}
-                      onChange={(event) => setManualRole(event.target.value as ForceRegisterPayload["role"])}
-                    >
-                      {manualRoles.map((role) => (
-                        <option key={role} value={role}>{role}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    className="h-11 rounded-xl bg-gradient-to-r from-[#ff007f] via-[#8b5cf6] to-[#00f0ff] text-[12px] font-black uppercase tracking-[0.12em] text-white shadow-[0_0_24px_rgba(255,0,127,0.35)] transition hover:shadow-[0_0_34px_rgba(0,240,255,0.42)] disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={manualStatus.type === "saving"}
-                    onClick={submitManualUser}
-                  >
-                    Nutzer manuell in DB eintragen
-                  </button>
-                  {manualStatus.type !== "idle" ? (
-                    <div className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${manualStatus.type === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : manualStatus.type === "error" ? "border-pink-300/20 bg-pink-400/10 text-pink-100" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-100"}`}>
-                      {manualStatus.message}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+            {isPrimaryDeveloper && token ? <FurrAccountManager token={token} onCreated={refreshRegistry} /> : null}
 
             <div className="scroll-soft min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {loadingLogs ? <div className="rounded-xl border border-cyan-300/10 bg-cyan-300/5 p-4 text-[12px] text-cyan-100">Lade Reports...</div> : null}
-              {!loadingLogs && logs.length === 0 ? <div className="rounded-xl border border-white/5 bg-slate-900/45 p-4 text-[12px] text-slate-500">Keine Text-Reports für diesen Nutzer gefunden.</div> : null}
+              {!loadingLogs && logs.length === 0 ? <div className="rounded-xl border border-white/5 bg-slate-900/45 p-4 text-[12px] text-slate-500">Keine Text-Reports fuer diesen Nutzer gefunden.</div> : null}
               {logs.map((log) => (
                 <article key={log.virtualPath} className="rounded-xl border border-purple-500/20 bg-slate-950/70 p-3 shadow-[0_0_20px_rgba(139,92,246,0.12)]">
                   <div className="mb-2 flex items-center justify-between gap-3">

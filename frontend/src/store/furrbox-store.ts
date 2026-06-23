@@ -40,6 +40,7 @@ export type UserProfile = {
   username: string;
   displayName: string;
   discordId?: string | null;
+  sessionRole?: "Super_Admin" | "User";
 };
 
 type UiState = {

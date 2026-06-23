@@ -28,10 +28,13 @@ export type PresenceLog = {
   content: string;
 };
 
-export type ForceRegisterPayload = {
+export type AccountRole = "Member" | "Supporter" | "Fish Moderator" | "Fish Nagie Owner";
+
+export type CreateUserPayload = {
+  username: string;
   discordId: string;
-  displayName: string;
-  role: "Dev" | "Fish Nagie Owner" | "Fish Moderator" | "Supporter" | "Member";
+  password: string;
+  role: AccountRole;
 };
 
 export type UpdateMemberIdPayload = {
@@ -61,10 +64,17 @@ export async function listPresenceLogs(token: string, discordId: string): Promis
   return data.logs;
 }
 
-export async function forceRegisterUser(token: string, payload: ForceRegisterPayload): Promise<void> {
-  await authedFetch<{ user: unknown; member: unknown }>("/api/admin/force-register", token, {
+export async function createAdminUser(token: string, payload: CreateUserPayload): Promise<void> {
+  await authedFetch<{ user: PresenceUser }>("/api/admin/create-user", token, {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteAdminUser(token: string, targetUserId: string): Promise<void> {
+  await authedFetch<{ ok: boolean }>("/api/admin/delete-user", token, {
+    method: "DELETE",
+    body: JSON.stringify({ targetUserId })
   });
 }
 

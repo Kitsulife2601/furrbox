@@ -1,17 +1,13 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { KeyRound, UserPlus } from "lucide-react";
-import { login, register } from "@/lib/auth";
+import { KeyRound } from "lucide-react";
+import { login } from "@/lib/auth";
 import { useFurrBoxStore } from "@/store/furrbox-store";
-
-type Mode = "login" | "register";
 
 export function LoginPanel() {
   const { setSession, setAuthStage } = useFurrBoxStore();
-  const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
-  const [discordId, setDiscordId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,19 +15,12 @@ export function LoginPanel() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
-    if (mode === "register" && !/^\d{17,22}$/.test(discordId)) {
-      setError("Discord ID muss nur aus Zahlen bestehen und 17-22 Stellen lang sein.");
-      return;
-    }
     setBusy(true);
     try {
-      const result =
-        mode === "login"
-          ? await login(username, password)
-          : await register(username, discordId, password);
+      const result = await login(username, password);
       setSession(result.token, result.user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed.");
+      setError(err instanceof Error ? err.message : "Anmeldung fehlgeschlagen.");
     } finally {
       setBusy(false);
     }
@@ -46,39 +35,20 @@ export function LoginPanel() {
           Lock
         </button>
         <div className="mx-auto grid h-20 w-20 place-items-center rounded-2xl border border-cyan-300/25 bg-slate-950/80 text-[#00f0ff] shadow-[0_0_35px_rgba(0,240,255,0.35)]">
-          {mode === "login" ? <KeyRound size={32} /> : <UserPlus size={32} />}
+          <KeyRound size={32} />
         </div>
-        <h1 className="mt-5 text-[24px] font-semibold text-slate-100 drop-shadow-[0_0_10px_rgba(255,0,127,0.35)]">{mode === "login" ? "Sign in" : "Create account"}</h1>
-        <p className="mt-1 text-[13px] text-cyan-100/60">FurrBox private local desktop</p>
-
-        <div className="mt-6 grid grid-cols-2 rounded-xl border border-purple-400/20 bg-slate-950/70 p-1">
-          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "login" ? "bg-[#ff007f]/20 text-white shadow-[0_0_18px_rgba(255,0,127,0.24)]" : "text-slate-400"}`} onClick={() => setMode("login")}>
-            Sign In
-          </button>
-          <button type="button" className={`h-9 rounded-lg text-[13px] font-semibold ${mode === "register" ? "bg-[#ff007f]/20 text-white shadow-[0_0_18px_rgba(255,0,127,0.24)]" : "text-slate-400"}`} onClick={() => setMode("register")}>
-            Create Account
-          </button>
-        </div>
+        <h1 className="mt-5 text-[24px] font-semibold text-slate-100 drop-shadow-[0_0_10px_rgba(255,0,127,0.35)]">Sign in</h1>
+        <p className="mt-1 text-[13px] text-cyan-100/60">FurrBox private account access only</p>
 
         <div className="mt-5 grid gap-3 text-left">
           <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoFocus />
-          {mode === "register" && (
-            <input
-              className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]"
-              placeholder="Discord ID (Snowflake)"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={discordId}
-              onChange={(event) => setDiscordId(event.target.value.replace(/\D/g, ""))}
-            />
-          )}
           <input className="h-11 rounded-xl border border-cyan-300/20 bg-slate-900/80 px-4 text-[14px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[#00f0ff] focus:ring-2 focus:ring-[#00f0ff] focus:shadow-[0_0_15px_rgba(0,240,255,0.5)]" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </div>
 
         {error && <p className="mt-4 rounded-xl border border-[#ff007f]/30 bg-[#ff007f]/10 px-3 py-2 text-left text-[12px] font-medium text-pink-100">{error}</p>}
 
         <button className="mt-5 h-11 w-full rounded-xl bg-gradient-to-r from-[#ff007f] via-[#8b5cf6] to-[#00f0ff] text-[14px] font-bold text-white shadow-[0_0_25px_rgba(255,0,127,0.45)] [text-shadow:0_0_8px_rgba(0,0,0,0.65)] hover:shadow-[0_0_35px_rgba(0,240,255,0.55)] disabled:cursor-not-allowed disabled:opacity-60" disabled={busy}>
-          {busy ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
+          {busy ? "Signing in..." : "Sign in"}
         </button>
       </form>
     </main>
