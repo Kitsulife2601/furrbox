@@ -15,7 +15,7 @@ export function FurrNotification() {
         <article
           key={notification.id}
           className="pointer-events-auto relative overflow-hidden rounded-xl border border-cyan-500/40 bg-slate-950/80 p-4 text-slate-100 shadow-[0_0_28px_rgba(0,240,255,0.28),0_18px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl animate-furr-toast"
-          style={{ animationDuration: `${notification.durationMs}ms` }}
+          style={notification.persist ? undefined : { animationDuration: `${notification.durationMs}ms` }}
         >
           <div className="flex items-start gap-3">
             <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-cyan-300/35 bg-cyan-300/10 text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.35)]">
@@ -36,12 +36,30 @@ export function FurrNotification() {
                 </button>
               </div>
               <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-300">{notification.description}</p>
+              {typeof notification.progressPercent === "number" ? (
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100">
+                    <span>{Math.max(0, Math.min(100, notification.progressPercent))}%</span>
+                    {notification.meta ? <span className="truncate text-slate-400">{notification.meta}</span> : null}
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#00f0ff] via-[#8b5cf6] to-[#ff007f] shadow-[0_0_14px_rgba(0,240,255,0.75)] transition-[width] duration-300"
+                      style={{ width: `${Math.max(0, Math.min(100, notification.progressPercent))}%` }}
+                    />
+                  </div>
+                </div>
+              ) : notification.meta ? (
+                <p className="mt-2 truncate text-[11px] font-semibold text-cyan-100">{notification.meta}</p>
+              ) : null}
             </div>
           </div>
-          <div
-            className="absolute bottom-0 left-0 h-[3px] origin-left bg-gradient-to-r from-[#00f0ff] via-[#8b5cf6] to-[#ff007f] shadow-[0_0_14px_rgba(0,240,255,0.75)] animate-furr-toast-bar"
-            style={{ animationDuration: `${notification.durationMs}ms` }}
-          />
+          {!notification.persist ? (
+            <div
+              className="absolute bottom-0 left-0 h-[3px] origin-left bg-gradient-to-r from-[#00f0ff] via-[#8b5cf6] to-[#ff007f] shadow-[0_0_14px_rgba(0,240,255,0.75)] animate-furr-toast-bar"
+              style={{ animationDuration: `${notification.durationMs}ms` }}
+            />
+          ) : null}
         </article>
       ))}
     </div>
