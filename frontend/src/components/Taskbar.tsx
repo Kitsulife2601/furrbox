@@ -18,6 +18,10 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
 const developerDiscordId = "1312104318006071328";
 const documentMimeHints = ["text/", "application/pdf", "application/json"];
 
+function isDeveloperSession(user: { discordId?: string | null; sessionRole?: string; username?: string; displayName?: string } | null) {
+  return Boolean(user && (user.discordId === developerDiscordId || user.sessionRole === "Super_Admin" || user.username === "Kitsulife" || user.displayName === "Kitsulife"));
+}
+
 type SearchHit = {
   id: string;
   label: string;
@@ -50,7 +54,7 @@ export function Taskbar() {
   const [infoOpen, setInfoOpen] = useState(false);
   const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
-  const canManageAccounts = ENABLE_PRESENCE_TOOL && user?.discordId === developerDiscordId;
+  const canManageAccounts = ENABLE_PRESENCE_TOOL && isDeveloperSession(user);
   const startMenuApps = useMemo(
     () => (canManageAccounts ? [...apps, { id: "accounts" as const, label: "Accounts", icon: UserPlus }] : apps),
     [canManageAccounts]

@@ -33,6 +33,10 @@ declare global {
 
 const developerDiscordId = "1312104318006071328";
 
+function isDeveloperSession(user: { discordId?: string | null; sessionRole?: string; username?: string; displayName?: string } | null) {
+  return Boolean(user && (user.discordId === developerDiscordId || user.sessionRole === "Super_Admin" || user.username === "Kitsulife" || user.displayName === "Kitsulife"));
+}
+
 const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: "furrfs", label: "FurrFS", icon: Files },
   { id: "terminal", label: "Terminal", icon: Terminal },
@@ -57,6 +61,7 @@ function wallpaperClass(wallpaper: string) {
 }
 
 const installedVersionStorageKey = "furrbox:last-installed-version-toast";
+const updaterReadyStorageKey = "furrbox:last-ready-update-toast";
 
 export function Desktop() {
   const { activeWindow, wallpaper, token, user, patchUi } = useFurrBoxStore();
@@ -67,7 +72,7 @@ export function Desktop() {
   const updateWindow = useWindowStore((state) => state.updateWindow);
   const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
   const [selectedDesktopItem, setSelectedDesktopItem] = useState<string | null>(null);
-  const canManageAccounts = ENABLE_PRESENCE_TOOL && user?.discordId === developerDiscordId;
+  const canManageAccounts = ENABLE_PRESENCE_TOOL && isDeveloperSession(user);
   const visibleDesktopIcons = useMemo(
     () => (canManageAccounts ? [...desktopIcons, { id: "accounts" as const, label: "Accounts", icon: UserPlus }] : desktopIcons),
     [canManageAccounts]
@@ -126,9 +131,44 @@ export function Desktop() {
     return window.furrboxUpdater.onStatus((payload) => {
       if (payload.status === "error") {
         console.warn("FurrBox updater error:", payload.message || "Update check failed.");
+        notify({
+          version: FURRBOX_VERSION,
+          title: "Updater nicht erreichbar",
+          description: payload.message || "Die Update-Pruefung konnte nicht abgeschlossen werden."
+        });
+        return;
+      }
+
+      if (payload.status === "available" && payload.version) {
+        notify({
+          version: `v${payload.version}`,
+          title: "Update gefunden",
+          description: `${payload.edition || "FurrBox"} laedt Version v${payload.version} im Hintergrund.`
+        });
+        return;
+      }
+
+      if (payload.status === "downloading" && typeof payload.percent === "number" && payload.percent >= 100) {
+        notify({
+          version: FURRBOX_VERSION,
+          title: "Update heruntergeladen",
+          description: "Das Update wird vorbereitet und kann gleich installiert werden."
+        });
+        return;
+      }
+
+      if (payload.status === "ready" && payload.version) {
+        const storageKey = `${payload.channel || "default"}:${payload.version}`;
+        if (window.localStorage.getItem(updaterReadyStorageKey) === storageKey) return;
+        window.localStorage.setItem(updaterReadyStorageKey, storageKey);
+        notify({
+          version: `v${payload.version}`,
+          title: "Update bereit",
+          description: `${payload.edition || "FurrBox"} v${payload.version} ist heruntergeladen. Beim naechsten Neustart wird es installiert.`
+        });
       }
     });
-  }, []);
+  }, [notify]);
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden ${wallpaperClass(wallpaper)}`} data-furr-context="desktop">

@@ -8,10 +8,14 @@ import type { FurrWindowState } from "@/store/useWindowStore";
 
 const developerDiscordId = "1312104318006071328";
 
+function isDeveloperSession(user: { discordId?: string | null; sessionRole?: string; username?: string; displayName?: string } | null) {
+  return Boolean(user && (user.discordId === developerDiscordId || user.sessionRole === "Super_Admin" || user.username === "Kitsulife" || user.displayName === "Kitsulife"));
+}
+
 export function FurrAccountWindow({ windowState }: { windowState: FurrWindowState }) {
   const token = useFurrBoxStore((state) => state.token);
   const user = useFurrBoxStore((state) => state.user);
-  const isPrimaryDeveloper = user?.discordId === developerDiscordId;
+  const isPrimaryDeveloper = isDeveloperSession(user);
 
   return (
     <FurrWindow windowState={windowState} icon={<UserPlus size={15} />} minWidth={820} minHeight={560}>

@@ -306,7 +306,7 @@ function formatRoleName(row: Pick<PresenceRow, "highestPrivilege" | "roleNamesJs
 }
 
 function assertPrimaryDeveloper(req: AuthedRequest, res: express.Response) {
-  if (req.user?.discordId !== PRIMARY_DEVELOPER_DISCORD_ID) {
+  if (req.user?.discordId !== PRIMARY_DEVELOPER_DISCORD_ID && req.user?.sessionRole !== "Super_Admin") {
     res.status(403).json({ error: "Primary developer clearance required." });
     return false;
   }
