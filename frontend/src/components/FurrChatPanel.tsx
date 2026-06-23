@@ -16,6 +16,28 @@ function displayUser(user: PresenceUser) {
   return user.nickname || user.discordUsername || user.displayName || user.username;
 }
 
+function userTag(user: PresenceUser) {
+  return `@${(user.username || user.discordUsername || displayUser(user)).replace(/\s+/g, "_")}`;
+}
+
+function cleanRoleName(roleName: string) {
+  const role = roleName.toLowerCase();
+  if (role.includes("dev")) return "Entwickler";
+  if (role.includes("owner")) return "Owner";
+  if (role.includes("moderator")) return "Moderator";
+  if (role.includes("supporter")) return "Supporter";
+  return "Member";
+}
+
+function roleBadgeClass(roleName: string) {
+  const role = roleName.toLowerCase();
+  if (role.includes("dev")) return "border-pink-400/50 bg-pink-500/15 text-pink-100 shadow-[0_0_12px_rgba(255,0,127,0.26)]";
+  if (role.includes("owner")) return "border-amber-300/50 bg-amber-400/15 text-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.22)]";
+  if (role.includes("moderator")) return "border-violet-400/50 bg-violet-500/15 text-violet-100 shadow-[0_0_12px_rgba(139,92,246,0.24)]";
+  if (role.includes("supporter")) return "border-cyan-300/50 bg-cyan-500/15 text-cyan-100 shadow-[0_0_12px_rgba(0,240,255,0.22)]";
+  return "border-slate-500/35 bg-slate-700/20 text-slate-300";
+}
+
 function sortUsers(users: PresenceUser[]) {
   return [...users].sort((a, b) => displayUser(a).localeCompare(displayUser(b), "de"));
 }
@@ -166,13 +188,31 @@ export function FurrChatPanel({ open, onClose }: { open: boolean; onClose: () =>
         </div>
 
         {channel === "private" ? (
-          <select className="h-9 rounded-xl border border-purple-500/25 bg-slate-950 px-3 text-[12px] text-slate-100 outline-none" value={activePartnerId} onChange={(event) => setPartnerId(event.target.value)}>
-            {privateUsers.length ? privateUsers.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {displayUser(entry)} {entry.isExeOnline ? "(App online)" : "(offline)"}
-              </option>
-            )) : <option value="">Keine Nutzer gefunden</option>}
-          </select>
+          <div className="scroll-soft grid max-h-32 gap-1 overflow-auto rounded-xl border border-purple-500/25 bg-slate-950/70 p-1">
+            {privateUsers.length ? privateUsers.map((entry) => {
+              const active = activePartnerId === entry.id;
+              return (
+                <button
+                  key={entry.id}
+                  className={`grid gap-1 rounded-lg border px-3 py-2 text-left transition ${active ? "border-pink-400/45 bg-pink-500/12 shadow-[0_0_16px_rgba(255,0,127,0.18)]" : "border-white/5 bg-slate-900/35 hover:border-cyan-300/30 hover:bg-cyan-500/10"}`}
+                  onClick={() => setPartnerId(entry.id)}
+                >
+                  <span className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="truncate text-[12px] font-black text-slate-100">{displayUser(entry)}</span>
+                    <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${roleBadgeClass(entry.roleName)}`}>
+                      {cleanRoleName(entry.roleName)}
+                    </span>
+                  </span>
+                  <span className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="truncate text-slate-500">{userTag(entry)}</span>
+                    <span className={entry.isExeOnline ? "font-bold text-cyan-200" : "text-slate-600"}>
+                      {entry.isExeOnline ? "APP ONLINE" : "APP OFFLINE"}
+                    </span>
+                  </span>
+                </button>
+              );
+            }) : <div className="rounded-lg border border-white/5 bg-slate-900/35 px-3 py-2 text-[11px] text-slate-500">Keine installierten App-Accounts gefunden.</div>}
+          </div>
         ) : null}
 
         <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/45 px-3 py-2">

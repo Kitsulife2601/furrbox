@@ -20,15 +20,26 @@ type WallpaperStore = {
   setWallpaperFile: (file: File) => Promise<void>;
   resetWallpaper: () => void;
   addFolder: (name?: string) => DesktopFolder;
+  removeFolder: (id: string) => void;
 };
 
 function nextFolderPosition(index: number) {
-  const column = Math.floor(index / 7);
-  const row = index % 7;
+  const column = Math.floor(index / 8);
+  const row = index % 8;
   return {
-    x: 28 + column * 86,
-    y: 420 + row * 86
+    x: 124 + column * 92,
+    y: 32 + row * 88
   };
+}
+
+function nextFreeFolderPosition(folders: DesktopFolder[]) {
+  const occupied = new Set(folders.map((folder) => `${Math.round(folder.x / 4) * 4}:${Math.round(folder.y / 4) * 4}`));
+  for (let index = 0; index < 96; index += 1) {
+    const position = nextFolderPosition(index);
+    const key = `${Math.round(position.x / 4) * 4}:${Math.round(position.y / 4) * 4}`;
+    if (!occupied.has(key)) return position;
+  }
+  return nextFolderPosition(folders.length);
 }
 
 function readFileAsDataUrl(file: File) {
@@ -70,7 +81,7 @@ export const useWallpaperStore = create<WallpaperStore>()(
       addFolder: (name) => {
         const folders = get().folders;
         const folderNumber = folders.length + 1;
-        const position = nextFolderPosition(folders.length);
+        const position = nextFreeFolderPosition(folders);
         const folder: DesktopFolder = {
           id: crypto.randomUUID(),
           name: name?.trim() || `Neuer Ordner ${folderNumber}`,
@@ -80,7 +91,8 @@ export const useWallpaperStore = create<WallpaperStore>()(
         };
         set({ folders: [...folders, folder] });
         return folder;
-      }
+      },
+      removeFolder: (id) => set((state) => ({ folders: state.folders.filter((folder) => folder.id !== id) }))
     }),
     {
       name: "furrbox-wallpaper",

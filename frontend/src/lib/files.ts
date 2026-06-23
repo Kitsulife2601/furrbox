@@ -93,6 +93,21 @@ export async function deleteFile(id: string, token: string) {
   if (!response.ok && response.status !== 204) throw new Error("Failed to delete file.");
 }
 
+export async function deleteFolder(token: string, scope: "private" | "public", virtualPath: string) {
+  const response = await fetch(`${API_URL}/api/files/folder`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scope, virtualPath })
+  });
+  if (!response.ok && response.status !== 204) {
+    const body = await response.json().catch(() => ({ error: "Ordner konnte nicht geloescht werden." }));
+    throw new Error(body.error || "Ordner konnte nicht geloescht werden.");
+  }
+}
+
 export async function readFileBlobUrl(file: FurrFile, token: string) {
   const response = await fetch(`${API_URL}${file.url}`, {
     headers: { Authorization: `Bearer ${token}` }

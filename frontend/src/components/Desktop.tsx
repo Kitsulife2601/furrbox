@@ -70,7 +70,7 @@ export function Desktop() {
   const openWindow = useWindowStore((state) => state.openWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
   const updateWindow = useWindowStore((state) => state.updateWindow);
-  const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
+  const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders, removeFolder } = useWallpaperStore();
   const [selectedDesktopItem, setSelectedDesktopItem] = useState<string | null>(null);
   const canManageAccounts = ENABLE_PRESENCE_TOOL && isDeveloperSession(user);
   const visibleDesktopIcons = useMemo(
@@ -125,6 +125,17 @@ export function Desktop() {
   useEffect(() => {
     if (token) initFurrSocket(token);
   }, [token]);
+
+  useEffect(() => {
+    const onDesktopFolderDelete = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; targetId?: string }>).detail;
+      if (detail?.kind === "folder" && detail.targetId && folders.some((folder) => folder.id === detail.targetId)) {
+        removeFolder(detail.targetId);
+      }
+    };
+    window.addEventListener("furrfs:delete", onDesktopFolderDelete);
+    return () => window.removeEventListener("furrfs:delete", onDesktopFolderDelete);
+  }, [folders, removeFolder]);
 
   useEffect(() => {
     if (!window.furrboxUpdater) return;

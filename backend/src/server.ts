@@ -283,6 +283,15 @@ function normalizeVirtualFolderPath(parentPathInput: unknown, nameInput: unknown
   return parentPath ? `${parentPath}/${folderName}` : folderName;
 }
 
+function normalizeExistingVirtualPath(pathInput: unknown) {
+  return String(pathInput || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => sanitizeName(part.trim()))
+    .filter(Boolean)
+    .join("/");
+}
+
 function normalizeTextDocumentName(nameInput: unknown) {
   const safeName = sanitizeName(String(nameInput || "Neues Textdokument.txt").trim()).replace(/[. ]+$/g, "") || "Neues Textdokument";
   return safeName.toLowerCase().endsWith(".txt") ? safeName : `${safeName}.txt`;
@@ -965,12 +974,61 @@ function toPresenceDto(row: PresenceRow): PresenceUserDto {
 }
 
 async function listPresenceUsers(view: PresenceView = "global"): Promise<PresenceUserDto[]> {
-  const privilegeWhere = view === "team" ? `WHERE dm."highestPrivilege" IN ('dev', 'owner', 'moderator', 'supporter')` : "";
+  if (view === "team") {
+    const teamRows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
+      SELECT
+        u."id",
+        u."username",
+        u."displayName",
+        u."discordId",
+        dm."username" AS "discordUsername",
+        dm."nickname",
+        dm."roleNamesJson",
+        dm."highestPrivilege",
+        COALESCE(dm."discordStatus", 'offline') AS "discordStatus",
+        COALESCE(dm."isDiscordOnline", false) AS "isDiscordOnline",
+        dm."lastDiscordPresenceAt",
+        COALESCE(up."status", 'offline') AS "status",
+        up."connectedAt",
+        up."lastHeartbeatAt",
+        up."lastSeenAt"
+      FROM "User" u
+      LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
+      LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+      WHERE COALESCE(dm."highestPrivilege", CASE WHEN u."discordId" = ? THEN 'dev' ELSE 'none' END) IN ('dev', 'owner', 'moderator', 'supporter')
+      ORDER BY
+        CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
+        CASE WHEN COALESCE(dm."isDiscordOnline", false) = true THEN 0 ELSE 1 END,
+        COALESCE(dm."nickname", u."displayName", u."username") COLLATE NOCASE ASC
+    `, PRIMARY_DEVELOPER_DISCORD_ID);
+    return teamRows.map(toPresenceDto);
+  }
+
   const rows = await prisma.$queryRawUnsafe<PresenceRow[]>(`
       SELECT
-        COALESCE(u."id", 'discord:' || dm."discordId") AS "id",
-        COALESCE(u."username", dm."username") AS "username",
-        COALESCE(u."displayName", dm."displayName") AS "displayName",
+        u."id",
+        u."username",
+        u."displayName",
+        u."discordId",
+        dm."username" AS "discordUsername",
+        dm."nickname",
+        dm."roleNamesJson",
+        COALESCE(dm."highestPrivilege", CASE WHEN u."discordId" = ? THEN 'dev' ELSE 'none' END) AS "highestPrivilege",
+        COALESCE(dm."discordStatus", 'offline') AS "discordStatus",
+        COALESCE(dm."isDiscordOnline", false) AS "isDiscordOnline",
+        dm."lastDiscordPresenceAt",
+        COALESCE(up."status", 'offline') AS "status",
+        up."connectedAt",
+        up."lastHeartbeatAt",
+        up."lastSeenAt"
+      FROM "User" u
+      LEFT JOIN "DiscordMember" dm ON dm."discordId" = u."discordId"
+      LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+      UNION ALL
+      SELECT
+        'discord:' || dm."discordId" AS "id",
+        dm."username" AS "username",
+        dm."displayName" AS "displayName",
         dm."discordId",
         dm."username" AS "discordUsername",
         dm."nickname",
@@ -986,13 +1044,16 @@ async function listPresenceUsers(view: PresenceView = "global"): Promise<Presenc
       FROM "DiscordMember" dm
       LEFT JOIN "User" u ON u."discordId" = dm."discordId"
       LEFT JOIN "UserPresence" up ON up."discordId" = dm."discordId"
-      ${privilegeWhere}
-      ORDER BY
-        CASE WHEN COALESCE(up."status", 'offline') = 'online' THEN 0 ELSE 1 END,
-        CASE WHEN COALESCE(dm."isDiscordOnline", false) = true THEN 0 ELSE 1 END,
-        COALESCE(dm."nickname", dm."displayName", dm."username") COLLATE NOCASE ASC
-    `);
-  return rows.map(toPresenceDto);
+      WHERE u."id" IS NULL
+    `, PRIMARY_DEVELOPER_DISCORD_ID);
+  return rows
+    .map(toPresenceDto)
+    .sort((a, b) => {
+      const aOnline = a.isExeOnline || a.isDiscordOnline ? 0 : 1;
+      const bOnline = b.isExeOnline || b.isDiscordOnline ? 0 : 1;
+      if (aOnline !== bOnline) return aOnline - bOnline;
+      return (a.nickname || a.displayName || a.username).localeCompare(b.nickname || b.displayName || b.username, "de");
+    });
 }
 
 async function getPresenceUser(userId: string) {
@@ -2584,6 +2645,55 @@ app.get("/api/files/:id/download", requireAuth, async (req: AuthedRequest, res, 
       return;
     }
     res.download(path.join(scopeFolder(file.scope, file.ownerId || undefined), file.name), file.originalName);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/files/folder", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const scope = scopeFromInput(req.body.scope);
+    const folderPath = normalizeExistingVirtualPath(req.body.virtualPath);
+    if (!folderPath) {
+      res.status(400).json({ error: "Ordnerpfad fehlt." });
+      return;
+    }
+
+    const ownerId = scope === "PRIVATE" ? req.user!.id : null;
+    const files = await prisma.storedFile.findMany({
+      where: {
+        scope,
+        ownerId,
+        OR: [
+          { originalName: `${folderPath}/.furrfolder` },
+          { originalName: { startsWith: `${folderPath}/` } }
+        ]
+      }
+    });
+
+    if (!files.length) {
+      res.status(404).json({ error: "Ordner nicht gefunden." });
+      return;
+    }
+
+    await prisma.storedFile.deleteMany({
+      where: {
+        id: { in: files.map((file) => file.id) },
+        scope,
+        ownerId
+      }
+    });
+
+    await Promise.all(
+      files.map((file) => fs.unlink(path.join(scopeFolder(file.scope, file.ownerId || undefined), file.name)).catch(() => undefined))
+    );
+
+    if (scope === "PUBLIC") {
+      io.to("public").emit("folder-deleted", { path: folderPath, scope: "public" });
+      await emitPublicFiles("public-folder-delete");
+    }
+    await emitFilesForUser(req.user!.id, "folder-delete");
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

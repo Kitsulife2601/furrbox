@@ -23,7 +23,7 @@ import {
   Upload
 } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { createFolder, createTextDocument, deleteFile, listFiles, uploadFile } from "@/lib/files";
+import { createFolder, createTextDocument, deleteFile, deleteFolder, listFiles, uploadFile } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 import { useWindowStore, type FurrWindowState } from "@/store/useWindowStore";
 
@@ -189,6 +189,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const pasteInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -216,12 +217,27 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
 
   useEffect(() => {
     const onDelete = (event: Event) => {
-      const detail = (event as CustomEvent<{ targetId?: string }>).detail;
-      if (detail?.targetId && token) deleteFile(detail.targetId, token).then(refresh);
+      const detail = (event as CustomEvent<{ targetId?: string; kind?: string }>).detail;
+      if (!detail?.targetId || !token) return;
+      if (detail.targetId.startsWith("folder:")) {
+        deleteFolder(token, activeFileScope, detail.targetId.replace(/^folder:/, ""))
+          .then(() => {
+            socket?.emit("file-uploaded", { scope: activeFileScope });
+            return refresh();
+          })
+          .catch((error) => setLoadError(error instanceof Error ? error.message : "Ordner konnte nicht geloescht werden."));
+        return;
+      }
+      deleteFile(detail.targetId, token)
+        .then(() => {
+          socket?.emit("file-uploaded", { scope: activeFileScope });
+          return refresh();
+        })
+        .catch((error) => setLoadError(error instanceof Error ? error.message : "Datei konnte nicht geloescht werden."));
     };
     window.addEventListener("furrfs:delete", onDelete);
     return () => window.removeEventListener("furrfs:delete", onDelete);
-  }, [refresh, token]);
+  }, [activeFileScope, refresh, socket, token]);
 
   const rows = useMemo(() => {
     if (currentPath === "Schnellzugriff") return [];
@@ -243,11 +259,14 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
       .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "folder" ? -1 : 1));
   }, [currentPath, files, query]);
 
+  const selectedRow = useMemo(() => rows.find((row) => row.id === selectedRowId) || null, [rows, selectedRowId]);
+
   const navigate = useCallback(
     (path: string) => {
       if (path === currentPath) return;
       setHistory((items) => [...items, currentPath]);
       setFuture([]);
+      setSelectedRowId(null);
       setCurrentPath(path);
     },
     [currentPath]
@@ -359,6 +378,24 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
     }
   }
 
+  async function deleteSelectedRow() {
+    if (!token || !selectedRow) return;
+    const confirmed = window.confirm(`${selectedRow.name} wirklich loeschen?`);
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      if (selectedRow.kind === "folder") await deleteFolder(token, activeFileScope, selectedRow.path);
+      else await deleteFile(selectedRow.id, token);
+      setSelectedRowId(null);
+      socket?.emit("file-uploaded", { scope: activeFileScope });
+      await refresh();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Element konnte nicht geloescht werden.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <FurrWindow windowState={windowState} icon={<FolderSync size={15} />}>
       <div className="grid h-full grid-cols-[245px_1fr] bg-slate-950/80 text-slate-100">
@@ -457,7 +494,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><Copy size={15} />Kopieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100" onClick={() => pasteInputRef.current?.click()}><Clipboard size={15} />Einfuegen</button>
                 <input ref={pasteInputRef} className="hidden" type="file" multiple onChange={(event) => event.target.files && handleFiles(event.target.files)} />
-                <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100"><Trash2 size={15} />Loeschen</button>
+                <button className="flex h-8 items-center gap-2 rounded-lg border border-pink-400/15 px-3 text-[13px] text-slate-300 hover:border-pink-400/40 hover:bg-pink-500/10 hover:text-pink-100 disabled:opacity-35" disabled={!selectedRow || busy} onClick={deleteSelectedRow}><Trash2 size={15} />Loeschen</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><SlidersHorizontal size={15} />Sortieren</button>
                 <button className="flex h-8 items-center gap-2 rounded-lg border border-white/5 px-3 text-[13px] text-slate-300 hover:border-purple-400/30 hover:bg-purple-500/10 hover:text-violet-100"><LayoutList size={15} />Anzeigen</button>
               </div>
@@ -546,7 +583,8 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
                 rows.map((row) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-[1fr_180px_150px_100px] items-center border-b border-white/5 px-3 py-2 text-[13px] last:border-0 hover:bg-cyan-500/10 hover:shadow-[inset_2px_0_0_#00f0ff]"
+                    className={`grid grid-cols-[1fr_180px_150px_100px] items-center border-b border-white/5 px-3 py-2 text-[13px] last:border-0 hover:bg-cyan-500/10 hover:shadow-[inset_2px_0_0_#00f0ff] ${selectedRowId === row.id ? "bg-cyan-500/12 shadow-[inset_2px_0_0_#00f0ff]" : ""}`}
+                    onClick={() => setSelectedRowId(row.id)}
                     onDoubleClick={() => openRow(row)}
                     data-furr-context={row.kind}
                     data-file-id={row.kind === "file" ? row.file.id : row.id}
