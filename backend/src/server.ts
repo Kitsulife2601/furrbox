@@ -11,6 +11,7 @@ import path from "node:path";
 import pty from "node-pty";
 import si from "systeminformation";
 import { Server } from "socket.io";
+import { spawnSync } from "node:child_process";
 
 type AuthUser = Pick<User, "id" | "username" | "displayName" | "discordId">;
 type JwtPayload = { sub: string; username: string; displayName: string; discordId?: string | null };
@@ -79,6 +80,16 @@ type MessageInspectResult = MessageInspectRequest & {
   channelName?: string;
   createdAt?: string;
   error?: string;
+};
+type TerminalProfileId = "auto" | "linux-bash" | "linux-wsl" | "windows-powershell" | "windows-cmd";
+type TerminalProfile = {
+  id: TerminalProfileId;
+  label: string;
+  family: "linux" | "windows" | "auto";
+  command: string;
+  args: string[];
+  available: boolean;
+  reason?: string;
 };
 type PresenceStatus = "online" | "offline";
 type PresenceUserDto = {
@@ -156,10 +167,12 @@ let uiState: UiState = {
 };
 let sharedTerminal: pty.IPty | null = null;
 let terminalHistory = "FurrBox shared terminal ready.\r\n";
+let currentTerminalProfileId: TerminalProfileId = "auto";
 let hardwareInterval: NodeJS.Timeout | null = null;
 let publicStorageWatcher: fsSync.FSWatcher | null = null;
 let publicStorageBroadcastTimer: NodeJS.Timeout | null = null;
 let botSocketId: string | null = null;
+let botConnectedAt: string | null = null;
 const activePresenceSockets = new Map<string, Set<string>>();
 const moderationWaiters = new Map<string, { resolve: (result: ModerationResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
 const messageInspectWaiters = new Map<string, { resolve: (result: MessageInspectResult) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }>();
@@ -838,10 +851,94 @@ const evidenceUpload = multer({
   }
 });
 
-function ensureSharedTerminal() {
-  if (sharedTerminal) return sharedTerminal;
-  const shell = process.platform === "win32" ? "powershell.exe" : "bash";
-  sharedTerminal = pty.spawn(shell, [], {
+function commandExists(command: string) {
+  if (process.platform === "win32") {
+    return spawnSync("where.exe", [command], { stdio: "ignore" }).status === 0;
+  }
+  return spawnSync("sh", ["-lc", `command -v ${command}`], { stdio: "ignore" }).status === 0;
+}
+
+function makeProfile(profile: Omit<TerminalProfile, "available" | "reason">, availabilityCommand = profile.command): TerminalProfile {
+  const available = commandExists(availabilityCommand);
+  return {
+    ...profile,
+    available,
+    reason: available ? undefined : `${availabilityCommand} ist auf diesem Host nicht installiert.`
+  };
+}
+
+function terminalProfiles(): TerminalProfile[] {
+  const windowsPowerShell = makeProfile({
+    id: "windows-powershell",
+    label: "Windows PowerShell",
+    family: "windows",
+    command: "powershell.exe",
+    args: ["-NoLogo", "-ExecutionPolicy", "Bypass"]
+  });
+  const windowsCmd = makeProfile({
+    id: "windows-cmd",
+    label: "Windows CMD",
+    family: "windows",
+    command: "cmd.exe",
+    args: []
+  });
+  const linuxBash = makeProfile({
+    id: "linux-bash",
+    label: "Linux Bash",
+    family: "linux",
+    command: "bash",
+    args: ["--login"]
+  });
+  const linuxWsl = makeProfile({
+    id: "linux-wsl",
+    label: "Linux Bash via WSL",
+    family: "linux",
+    command: "wsl.exe",
+    args: process.env.FURRBOX_WSL_DISTRO ? ["-d", process.env.FURRBOX_WSL_DISTRO] : []
+  });
+  const systemShell = makeProfile({
+    id: "auto",
+    label: "System Shell",
+    family: "auto",
+    command: process.platform === "win32" ? "cmd.exe" : "sh",
+    args: []
+  });
+  const preferred = process.platform === "win32"
+    ? windowsPowerShell.available ? windowsPowerShell : windowsCmd.available ? windowsCmd : systemShell
+    : linuxBash.available ? linuxBash : systemShell;
+
+  return [
+    { ...preferred, id: "auto", label: `Auto (${preferred.label})`, family: "auto", available: preferred.available, reason: preferred.reason },
+    linuxBash,
+    linuxWsl,
+    windowsPowerShell,
+    windowsCmd
+  ];
+}
+
+function resolveTerminalProfile(profileId: TerminalProfileId = "auto") {
+  const profiles = terminalProfiles();
+  const profile = profiles.find((item) => item.id === profileId) ?? profiles[0];
+  if (profile.available) return profile;
+  const fallback = profiles.find((item) => item.id === "auto" && item.available) ?? profiles.find((item) => item.available);
+  if (!fallback) throw new Error("No terminal shell is available on this host.");
+  return fallback;
+}
+
+function stopSharedTerminal(reason = "Shell profile changed.") {
+  if (!sharedTerminal) return;
+  const term = sharedTerminal;
+  sharedTerminal = null;
+  term.kill();
+  terminalHistory += `\r\n${reason}\r\n`;
+}
+
+function ensureSharedTerminal(profileId: TerminalProfileId = currentTerminalProfileId) {
+  const profile = resolveTerminalProfile(profileId);
+  if (sharedTerminal && profile.id === currentTerminalProfileId) return sharedTerminal;
+  if (sharedTerminal) stopSharedTerminal(`Switching terminal to ${profile.label}.`);
+  currentTerminalProfileId = profile.id;
+  sharedTerminal = pty.spawn(profile.command, profile.args, {
     name: "xterm-256color",
     cols: 96,
     rows: 28,
@@ -849,7 +946,8 @@ function ensureSharedTerminal() {
     env: process.env
   });
 
-  terminalHistory += `Shared shell started with pid ${sharedTerminal.pid}.\r\n`;
+  terminalHistory += `Shared shell started: ${profile.label} (${profile.command}) with pid ${sharedTerminal.pid}.\r\n`;
+  io.to("terminal").emit("terminal:profile", { activeProfileId: profile.id, profiles: terminalProfiles() });
   sharedTerminal.onData((data) => {
     terminalHistory = `${terminalHistory}${data}`.slice(-16000);
     io.to("terminal").emit("terminal:data", data);
@@ -1282,8 +1380,9 @@ io.use(async (socket, next) => {
 io.on("connection", async (socket) => {
   if (socket.data.bot) {
     botSocketId = socket.id;
+    botConnectedAt = new Date().toISOString();
     socket.join("bot-bridge");
-    io.emit("discord:bot-status", { connected: true, connectedAt: new Date().toISOString() });
+    io.emit("discord:bot-status", { connected: true, connectedAt: botConnectedAt });
 
     socket.on("discord:members:sync", async ({ guildId, members }: { guildId?: string; members?: DiscordMemberSnapshot[] }) => {
       if (!Array.isArray(members)) return;
@@ -1315,7 +1414,10 @@ io.on("connection", async (socket) => {
     });
 
     socket.on("disconnect", () => {
-      if (botSocketId === socket.id) botSocketId = null;
+      if (botSocketId === socket.id) {
+        botSocketId = null;
+        botConnectedAt = null;
+      }
       io.emit("discord:bot-status", { connected: false, disconnectedAt: new Date().toISOString() });
     });
     return;
@@ -1327,6 +1429,10 @@ io.on("connection", async (socket) => {
   await markUserOnline(user, socket.id);
 
   socket.emit("ui-state", uiState);
+  socket.emit("discord:bot-status", {
+    connected: Boolean(botSocketId),
+    connectedAt: botConnectedAt ?? undefined
+  });
   socket.emit("files-refreshed", { reason: "connect", files: (await listVisibleFiles(user.id)).map(toDto) });
   socket.emit("public-files-refreshed", {
     reason: "connect",
@@ -1397,11 +1503,33 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("terminal:create", () => {
+  socket.on("terminal:profiles", () => {
+    socket.emit("terminal:profile", { activeProfileId: currentTerminalProfileId, profiles: terminalProfiles() });
+  });
+
+  socket.on("terminal:create", ({ profileId }: { profileId?: TerminalProfileId } = {}) => {
     socket.join("terminal");
-    const term = ensureSharedTerminal();
-    socket.emit("terminal:ready", { pid: term.pid });
+    const term = ensureSharedTerminal(profileId);
+    socket.emit("terminal:ready", { pid: term.pid, activeProfileId: currentTerminalProfileId, profiles: terminalProfiles() });
     socket.emit("terminal:data", terminalHistory);
+  });
+
+  socket.on("terminal:switch-profile", ({ profileId }: { profileId?: TerminalProfileId }, callback?: (response: { ok: boolean; activeProfileId?: TerminalProfileId; profiles?: TerminalProfile[]; error?: string }) => void) => {
+    try {
+      if (!profileId) throw new Error("profileId is required.");
+      const profile = resolveTerminalProfile(profileId);
+      terminalHistory = `FurrBox terminal switched to ${profile.label}.\r\n`;
+      stopSharedTerminal(`Switching terminal to ${profile.label}.`);
+      const term = ensureSharedTerminal(profile.id);
+      const payload = { activeProfileId: profile.id, profiles: terminalProfiles() };
+      io.to("terminal").emit("terminal:profile", payload);
+      io.to("terminal").emit("terminal:reset");
+      io.to("terminal").emit("terminal:data", terminalHistory);
+      socket.emit("terminal:ready", { pid: term.pid, ...payload });
+      callback?.({ ok: true, ...payload });
+    } catch (error) {
+      callback?.({ ok: false, error: error instanceof Error ? error.message : "Terminal profile switch failed." });
+    }
   });
 
   socket.on("terminal:input", (data: string) => {

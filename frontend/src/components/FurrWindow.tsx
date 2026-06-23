@@ -13,6 +13,8 @@ type FurrWindowProps = {
   icon?: React.ReactNode;
   titleBarContent?: React.ReactNode;
   className?: string;
+  minWidth?: number;
+  minHeight?: number;
 };
 
 const resizeHandles: { edge: ResizeEdge; className: string }[] = [
@@ -26,7 +28,7 @@ const resizeHandles: { edge: ResizeEdge; className: string }[] = [
   { edge: "sw", className: "bottom-0 left-0 h-3 w-3 cursor-sw-resize" }
 ];
 
-export const FurrWindow = memo(function FurrWindow({ windowState, children, icon, titleBarContent, className }: FurrWindowProps) {
+export const FurrWindow = memo(function FurrWindow({ windowState, children, icon, titleBarContent, className, minWidth, minHeight }: FurrWindowProps) {
   const focusWindow = useWindowStore((state) => state.focusWindow);
   const minimizeWindow = useWindowStore((state) => state.minimizeWindow);
   const toggleMaximize = useWindowStore((state) => state.toggleMaximize);
@@ -43,6 +45,8 @@ export const FurrWindow = memo(function FurrWindow({ windowState, children, icon
         transform: `translate3d(${windowState.x}px, ${windowState.y}px, 0)`,
         width: windowState.width,
         height: windowState.height,
+        minWidth,
+        minHeight,
         zIndex: windowState.zIndex
       }}
       onMouseDown={() => focusWindow(windowState.id)}

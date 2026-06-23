@@ -55,6 +55,14 @@ export async function readFileBlobUrl(file: FurrFile, token: string) {
   return URL.createObjectURL(await response.blob());
 }
 
+export async function readFileText(file: FurrFile, token: string) {
+  const response = await fetch(`${API_URL}${file.url}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Failed to read text file.");
+  return response.text();
+}
+
 export async function downloadFile(file: FurrFile, token: string) {
   const response = await fetch(`${API_URL}${file.url}`, {
     headers: { Authorization: `Bearer ${token}` }

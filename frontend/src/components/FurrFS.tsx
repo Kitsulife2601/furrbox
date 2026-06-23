@@ -19,7 +19,7 @@ import {
   X
 } from "lucide-react";
 import { FurrWindow } from "@/components/FurrWindow";
-import { deleteFile, listFiles, readFileBlobUrl, uploadFile } from "@/lib/files";
+import { deleteFile, listFiles, readFileBlobUrl, readFileText, uploadFile } from "@/lib/files";
 import { useFurrBoxStore, type FurrFile } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
@@ -78,6 +78,11 @@ function fileType(file: FurrFile) {
   if (file.mimeType.startsWith("text/")) return "Textdokument";
   if (file.mimeType.includes("zip") || file.mimeType.includes("compressed")) return "Komprimierter Ordner";
   return "Datei";
+}
+
+function isTextDocument(file: FurrFile) {
+  const name = displayName(file).toLowerCase();
+  return file.mimeType.startsWith("text/") || file.mimeType.includes("json") || name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".md") || name.endsWith(".json");
 }
 
 function FileIcon({ file }: { file: FurrFile }) {
@@ -154,6 +159,7 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
+  const [textPreview, setTextPreview] = useState<{ name: string; content: string; type: string } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -230,6 +236,11 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
     if (row.file.mimeType.startsWith("image/") && token) {
       const url = await readFileBlobUrl(row.file, token);
       setPreview({ name: row.name, url });
+      return;
+    }
+    if (isTextDocument(row.file) && token) {
+      const content = await readFileText(row.file, token);
+      setTextPreview({ name: row.name, content, type: row.type });
     }
   }
 
@@ -390,6 +401,25 @@ export function FurrFS({ windowState }: { windowState: FurrWindowState }) {
               }} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-white/10"><X size={16} /></button>
             </div>
             <img src={preview.url} alt={preview.name} className="max-h-[78vh] max-w-full object-contain" />
+          </div>
+        </div>
+      ) : null}
+
+      {textPreview ? (
+        <div className="fixed inset-0 z-[10010] grid place-items-center bg-black/70 p-8 backdrop-blur-sm">
+          <div className="flex max-h-full w-[min(920px,calc(100vw-64px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-[0_0_40px_rgba(0,240,255,0.2)]">
+            <div className="flex h-12 items-center justify-between border-b border-white/10 px-4 text-white">
+              <div className="flex min-w-0 items-center gap-2 text-[13px] font-semibold">
+                <FileText size={16} className="text-[#00f0ff]" />
+                <span className="truncate">{textPreview.name}</span>
+                <span className="rounded border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-purple-100">{textPreview.type}</span>
+              </div>
+              <button onClick={() => setTextPreview(null)} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-white/10"><X size={16} /></button>
+            </div>
+            <div className="border-b border-white/5 bg-slate-900/45 px-4 py-2 text-[11px] text-slate-500">
+              Virtuelles Textdokument aus FurrFS / Moderation_Beweise
+            </div>
+            <pre className="scroll-soft max-h-[72vh] overflow-auto whitespace-pre-wrap bg-slate-950 p-5 font-mono text-[12px] leading-5 text-slate-200">{textPreview.content || "Dieses Textdokument ist leer."}</pre>
           </div>
         </div>
       ) : null}

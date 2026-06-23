@@ -58,6 +58,16 @@ export const TASKBAR_HEIGHT = 64;
 export const WINDOW_MIN_WIDTH = 300;
 export const WINDOW_MIN_HEIGHT = 200;
 
+export function getWindowMinimumSize(kind: FurrWindowKind) {
+  if (kind === "presence") return { minWidth: 900, minHeight: 560 };
+  if (kind === "furrfs") return { minWidth: 780, minHeight: 520 };
+  if (kind === "evidence") return { minWidth: 760, minHeight: 560 };
+  if (kind === "terminal") return { minWidth: 640, minHeight: 400 };
+  if (kind === "browser") return { minWidth: 760, minHeight: 500 };
+  if (kind === "settings") return { minWidth: 420, minHeight: 420 };
+  return { minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT };
+}
+
 export function getViewportBounds(): ViewportBounds {
   const width = typeof window === "undefined" ? 1440 : window.innerWidth;
   const height = typeof window === "undefined" ? 900 : window.innerHeight;
@@ -75,10 +85,10 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export function constrainWindow(coords: WindowCoords): WindowCoords {
+export function constrainWindow(coords: WindowCoords, minimum = { minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }): WindowCoords {
   const bounds = getViewportBounds();
-  const width = clamp(coords.width, WINDOW_MIN_WIDTH, bounds.width);
-  const height = clamp(coords.height, WINDOW_MIN_HEIGHT, bounds.height);
+  const width = clamp(coords.width, minimum.minWidth, bounds.width);
+  const height = clamp(coords.height, minimum.minHeight, bounds.height);
   const x = clamp(coords.x, bounds.minX, Math.max(bounds.minX, bounds.maxX - width));
   const y = clamp(coords.y, bounds.minY, Math.max(bounds.minY, bounds.maxY - height));
   return { x, y, width, height };
@@ -148,10 +158,10 @@ const initialWindows: Record<string, FurrWindowState> = {
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    x: 260,
+    x: 180,
     y: 88,
-    width: 940,
-    height: 650,
+    width: 1040,
+    height: 690,
     zIndex: 14,
     prevCoords: null
   }
@@ -169,7 +179,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       y: input.y ?? 92,
       width: input.width ?? 860,
       height: input.height ?? 620
-    });
+    }, getWindowMinimumSize(input.kind));
 
     set((state) => ({
       nextZIndex: zIndex,
@@ -252,7 +262,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
         return {
           windows: {
             ...state.windows,
-            [id]: { ...win, ...constrainWindow(win.prevCoords), isMaximized: false, prevCoords: null }
+            [id]: { ...win, ...constrainWindow(win.prevCoords, getWindowMinimumSize(win.kind)), isMaximized: false, prevCoords: null }
           }
         };
       }
@@ -295,7 +305,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       return {
         windows: {
           ...state.windows,
-          [id]: { ...win, ...constrainWindow({ x, y, width: win.width, height: win.height }) }
+          [id]: { ...win, ...constrainWindow({ x, y, width: win.width, height: win.height }, getWindowMinimumSize(win.kind)) }
         }
       };
     }),
@@ -307,7 +317,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       return {
         windows: {
           ...state.windows,
-          [id]: { ...win, ...constrainWindow(coords) }
+          [id]: { ...win, ...constrainWindow(coords, getWindowMinimumSize(win.kind)) }
         }
       };
     }),

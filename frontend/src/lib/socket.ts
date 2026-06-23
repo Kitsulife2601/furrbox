@@ -87,4 +87,26 @@ export function initFurrSocket(token: string) {
   socket.on("terminal:data", (data: string) => {
     useFurrBoxStore.getState().appendTerminal(data);
   });
+
+  socket.on("terminal:reset", () => {
+    useFurrBoxStore.getState().setTerminal([]);
+  });
+
+  socket.on("terminal:profile", ({ activeProfileId, profiles }) => {
+    if (!activeProfileId || !Array.isArray(profiles)) return;
+    useFurrBoxStore.getState().setTerminalProfileState(activeProfileId, profiles);
+  });
+
+  socket.on("terminal:ready", ({ activeProfileId, profiles }) => {
+    if (!activeProfileId || !Array.isArray(profiles)) return;
+    useFurrBoxStore.getState().setTerminalProfileState(activeProfileId, profiles);
+  });
+
+  socket.on("discord:bot-status", (status) => {
+    useFurrBoxStore.getState().setDiscordBotStatus({
+      connected: Boolean(status?.connected),
+      connectedAt: typeof status?.connectedAt === "string" ? status.connectedAt : undefined,
+      disconnectedAt: typeof status?.disconnectedAt === "string" ? status.disconnectedAt : undefined
+    });
+  });
 }

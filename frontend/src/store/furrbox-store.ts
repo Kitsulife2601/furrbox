@@ -21,6 +21,20 @@ export type FurrFile = {
 export type WindowKey = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
 export type Wallpaper = "bloom" | "aurora" | "ink";
 export type AuthStage = "lock" | "login" | "desktop";
+export type TerminalProfile = {
+  id: "auto" | "linux-bash" | "linux-wsl" | "windows-powershell" | "windows-cmd";
+  label: string;
+  family: "linux" | "windows" | "auto";
+  command: string;
+  args: string[];
+  available: boolean;
+  reason?: string;
+};
+export type DiscordBotStatus = {
+  connected: boolean;
+  connectedAt?: string;
+  disconnectedAt?: string;
+};
 export type UserProfile = {
   id: string;
   username: string;
@@ -44,6 +58,9 @@ type Store = UiState & {
   activeFileScope: "private" | "public";
   uploadProgress: number;
   terminal: string[];
+  terminalProfiles: TerminalProfile[];
+  activeTerminalProfileId: TerminalProfile["id"];
+  discordBotStatus: DiscordBotStatus;
   setAuthStage: (stage: AuthStage) => void;
   setSession: (token: string, user: UserProfile) => void;
   logout: () => void;
@@ -54,7 +71,10 @@ type Store = UiState & {
   addFile: (file: FurrFile) => void;
   setUploadProgress: (progress: number) => void;
   patchUi: (patch: Partial<UiState>, broadcast?: boolean) => void;
+  setTerminal: (chunks: string[]) => void;
   appendTerminal: (data: string) => void;
+  setTerminalProfileState: (activeProfileId: TerminalProfile["id"], profiles: TerminalProfile[]) => void;
+  setDiscordBotStatus: (status: DiscordBotStatus) => void;
 };
 
 export const useFurrBoxStore = create<Store>()(
@@ -69,6 +89,9 @@ export const useFurrBoxStore = create<Store>()(
       activeFileScope: "private",
       uploadProgress: 0,
       terminal: ["FurrBox shared terminal initializing...\r\n"],
+      terminalProfiles: [],
+      activeTerminalProfileId: "auto",
+      discordBotStatus: { connected: false },
       activeWindow: "furrfs",
       wallpaper: "bloom",
       startOpen: false,
@@ -88,7 +111,10 @@ export const useFurrBoxStore = create<Store>()(
         set(patch);
         if (broadcast) get().socket?.emit("ui-state:update", patch);
       },
-      appendTerminal: (data) => set((state) => ({ terminal: [...state.terminal.slice(-180), data] }))
+      setTerminal: (terminal) => set({ terminal }),
+      appendTerminal: (data) => set((state) => ({ terminal: [...state.terminal.slice(-180), data] })),
+      setTerminalProfileState: (activeTerminalProfileId, terminalProfiles) => set({ activeTerminalProfileId, terminalProfiles }),
+      setDiscordBotStatus: (discordBotStatus) => set({ discordBotStatus })
     }),
     {
       name: "furrbox-session",
