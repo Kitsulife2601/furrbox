@@ -1,8 +1,9 @@
 "use client";
 
-import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal } from "lucide-react";
+import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal, UserPlus } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FurrAccountWindow } from "@/components/FurrAccountWindow";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
@@ -31,6 +32,8 @@ declare global {
   }
 }
 
+const developerDiscordId = "1312104318006071328";
+
 const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: "furrfs", label: "FurrFS", icon: Files },
   { id: "terminal", label: "Terminal", icon: Terminal },
@@ -53,7 +56,7 @@ function wallpaperClass(wallpaper: string) {
 const installedVersionStorageKey = "furrbox:last-installed-version-toast";
 
 export function Desktop() {
-  const { activeWindow, wallpaper, token, patchUi } = useFurrBoxStore();
+  const { activeWindow, wallpaper, token, user, patchUi } = useFurrBoxStore();
   const notify = useNotificationStore((state) => state.notify);
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
@@ -61,6 +64,11 @@ export function Desktop() {
   const updateWindow = useWindowStore((state) => state.updateWindow);
   const { wallpaperUrl, wallpaperMode, wallpaperVersion, folders } = useWallpaperStore();
   const [selectedDesktopItem, setSelectedDesktopItem] = useState<string | null>(null);
+  const canManageAccounts = ENABLE_PRESENCE_TOOL && user?.discordId === developerDiscordId;
+  const visibleDesktopIcons = useMemo(
+    () => (canManageAccounts ? [...desktopIcons, { id: "accounts" as const, label: "Accounts", icon: UserPlus }] : desktopIcons),
+    [canManageAccounts]
+  );
 
   const launchDesktopApp = useCallback(
     (id: FurrWindowKind) => {
@@ -131,7 +139,7 @@ export function Desktop() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(0,240,255,0.16),transparent_28%),radial-gradient(circle_at_78%_18%,rgba(255,0,127,0.12),transparent_30%),linear-gradient(180deg,rgba(10,11,16,0.2),rgba(10,11,16,0.72))]" />
 
       <div className="absolute left-7 top-8 z-10 grid gap-5">
-        {desktopIcons.map((item) => {
+        {visibleDesktopIcons.map((item) => {
           const Icon = item.icon;
           return (
             <button
@@ -188,6 +196,7 @@ export function Desktop() {
           if (win.kind === "settings") return <SettingsWindow key={win.id} windowState={win} />;
           if (win.kind === "evidence") return <FurrEvidence key={win.id} windowState={win} />;
           if (ENABLE_PRESENCE_TOOL && FurrPresenceWindow && win.kind === "presence") return <FurrPresenceWindow key={win.id} windowState={win} />;
+          if (ENABLE_PRESENCE_TOOL && win.kind === "accounts") return <FurrAccountWindow key={win.id} windowState={win} />;
           if (win.kind === "browser") return <FurrBrowser key={win.id} windowState={win} />;
           if (win.kind === "viewer") return <FurrFileViewer key={win.id} windowState={win} />;
           return null;

@@ -18,7 +18,7 @@ export type FurrFile = {
   url: string;
 };
 
-export type WindowKey = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
+export type WindowKey = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "accounts";
 export type Wallpaper = "bloom" | "aurora" | "ink";
 export type AuthStage = "lock" | "login" | "desktop";
 export type TerminalProfile = {

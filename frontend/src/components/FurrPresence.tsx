@@ -2,13 +2,12 @@
 
 import { Activity, Bot, FileText, Radar, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { FurrAccountManager } from "@/components/FurrAccountManager";
 import { FurrWindow } from "@/components/FurrWindow";
 import { deleteAdminUser, listPresenceLogs, listPresenceUsers, type PresenceLog, type PresenceUser } from "@/lib/presence";
 import { useFurrBoxStore } from "@/store/furrbox-store";
 import type { FurrWindowState } from "@/store/useWindowStore";
 
-const teamRoles = new Set(["Dev", "Owner", "Mod", "Supporter"]);
+const teamRoles = new Set(["Entwickler", "Owner", "Mod", "Supporter"]);
 const developerDiscordId = "1312104318006071328";
 
 function resolvedName(user: PresenceUser) {
@@ -16,8 +15,9 @@ function resolvedName(user: PresenceUser) {
 }
 
 function cleanRoleName(user: PresenceUser) {
+  if (user.discordId === developerDiscordId) return "Entwickler";
   const role = user.roleName.toLowerCase();
-  if (role.includes("dev")) return "Dev";
+  if (role.includes("dev")) return "Entwickler";
   if (role.includes("owner")) return "Owner";
   if (role.includes("moderator") || role.includes("mod")) return "Mod";
   if (role.includes("supporter")) return "Supporter";
@@ -290,7 +290,7 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
 
                 {!teamUsers.length ? (
                   <div className="px-5 py-12 text-center text-[13px] text-slate-500">
-                    Keine registrierten FurrBox-App-Accounts mit Dev, Owner, Mod oder Supporter Rolle gefunden.
+                    Keine registrierten FurrBox-App-Accounts mit Entwickler, Owner, Mod oder Supporter Rolle gefunden.
                   </div>
                 ) : null}
               </div>
@@ -313,8 +313,6 @@ export function FurrPresence({ windowState }: { windowState: FurrWindowState }) 
                 </div>
               ) : null}
             </div>
-
-            {isPrimaryDeveloper && token ? <FurrAccountManager token={token} onCreated={refreshRegistry} /> : null}
 
             <div className="scroll-soft min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {loadingLogs ? <div className="rounded-xl border border-cyan-300/10 bg-cyan-300/5 p-4 text-[12px] text-cyan-100">Lade Reports...</div> : null}

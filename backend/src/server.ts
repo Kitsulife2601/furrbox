@@ -31,7 +31,7 @@ type FileDto = {
   url: string;
 };
 type UiState = {
-  activeWindow: "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence";
+  activeWindow: "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "accounts";
   wallpaper: "bloom" | "aurora" | "ink";
   startOpen: boolean;
 };

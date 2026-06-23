@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "viewer";
+export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "accounts" | "viewer";
 
 export type WindowCoords = {
   x: number;
@@ -60,6 +60,7 @@ export const WINDOW_MIN_HEIGHT = 200;
 
 export function getWindowMinimumSize(kind: FurrWindowKind) {
   if (kind === "presence") return { minWidth: 900, minHeight: 560 };
+  if (kind === "accounts") return { minWidth: 460, minHeight: 560 };
   if (kind === "furrfs") return { minWidth: 780, minHeight: 520 };
   if (kind === "evidence") return { minWidth: 760, minHeight: 560 };
   if (kind === "viewer") return { minWidth: 520, minHeight: 360 };
@@ -164,6 +165,20 @@ const initialWindows: Record<string, FurrWindowState> = {
     width: 1040,
     height: 690,
     zIndex: 14,
+    prevCoords: null
+  },
+  accounts: {
+    id: "accounts",
+    kind: "accounts",
+    title: "FurrAccountManager",
+    isOpen: false,
+    isMinimized: false,
+    isMaximized: false,
+    x: 260,
+    y: 110,
+    width: 520,
+    height: 650,
+    zIndex: 15,
     prevCoords: null
   }
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, Wifi, WifiOff } from "lucide-react";
+import { FileText, Files, Gavel, Globe, LogOut, MonitorCog, Radar, Search, Terminal, UserPlus, Wifi, WifiOff } from "lucide-react";
 import { useMemo } from "react";
 import { ENABLE_PRESENCE_TOOL } from "@/lib/config";
 import { useFurrBoxStore, type WindowKey } from "@/store/furrbox-store";
@@ -15,6 +15,8 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
   ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];
 
+const developerDiscordId = "1312104318006071328";
+
 export function Taskbar() {
   const { activeWindow, connected, startOpen, user, logout, patchUi } = useFurrBoxStore();
   const windows = useWindowStore((state) => state.windows);
@@ -22,6 +24,11 @@ export function Taskbar() {
   const restoreWindow = useWindowStore((state) => state.restoreWindow);
   const createWindow = useWindowStore((state) => state.createWindow);
   const time = useMemo(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), []);
+  const canManageAccounts = ENABLE_PRESENCE_TOOL && user?.discordId === developerDiscordId;
+  const taskbarApps = useMemo(
+    () => (canManageAccounts ? [...apps, { id: "accounts" as const, label: "Accounts", icon: UserPlus }] : apps),
+    [canManageAccounts]
+  );
   const viewerWindows = useMemo(
     () =>
       Object.values(windows)
@@ -53,7 +60,7 @@ export function Taskbar() {
             <input className="w-full bg-transparent text-[13px] text-slate-100 outline-none placeholder:text-slate-500" placeholder="Search apps, files, settings" />
           </div>
           <div className="grid grid-cols-3 gap-3">
-            {apps.map((app) => {
+            {taskbarApps.map((app) => {
               const Icon = app.icon;
               return (
                 <button
@@ -97,7 +104,7 @@ export function Taskbar() {
               <span className="rounded-[3px] bg-sky-500" />
             </span>
           </button>
-          {apps.map((app) => {
+          {taskbarApps.map((app) => {
             const Icon = app.icon;
             const selected = app.id !== "browser" && windows[app.id]?.isOpen && !windows[app.id]?.isMinimized;
             return (
