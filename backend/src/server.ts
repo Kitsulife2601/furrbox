@@ -11,6 +11,7 @@ import path from "node:path";
 import pty from "node-pty";
 import si from "systeminformation";
 import { Server } from "socket.io";
+import { registerJavis } from "./javis.js";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 
@@ -2965,6 +2966,8 @@ io.on("connection", async (socket) => {
     stopHardwareStreamIfIdle();
   });
 });
+
+registerJavis({ app, io, prisma, requireAuth });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : "Internal server error";

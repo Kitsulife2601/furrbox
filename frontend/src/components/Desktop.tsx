@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal, UserPlus } from "lucide-react";
+import { Bot, Files, Folder, Gavel, Globe, MonitorCog, Radar, Terminal, UserPlus } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FurrBrowser } from "@/components/FurrBrowser";
 import { FurrFS } from "@/components/FurrFS";
 import { FurrEvidence } from "@/components/FurrEvidence";
 import { FurrFileViewer } from "@/components/FurrFileViewer";
+import { FurrJavis } from "@/components/FurrJavis";
 import { FurrNotification } from "@/components/FurrNotification";
 import { SettingsWindow } from "@/components/SettingsWindow";
 import { Taskbar } from "@/components/Taskbar";
@@ -42,6 +43,7 @@ const desktopIcons: { id: FurrWindowKind; label: string; icon: React.ComponentTy
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "settings", label: "Settings", icon: MonitorCog },
   { id: "browser", label: "Browser", icon: Globe },
+  { id: "javis", label: "Javis", icon: Bot },
   { id: "evidence", label: "Evidence", icon: Gavel },
   ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];
@@ -85,7 +87,7 @@ function formatBytes(bytes?: number) {
 }
 
 export function Desktop() {
-  const { activeWindow, wallpaper, token, user, patchUi } = useFurrBoxStore();
+  const { activeWindow, wallpaper, token, user, patchUi, socket } = useFurrBoxStore();
   const notify = useNotificationStore((state) => state.notify);
   const windows = useWindowStore((state) => state.windows);
   const openWindow = useWindowStore((state) => state.openWindow);
@@ -146,6 +148,21 @@ export function Desktop() {
   useEffect(() => {
     if (token) initFurrSocket(token);
   }, [token]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onJavisReminder = (payload: { text?: string }) => {
+      notify({
+        version: FURRBOX_VERSION,
+        title: "Javis Erinnerung",
+        description: payload.text || "Deine Javis-Erinnerung ist fällig!"
+      });
+    };
+    socket.on("javis:reminder", onJavisReminder);
+    return () => {
+      socket.off("javis:reminder", onJavisReminder);
+    };
+  }, [notify, socket]);
 
   useEffect(() => {
     const onDesktopFolderDelete = (event: Event) => {
@@ -287,6 +304,7 @@ export function Desktop() {
           if (win.kind === "furrfs") return <FurrFS key={win.id} windowState={win} />;
           if (win.kind === "terminal") return <TerminalWindow key={win.id} windowState={win} />;
           if (win.kind === "settings") return <SettingsWindow key={win.id} windowState={win} />;
+          if (win.kind === "javis") return <FurrJavis key={win.id} windowState={win} />;
           if (win.kind === "evidence") return <FurrEvidence key={win.id} windowState={win} />;
           if (ENABLE_PRESENCE_TOOL && FurrPresenceWindow && win.kind === "presence") return <FurrPresenceWindow key={win.id} windowState={win} />;
           if (ENABLE_PRESENCE_TOOL && FurrAccountWindow && win.kind === "accounts") return <FurrAccountWindow key={win.id} windowState={win} />;

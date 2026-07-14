@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Bell, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MessageCircle, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
+import { Bell, Bot, CalendarDays, FileText, Files, FolderSearch, Gavel, Globe, Image, LogOut, MessageCircle, MonitorCog, Radar, Search, Settings, Terminal, UserPlus, Wifi, WifiOff, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { FurrChatPanel } from "@/components/FurrChatPanel";
 import type { ChatMessage } from "@/lib/chat";
@@ -13,6 +13,7 @@ const apps: { id: FurrWindowKind; label: string; icon: React.ComponentType<{ siz
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "settings", label: "Settings", icon: MonitorCog },
   { id: "browser", label: "Browser", icon: Globe },
+  { id: "javis", label: "Javis", icon: Bot },
   { id: "evidence", label: "Evidence", icon: Gavel },
   ...(ENABLE_PRESENCE_TOOL ? [{ id: "presence" as const, label: "Presence", icon: Radar }] : [])
 ];

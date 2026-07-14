@@ -90,6 +90,32 @@ CORS_ORIGIN=http://localhost:3000
 BOT_BRIDGE_TOKEN=replace-this-long-random-bridge-secret
 ```
 
+## Javis Assistant
+
+Javis ist der eingebaute FurrBox-Assistent und ersetzt einen separaten n8n-Server samt Jarvis-Workflow. Er läuft direkt im bestehenden Backend-Prozess, verbraucht im Leerlauf keine Ressourcen und wird über das Desktop-Icon "Javis" oder die Taskbar geöffnet.
+
+Eingebaute Befehle (ohne Sprachmodell, komplett offline):
+
+- Uhrzeit und Datum ("Wie spät ist es?", "Welches Datum haben wir?")
+- Erinnerungen und Timer ("Erinnere mich in 10 Minuten an Kaffee", "Timer 5 min") - die Benachrichtigung erscheint als FurrBox-Toast
+- Erinnerungen anzeigen ("Meine Erinnerungen") und löschen ("Erinnerungen löschen")
+- FurrFS-Dateisuche ("Suche datei urlaub")
+- Kopfrechnen ("Was ist 128*4?")
+- "Status" zeigt die aktive Konfiguration
+
+Optional kann Javis freie Fragen über ein OpenAI-kompatibles Sprachmodell beantworten, z. B. ein lokales Ollama:
+
+```bash
+# Beispiel: lokales Ollama (https://ollama.com), deutlich leichter als n8n + Cloud-Workflow
+JAVIS_LLM_URL=http://localhost:11434/v1
+JAVIS_LLM_MODEL=llama3.2
+JAVIS_LLM_API_KEY=
+JAVIS_LLM_TIMEOUT_MS=30000
+JAVIS_SYSTEM_PROMPT=
+```
+
+Ohne `JAVIS_LLM_URL` bleibt Javis im regelbasierten Offline-Modus. Erinnerungen werden im Speicher gehalten und gehen bei einem Backend-Neustart verloren.
+
 ## Discord Bot
 
 The backend includes a `discord.js` v14 bot in `backend/src/bot.ts`. It syncs Discord member roles into SQLite, receives remote moderation commands from FurrBox over the internal Socket.io bridge, writes audit entries to `Dokumente/Moderation_Beweise/Discord_Logs/audit_log.json`, and DMs the Fish Nagie Owner after every moderation action.

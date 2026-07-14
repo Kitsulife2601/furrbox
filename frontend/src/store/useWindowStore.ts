@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "accounts" | "viewer";
+export type FurrWindowKind = "furrfs" | "terminal" | "settings" | "browser" | "evidence" | "presence" | "accounts" | "viewer" | "javis";
 
 export type WindowCoords = {
   x: number;
@@ -67,6 +67,7 @@ export function getWindowMinimumSize(kind: FurrWindowKind) {
   if (kind === "terminal") return { minWidth: 640, minHeight: 400 };
   if (kind === "browser") return { minWidth: 760, minHeight: 500 };
   if (kind === "settings") return { minWidth: 420, minHeight: 420 };
+  if (kind === "javis") return { minWidth: 420, minHeight: 480 };
   return { minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT };
 }
 
@@ -179,6 +180,20 @@ const initialWindows: Record<string, FurrWindowState> = {
     width: 920,
     height: 650,
     zIndex: 15,
+    prevCoords: null
+  },
+  javis: {
+    id: "javis",
+    kind: "javis",
+    title: "Javis",
+    isOpen: false,
+    isMinimized: false,
+    isMaximized: false,
+    x: 360,
+    y: 100,
+    width: 520,
+    height: 620,
+    zIndex: 16,
     prevCoords: null
   }
 };
