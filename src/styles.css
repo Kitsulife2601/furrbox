@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: var(--os-bg);
+  --color-surface: var(--os-surface);
+  --color-elevated: var(--os-elevated);
+  --color-fg: var(--os-fg);
+  --color-muted: var(--os-muted);
+  --color-subtle: var(--os-subtle);
+  --color-accent: var(--os-accent);
+  --color-accent-fg: var(--os-accent-fg);
+  --color-border: var(--os-border);
+  --color-danger: var(--os-danger);
+  --color-taskbar: var(--os-taskbar);
+  --font-sans: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+:root {
+  --os-bg: #0b0c10;
+  --os-surface: #1c1d22;
+  --os-elevated: #26272e;
+  --os-fg: #f3f4f6;
+  --os-muted: #b4b8c0;
+  --os-subtle: #8b909a;
+  --os-accent: #4cc2ff;
+  --os-accent-fg: #041018;
+  --os-border: color-mix(in oklab, var(--os-fg) 12%, transparent);
+  --os-danger: #c42b1c;
+  --os-taskbar: color-mix(in oklab, #16171c 78%, transparent);
+}
+
+[data-theme="light"] {
+  --os-bg: #d5dce6;
+  --os-surface: #f4f6f9;
+  --os-elevated: #ffffff;
+  --os-fg: #1a1c22;
+  --os-muted: #4b5160;
+  --os-subtle: #6b7280;
+  --os-accent: #0078d4;
+  --os-accent-fg: #ffffff;
+  --os-border: color-mix(in oklab, var(--os-fg) 14%, transparent);
+  --os-danger: #c42b1c;
+  --os-taskbar: color-mix(in oklab, #eef1f6 82%, transparent);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--os-bg);
+    color: var(--os-fg);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+.wallpaper-bloom {
+  background:
+    radial-gradient(1200px 700px at 12% 18%, color-mix(in oklab, var(--os-accent) 28%, transparent), transparent 62%),
+    radial-gradient(900px 600px at 88% 72%, color-mix(in oklab, #3a4a78 45%, transparent), transparent 60%),
+    linear-gradient(165deg, #0a1018 0%, #12141c 48%, #0e0f14 100%);
+}
+
+[data-theme="light"] .wallpaper-bloom {
+  background:
+    radial-gradient(1100px 640px at 18% 12%, color-mix(in oklab, var(--os-accent) 22%, white), transparent 58%),
+    radial-gradient(900px 520px at 90% 80%, #c9d4e8, transparent 58%),
+    linear-gradient(180deg, #dce6f2 0%, #cfd8e6 100%);
+}
+
+.wallpaper-dusk {
+  background:
+    radial-gradient(900px 500px at 80% 10%, color-mix(in oklab, #6a7a9a 40%, transparent), transparent 55%),
+    linear-gradient(180deg, #141820 0%, #0c0e12 100%);
+}
+
+[data-theme="light"] .wallpaper-dusk {
+  background: linear-gradient(180deg, #f0e6dc 0%, #d5cfc8 100%);
+}
+
+.wallpaper-mist {
+  background:
+    radial-gradient(800px 800px at 50% 40%, color-mix(in oklab, var(--os-accent) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, #101318 0%, #0b0c10 100%);
+}
+
+[data-theme="light"] .wallpaper-mist {
+  background: linear-gradient(180deg, #e8eef4 0%, #d7dee8 100%);
+}
+
+.wallpaper-plain {
+  background: var(--os-bg);
+}
+
+.desk-label {
+  text-shadow: 0 1px 3px color-mix(in oklab, #000 70%, transparent);
+}
+
+[data-theme="light"] .desk-label {
+  text-shadow: 0 1px 2px color-mix(in oklab, #fff 70%, transparent);
+}
+
+.mica {
+  background: var(--os-taskbar);
+  backdrop-filter: blur(40px) saturate(1.4);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--os-fg) 10%, transparent);
+}
+
+.win-shadow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--os-fg) 10%, transparent),
+    0 18px 48px color-mix(in oklab, #000 42%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

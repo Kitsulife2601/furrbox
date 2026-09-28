@@ -1,0 +1,282 @@
+// FurrEvidence: structured evidence cases in the shared FurrFS + Discord moderation queue.
+import { createServerFn } from "@tanstack/react-start";
+import { authMiddleware } from "@/lib/auth/middleware";
+import {
+  discordName,
+  getSql,
+  iso,
+  loadMe,
+  newId,
+  notify,
+  requirePermission,
+  writeFile,
+  writeTextFile,
+} from "../core";
+import { DISCORD_LOGS, EVIDENCE_ROOT, MAX_UPLOAD_BYTES, formatSize, sanitizeName, sanitizeSegment } from "../paths";
+import { MODERATION_ACTIONS, type ModerationAction } from "../roles";
+import type { EvidenceCase, Me, MessageProof, ModerationEntry } from "../types";
+
+export const VIOLATION_CATEGORIES = [
+  "Harassment",
+  "Chat Spam",
+  "NSFW Content",
+  "Threats",
+  "Impersonation",
+  "ToS Violation",
+  "Other",
+] as const;
+
+type EvidenceInput = {
+  platform: "Discord" | "VRChat";
+  targetPrimary: string;
+  targetDiscordId: string;
+  targetDisplayName: string;
+  targetSecondary: string;
+  messageId: string;
+  messageProof: MessageProof | null;
+  violationCategory: string;
+  notes: string;
+  files: { name: string; mimeType: string; base64: string }[];
+};
+
+function formatGermanDateTime(date: Date) {
+  return (
+    new Intl.DateTimeFormat("de-DE", {
+      timeZone: "Europe/Berlin",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .format(date)
+      .replace(",", " -") + " Uhr"
+  );
+}
+
+function buildReport(meta: EvidenceInput & { caseId: string; createdAt: Date; moderator: Me; fileSizes: number[] }) {
+  const channel = meta.messageProof?.channelName
+    ? `#${meta.messageProof.channelName}${meta.messageProof.channelId ? ` (ID: ${meta.messageProof.channelId})` : ""}`
+    : meta.targetSecondary || "Nicht angegeben";
+  const files = meta.files.length
+    ? meta.files.map((f, i) => `${i + 1}. ${f.name} (${f.mimeType || "Datei"}, ${formatSize(meta.fileSizes[i])})`).join("\r\n")
+    : "Keine separaten Dateien angehängt.";
+  return [
+    "==================================================",
+    "        FURRBOX SYSTEM-MODERATIONSPROTOKOLL",
+    "==================================================",
+    "[FALL-INFORMATIONEN]",
+    `Fall-ID       : ${meta.caseId}`,
+    `Zeitpunkt     : ${formatGermanDateTime(meta.createdAt)}`,
+    `Plattform     : ${meta.platform}`,
+    `Kategorie     : ${meta.violationCategory}`,
+    `Zielperson    : ${meta.targetDisplayName || meta.targetPrimary} (ID: ${meta.targetDiscordId || "Nicht angegeben"})`,
+    `Moderator     : ${meta.moderator.displayName} (Rolle: ${meta.moderator.roleLabel})`,
+    "",
+    "[BEWEISMITTEL & QUELLEN]",
+    `Nachrichten-ID: ${meta.messageId || "Nicht angegeben"}`,
+    `Server/Channel: ${channel}`,
+    "Inhalt der Nachricht:",
+    "--------------------------------------------------",
+    meta.messageProof?.content?.trim() || "Keine Discord-Nachricht geladen.",
+    "--------------------------------------------------",
+    "",
+    "[ANGEHÄNGTE DATEIEN]",
+    "--------------------------------------------------",
+    files,
+    "--------------------------------------------------",
+    "",
+    "[MODERATOR NOTIZEN]",
+    "--------------------------------------------------",
+    meta.notes || "Keine Moderator-Notizen eingetragen.",
+    "--------------------------------------------------",
+    "==================================================",
+    "",
+  ].join("\r\n");
+}
+
+export const saveEvidenceCase = createServerFn({ method: "POST" })
+  .validator((input: EvidenceInput): EvidenceInput => {
+    const files = Array.isArray(input.files) ? input.files.slice(0, 32) : [];
+    const total = files.reduce((sum, f) => sum + Math.floor((String(f.base64 ?? "").length * 3) / 4), 0);
+    if (total > MAX_UPLOAD_BYTES) throw new Error("Beweisdateien sind zusammen zu groß (max. 3 MB).");
+    return {
+      platform: input.platform === "VRChat" ? "VRChat" : "Discord",
+      targetPrimary: String(input.targetPrimary ?? "").trim().slice(0, 200),
+      targetDiscordId: String(input.targetDiscordId ?? "").trim(),
+      targetDisplayName: String(input.targetDisplayName ?? "").trim().slice(0, 200),
+      targetSecondary: String(input.targetSecondary ?? "").trim().slice(0, 500),
+      messageId: String(input.messageId ?? "").trim(),
+      messageProof: input.messageProof && typeof input.messageProof === "object" ? input.messageProof : null,
+      violationCategory: String(input.violationCategory ?? "Other").trim().slice(0, 80) || "Other",
+      notes: String(input.notes ?? "").trim().slice(0, 10_000),
+      files: files.map((f) => ({
+        name: sanitizeName(String(f.name ?? "")) || "Beweis",
+        mimeType: String(f.mimeType || "application/octet-stream").slice(0, 120),
+        base64: String(f.base64 ?? ""),
+      })),
+    };
+  })
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const me = await requirePermission(context.userId, "canUseEvidence");
+    if (!data.targetPrimary) throw new Error("Zielperson muss angegeben werden.");
+    if (!data.files.length && !data.messageProof?.found && !data.notes) {
+      throw new Error("Mindestens eine Beweisdatei, eine geladene Discord-Nachricht oder Notizen sind nötig.");
+    }
+
+    const createdAt = new Date();
+    const targetName =
+      data.targetDisplayName || (data.targetDiscordId ? await discordName(data.targetDiscordId) : data.targetPrimary);
+    const caseId = `${sanitizeSegment(targetName)}_${createdAt.toISOString().replace(/[:.]/g, "-")}`;
+    const casePath = `${EVIDENCE_ROOT}/${data.platform}/${caseId}`;
+    const fileSizes = data.files.map((f) => Math.floor((f.base64.length * 3) / 4));
+
+    for (const [i, f] of data.files.entries()) {
+      await writeFile({
+        scope: "public",
+        ownerId: null,
+        folder: casePath,
+        name: f.name,
+        mimeType: f.mimeType,
+        base64: f.base64,
+        size: fileSizes[i],
+        createdBy: context.userId,
+      });
+    }
+    const report = buildReport({ ...data, targetDisplayName: targetName, caseId, createdAt, moderator: me, fileSizes });
+    await writeTextFile("public", null, `${casePath}/Moderationsprotokoll.txt`, report, context.userId);
+    if (data.platform === "Discord") {
+      await writeTextFile("public", null, `${DISCORD_LOGS}/${sanitizeSegment(targetName)}_Report.txt`, report, context.userId);
+    }
+    await notify("Neuer Evidence-Fall", `${me.displayName} hat einen ${data.platform}-Fall zu ${targetName} (${data.violationCategory}) angelegt.`);
+    return { caseId, casePath };
+  });
+
+export const listEvidenceCases = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<EvidenceCase[]> => {
+    await requirePermission(context.userId, "canUseEvidence");
+    const sql = await getSql();
+    const rows = await sql.query<{ folder: string; name: string; created_at: unknown; file_count: number }>(
+      `select f.folder, f.name, f.created_at,
+         (select count(*)::int from furr_file c where c.scope = 'public' and c.owner_id is null
+            and c.folder = f.folder || '/' || f.name and c.is_folder = false) as file_count
+       from furr_file f
+       where f.scope = 'public' and f.owner_id is null and f.is_folder = true and f.folder in ($1, $2)
+       order by f.created_at desc limit 100`,
+      [`${EVIDENCE_ROOT}/Discord`, `${EVIDENCE_ROOT}/VRChat`],
+    );
+    return rows.map((r) => ({
+      path: `${r.folder}/${r.name}`,
+      platform: r.folder.split("/").pop() ?? "",
+      caseId: r.name,
+      createdAt: iso(r.created_at) ?? "",
+      fileCount: Number(r.file_count) || 0,
+    }));
+  });
+
+// ---------- Discord message inspection (answered by the bot through the bridge) ----------
+
+export const requestMessageInspect = createServerFn({ method: "POST" })
+  .validator((messageId: string) => String(messageId ?? "").trim())
+  .middleware([authMiddleware])
+  .handler(async ({ context, data: messageId }) => {
+    await requirePermission(context.userId, "canUseEvidence");
+    if (!/^\d{17,22}$/.test(messageId)) throw new Error("Nachrichten-ID muss eine Discord-Snowflake sein.");
+    const sql = await getSql();
+    const id = newId();
+    await sql`insert into message_inspect (id, message_id, requested_by) values (${id}, ${messageId}, ${context.userId})`;
+    return { requestId: id };
+  });
+
+export const getMessageInspect = createServerFn({ method: "GET" })
+  .validator((requestId: string) => String(requestId ?? ""))
+  .middleware([authMiddleware])
+  .handler(async ({ context, data: requestId }) => {
+    const sql = await getSql();
+    const rows = await sql<{ status: string; result_json: string | null }>`
+      select status, result_json from message_inspect where id = ${requestId} and requested_by = ${context.userId}`;
+    const row = rows[0];
+    if (!row) throw new Error("Anfrage nicht gefunden.");
+    let result: MessageProof | null = null;
+    if (row.result_json) {
+      try {
+        result = JSON.parse(row.result_json) as MessageProof;
+      } catch {
+        result = null;
+      }
+    }
+    return { status: row.status, result };
+  });
+
+// ---------- Moderation (ban / warn / timeout / mute), executed by the Discord bot ----------
+
+export const queueModeration = createServerFn({ method: "POST" })
+  .validator((input: { action: ModerationAction; targetDiscordId: string; reason: string; durationMs?: number }) => ({
+    action: String(input.action ?? "").toLowerCase() as ModerationAction,
+    targetDiscordId: String(input.targetDiscordId ?? "").trim(),
+    reason: String(input.reason ?? "").trim(),
+    durationMs: input.durationMs === undefined ? undefined : Number(input.durationMs),
+  }))
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const me = await loadMe(context.userId);
+    if (!MODERATION_ACTIONS.includes(data.action)) throw new Error("Unbekannte Moderationsaktion.");
+    if (!me.permissions.moderationActions.includes(data.action)) {
+      throw new Error(me.permissions.isTeam ? "Supporter dürfen nur Warn und Timeout ausführen." : "Keine Moderationsrechte.");
+    }
+    if (!me.discordId) throw new Error("Hinterlege zuerst deine Discord-ID (Kontoverwaltung), damit der Bot dich zuordnen kann.");
+    if (!/^\d{17,22}$/.test(data.targetDiscordId)) throw new Error("Ziel muss eine Discord-Snowflake sein.");
+    if (data.reason.length < 3 || data.reason.length > 512) throw new Error("Begründung muss 3-512 Zeichen lang sein.");
+    const needsDuration = data.action === "timeout" || data.action === "mute";
+    if (needsDuration && (!data.durationMs || data.durationMs < 60_000 || data.durationMs > 2_419_200_000)) {
+      throw new Error("Dauer muss zwischen 1 Minute und 28 Tagen liegen.");
+    }
+    const sql = await getSql();
+    const id = newId();
+    await sql`
+      insert into moderation_request (id, action, moderator_user_id, moderator_discord_id, target_discord_id, reason, duration_ms)
+      values (${id}, ${data.action}, ${context.userId}, ${me.discordId}, ${data.targetDiscordId}, ${data.reason},
+              ${needsDuration ? Math.trunc(data.durationMs!) : null})`;
+    return { requestId: id };
+  });
+
+export const listModeration = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<ModerationEntry[]> => {
+    await requirePermission(context.userId, "canUseEvidence");
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      action: string;
+      target_discord_id: string;
+      target_name: string | null;
+      moderator_name: string | null;
+      reason: string;
+      duration_ms: number | null;
+      status: ModerationEntry["status"];
+      error: string | null;
+      created_at: unknown;
+      completed_at: unknown;
+    }>`
+      select m.id, m.action, m.target_discord_id, coalesce(dm.nickname, dm.display_name) as target_name,
+             p.display_name as moderator_name, m.reason, m.duration_ms, m.status, m.error, m.created_at, m.completed_at
+      from moderation_request m
+      left join discord_member dm on dm.discord_id = m.target_discord_id
+      left join furr_profile p on p.user_id = m.moderator_user_id
+      order by m.created_at desc limit 50`;
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      targetDiscordId: r.target_discord_id,
+      targetName: r.target_name ?? r.target_discord_id,
+      moderatorName: r.moderator_name ?? "Unbekannt",
+      reason: r.reason,
+      durationMs: r.duration_ms === null ? null : Number(r.duration_ms),
+      status: r.status,
+      error: r.error,
+      createdAt: iso(r.created_at) ?? "",
+      completedAt: iso(r.completed_at),
+    }));
+  });

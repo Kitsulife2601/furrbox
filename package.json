@@ -1,72 +1,97 @@
 {
-  "name": "furrbox",
-  "version": "1.0.40",
+  "name": "app-builder-workspace",
   "private": true,
-  "description": "FurrBox private Windows 11 inspired desktop environment with real-time file sync.",
-  "main": "electron/main.js",
-  "workspaces": [
-    "frontend",
-    "mobile",
-    "backend"
-  ],
+  "sideEffects": false,
+  "type": "module",
+  "overrides": {
+    "nf3": "0.3.17"
+  },
   "scripts": {
-    "dev": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
-    "dev:web": "concurrently -k -n backend,frontend -c cyan,green \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\"",
-    "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
-    "mobile:dev": "npm --workspace mobile run dev",
-    "mobile:build": "npm --workspace mobile run build",
-    "mobile:start": "npm --workspace mobile run start",
-    "build": "npm --workspace frontend run build && npm --workspace backend run build",
-    "build:exe-frontend": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
-    "build:exe-frontend:standard": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=false npm --workspace frontend run build",
-    "build:exe-frontend:admin": "cross-env NEXT_STATIC_EXPORT=true NEXT_PUBLIC_API_URL=http://5.249.162.130:4000 NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run build",
-    "dist:standard": "npm run build:exe-frontend:standard && cross-env FURRBOX_EDITION=Standard node scripts/write-edition.js && cross-env FURRBOX_EDITION=Standard electron-builder --win nsis --config electron-builder.config.cjs && cross-env FURRBOX_EDITION=Standard node scripts/collect-update-artifacts.js",
-    "dist:admin": "npm run build:exe-frontend:admin && cross-env FURRBOX_EDITION=AdminEdition node scripts/write-edition.js && cross-env FURRBOX_EDITION=AdminEdition electron-builder --win nsis --config electron-builder.config.cjs && cross-env FURRBOX_EDITION=AdminEdition node scripts/collect-update-artifacts.js",
-    "dist:dual": "npm run dist:standard && npm run dist:admin",
-    "dist:win": "npm run dist:standard",
-    "dist:portable": "npm run build:exe-frontend:standard && electron-builder --win portable",
-    "lint": "npm --workspace frontend run lint && npm --workspace backend run lint"
+    "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
+    "build": "node scripts/with-app-env.mjs vite build && npm run db:migrate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "build:dev": "node scripts/with-app-env.mjs vite build --mode development",
+    "preview": "node scripts/with-app-env.mjs vite preview",
+    "preview:restart": "node scripts/preview.mjs restart",
+    "preview:stop": "node scripts/preview.mjs stop",
+    "typecheck": "tsc --noEmit",
+    "check:auth": "node scripts/check-auth-invariant.mjs",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts",
+    "lint": "eslint .",
+    "format": "prettier --write ."
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "@electric-sql/pglite": "^0.5.4",
+    "@hookform/resolvers": "^5.7.0",
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-progress": "^1.1.8",
+    "@radix-ui/react-radio-group": "^1.3.8",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toggle": "^1.1.10",
+    "@radix-ui/react-toggle-group": "^1.1.11",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/react-query": "^5.101.0",
+    "@tanstack/react-router": "^1.170.0",
+    "@tanstack/react-start": "^1.168.0",
+    "@tanstack/react-table": "^8.21.0",
+    "@tanstack/router-plugin": "^1.168.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "better-auth": "~1.6.30",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "date-fns": "^4.0.0",
+    "jose": "6.2.9",
+    "kysely": "^0.28.5",
+    "lightningcss": "^1.28.0",
+    "lucide-react": "^0.510.0",
+    "nitro": "3.0.260610-beta",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-day-picker": "^9.14.0",
+    "react-dom": "^19.2.0",
+    "react-hook-form": "^7.54.0",
+    "react-resizable-panels": "^4.6.5",
+    "recharts": "^2.13.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.3.0",
+    "tw-animate-css": "^1.3.4",
+    "typescript": "^5.7.0",
+    "vaul": "^1.1.2",
+    "vite": "^8.2.0",
+    "zod": "^4.4.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
-    "electron": "^42.4.1",
-    "electron-builder": "^26.0.12",
-    "wait-on": "^8.0.1"
-  },
-  "build": {
-    "appId": "de.furrbox.desktop.standard",
-    "productName": "FurrBox Standard",
-    "files": [
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "frontend/out",
-        "to": "frontend/out"
-      }
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
-  },
-  "overrides": {
-    "postcss": "^8.5.15"
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^22.16.5",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.20.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-plugin-prettier": "^5.2.6",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^15.15.0",
+    "playwright": "^1.62.0",
+    "prettier": "^3.4.0",
+    "typescript-eslint": "^8.56.1"
   }
 }
