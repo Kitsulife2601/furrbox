@@ -152,3 +152,60 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Boot animation (BootScreen.tsx) — mirrors desktop/splash.html. */
+.boot-glow {
+  background:
+    radial-gradient(40% 35% at 50% 45%, color-mix(in srgb, var(--boot-accent) 18%, transparent), transparent 70%),
+    radial-gradient(30% 30% at 60% 60%, rgb(167 139 250 / 0.12), transparent 70%);
+  animation: boot-breathe 4s ease-in-out infinite;
+}
+.boot-ring {
+  animation: boot-spin 2.4s linear infinite;
+}
+.boot-ring circle {
+  fill: none;
+  stroke: var(--boot-accent);
+  stroke-opacity: 0.8;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 280 400;
+}
+.boot-paw {
+  fill: var(--boot-accent);
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--boot-accent) 55%, transparent));
+  animation: boot-pulse 1.6s ease-in-out infinite;
+}
+.boot-word {
+  background: linear-gradient(90deg, #fff, var(--boot-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.boot-fill {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--boot-accent) 40%, transparent), var(--boot-accent), #a78bfa);
+  transition: width 0.45s ease;
+}
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes boot-breathe {
+  50% {
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
+}
+@keyframes boot-pulse {
+  50% {
+    transform: scale(1.06);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-glow,
+  .boot-ring,
+  .boot-paw {
+    animation: none;
+  }
+}

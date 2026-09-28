@@ -4,23 +4,70 @@
     <meta charset="utf-8" />
     <title>FurrBox</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0b0c10; color: #f3f4f6; font-family: "Segoe UI", system-ui, sans-serif; }
+      :root { --accent: #4cc2ff; --accent2: #a78bfa; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #06070b; color: #f3f4f6; font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
       body { display: grid; place-items: center; }
-      p { margin: 0; text-align: center; }
-      .title { font-size: 13px; letter-spacing: .2em; text-transform: uppercase; color: #4cc2ff; }
-      .status { margin-top: 10px; font-size: 14px; color: #b4b8c0; }
-      .error { margin-top: 14px; max-width: 520px; font-size: 12px; color: #fca5a5; white-space: pre-wrap; }
+      .glow { position: fixed; inset: -20%; background: radial-gradient(40% 35% at 50% 45%, rgba(76, 194, 255, .18), transparent 70%), radial-gradient(30% 30% at 60% 60%, rgba(167, 139, 250, .12), transparent 70%); animation: breathe 4s ease-in-out infinite; }
+      .stars { position: fixed; inset: 0; background-image: radial-gradient(1px 1px at 12% 20%, #fff8, transparent), radial-gradient(1px 1px at 78% 30%, #fff6, transparent), radial-gradient(1.5px 1.5px at 30% 80%, #fff5, transparent), radial-gradient(1px 1px at 88% 75%, #fff7, transparent), radial-gradient(1px 1px at 55% 12%, #fff5, transparent), radial-gradient(1px 1px at 20% 55%, #fff4, transparent); animation: drift 30s linear infinite; }
+      .stage { position: relative; display: flex; flex-direction: column; align-items: center; }
+      .logo { position: relative; width: 150px; height: 150px; }
+      .ring { position: absolute; inset: 0; animation: spin 2.4s linear infinite; }
+      .ring circle { fill: none; stroke: url(#rg); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 280 400; animation: draw 1.4s ease-out both; }
+      .paw { position: absolute; inset: 30px; filter: drop-shadow(0 0 14px rgba(76, 194, 255, .55)); }
+      .paw ellipse, .paw path { fill: var(--accent); transform-box: fill-box; transform-origin: center; opacity: 0; animation: pop .5s cubic-bezier(.3, 1.6, .5, 1) forwards; }
+      .paw .t1 { animation-delay: .15s } .paw .t2 { animation-delay: .3s } .paw .t3 { animation-delay: .45s } .paw .t4 { animation-delay: .6s } .paw .pad { animation-delay: .8s }
+      .word { margin-top: 26px; display: flex; gap: 2px; font-size: 30px; font-weight: 600; letter-spacing: .06em; }
+      .word span { opacity: 0; transform: translateY(10px); animation: rise .5s ease-out forwards; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .bar { margin-top: 26px; width: 220px; height: 3px; border-radius: 3px; background: #ffffff14; overflow: hidden; }
+      .bar i { display: block; height: 100%; width: 40%; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--accent), var(--accent2)); animation: slide 1.3s ease-in-out infinite; }
+      .status { margin-top: 12px; min-height: 18px; font-size: 13px; color: #9aa1ad; animation: fade 1s 1s both; }
+      .error { margin-top: 14px; max-width: 520px; font-size: 12px; color: #fca5a5; white-space: pre-wrap; text-align: center; }
+      @keyframes pop { from { opacity: 0; transform: scale(.2) } to { opacity: 1; transform: scale(1) } }
+      @keyframes rise { to { opacity: 1; transform: none } }
+      @keyframes spin { to { transform: rotate(360deg) } }
+      @keyframes draw { from { stroke-dasharray: 0 400 } }
+      @keyframes slide { from { transform: translateX(-110%) } to { transform: translateX(260%) } }
+      @keyframes breathe { 50% { opacity: .6; transform: scale(1.05) } }
+      @keyframes drift { to { transform: translateY(-40px) } }
+      @keyframes fade { from { opacity: 0 } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
     </style>
   </head>
   <body>
-    <div>
-      <p class="title">FurrBox</p>
-      <p class="status" id="status">Server wird gestartet…</p>
+    <div class="glow"></div>
+    <div class="stars"></div>
+    <div class="stage">
+      <div class="logo">
+        <svg class="ring" viewBox="0 0 150 150" aria-hidden="true">
+          <defs>
+            <linearGradient id="rg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4cc2ff" /><stop offset="1" stop-color="#a78bfa" stop-opacity=".2" /></linearGradient>
+          </defs>
+          <circle cx="75" cy="75" r="70" />
+        </svg>
+        <svg class="paw" viewBox="0 0 100 100" aria-hidden="true">
+          <g transform="rotate(-20 20 42)"><ellipse class="t1" cx="20" cy="42" rx="9" ry="12" /></g>
+          <g transform="rotate(-6 38 24)"><ellipse class="t2" cx="38" cy="24" rx="10" ry="13" /></g>
+          <g transform="rotate(6 62 24)"><ellipse class="t3" cx="62" cy="24" rx="10" ry="13" /></g>
+          <g transform="rotate(20 80 42)"><ellipse class="t4" cx="80" cy="42" rx="9" ry="12" /></g>
+          <path class="pad" d="M50 48c-13 0-26 13-28 26-2 11 6 17 15 15 5-1 9-3 13-3s8 2 13 3c9 2 17-4 15-15-2-13-15-26-28-26z" />
+        </svg>
+      </div>
+      <div class="word" id="word"></div>
+      <div class="bar"><i></i></div>
+      <p class="status" id="status">System wird hochgefahren…</p>
       <p class="error" id="error"></p>
     </div>
     <script>
+      const word = document.getElementById("word");
+      [..."FurrBox"].forEach((ch, i) => {
+        const span = document.createElement("span");
+        span.textContent = ch;
+        span.style.animationDelay = `${1 + i * 0.07}s`;
+        word.appendChild(span);
+      });
       window.furrbox?.onStatus?.((text, isError) => {
         document.getElementById(isError ? "error" : "status").textContent = text;
+        if (isError) document.querySelector(".bar").style.visibility = "hidden";
       });
     </script>
   </body>

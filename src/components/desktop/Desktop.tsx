@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -15,17 +15,12 @@ import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
+import { BootScreen } from "./BootScreen";
 import { DesktopIcons } from "./DesktopIcons";
 import { UpdatePopup } from "./UpdatePopup";
 import { Taskbar } from "./Taskbar";
 import { WindowFrame } from "./WindowFrame";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
-
-function playBootSound(volume: number) {
-  const audio = new Audio("/audio/boot.mp3");
-  audio.volume = Math.max(0, Math.min(volume / 100, 1)) * 0.5;
-  audio.play().catch(() => undefined);
-}
 
 export function Desktop() {
   const { user, isPending } = useCurrentUserState();
@@ -45,6 +40,8 @@ export function Desktop() {
     if (!isPending) setResolved(true);
   }, [isPending]);
   const sessionUser = isPending ? lastUser.current : user;
+  const [booting, setBooting] = useState(true);
+  const finishBoot = useCallback(() => setBooting(false), []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -54,7 +51,8 @@ export function Desktop() {
   const wallpaperLayout = useDesktop((s) => s.wallpaperLayout) ?? DEFAULT_WALLPAPER_LAYOUT;
   const bg = wallpaperStyle(wallpaperUrl, wallpaperLayout);
 
-  // Auth stages from FurrBox: lock screen -> sign in -> desktop.
+  // Auth stages from FurrBox: boot animation -> lock screen -> sign in -> desktop.
+  if (booting) return <BootScreen ready={resolved} onDone={finishBoot} />;
   if (locked) return <LockScreen userName={sessionUser?.displayName ?? sessionUser?.primaryEmail ?? null} style={bg} />;
   if (!resolved) {
     return <div className={`grid h-dvh place-items-center bg-cover bg-center wallpaper-${wallpaper} text-sm text-muted`} style={bg}>FurrBox startet…</div>;
@@ -75,8 +73,6 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const wallpaper = useDesktop((s) => s.wallpaper);
   const nightLight = useDesktop((s) => s.nightLight);
   const brightness = useDesktop((s) => s.brightness);
-  const bootSound = useDesktop((s) => s.bootSound);
-  const volume = useDesktop((s) => s.volume);
   const windows = useDesktop((s) => s.windows);
   const startOpen = useDesktop((s) => s.startOpen);
   const searchOpen = useDesktop((s) => s.searchOpen);
@@ -92,16 +88,8 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const [renaming, setRenaming] = useState<FurrFile | null>(null);
   const [removing, setRemoving] = useState<FurrFile | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-  const bootPlayed = useRef(false);
 
   useFurrSync(true);
-
-  useEffect(() => {
-    if (bootSound && !bootPlayed.current) {
-      bootPlayed.current = true;
-      playBootSound(volume);
-    }
-  }, [bootSound, volume]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
