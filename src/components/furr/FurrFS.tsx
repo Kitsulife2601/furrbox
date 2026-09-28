@@ -323,6 +323,13 @@ export function FurrFS({ payload, startAtPc }: { payload?: WindowPayload; startA
         <div
           className={cn("relative min-h-0 flex-1 overflow-auto p-3", dragging && "outline-2 -outline-offset-4 outline-dashed outline-accent")}
           onClick={() => setSelected(null)}
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === "Delete" && selectedFile) {
+              e.preventDefault();
+              setDialog({ remove: selectedFile });
+            }
+          }}
           onContextMenu={(e) => {
             if (!scope) return;
             e.preventDefault();

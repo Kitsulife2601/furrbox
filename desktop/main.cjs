@@ -2,7 +2,7 @@
 // Default: starts the bundled FurrBox server locally (database stored in the user profile)
 // and shows it fullscreen. With "serverUrl" in furrbox-config.json the app instead connects
 // to a central FurrBox server, so several PCs share files, chat and presence.
-const { app, BrowserWindow, Menu, globalShortcut, shell, dialog } = require("electron");
+const { app, BrowserWindow, Menu, globalShortcut, shell, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -116,6 +116,55 @@ async function startLocalServer(config) {
   return origin;
 }
 
+// ---------- Auto-Update (GitHub Releases of Kitsulife2601/furrbox) ----------
+// Only the installed (NSIS) build updates itself; the portable exe and `electron .` just report.
+let updateState = { status: "idle", version: app.getVersion() };
+let autoUpdater = null;
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  mainWindow?.webContents.send("furrbox:update", updateState);
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_FILE) {
+    updateState = { ...updateState, status: "unsupported" };
+    return;
+  }
+  ({ autoUpdater } = require("electron-updater"));
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", error: undefined }));
+  autoUpdater.on("update-available", (info) => setUpdateState({ status: "downloading", newVersion: info.version, percent: 0, notes: releaseNotes(info) }));
+  autoUpdater.on("update-not-available", () => setUpdateState({ status: "current", checkedAt: new Date().toISOString() }));
+  autoUpdater.on("download-progress", (p) => setUpdateState({ status: "downloading", percent: Math.round(p.percent) }));
+  autoUpdater.on("update-downloaded", (info) => setUpdateState({ status: "ready", newVersion: info.version, notes: releaseNotes(info) }));
+  autoUpdater.on("error", (error) => setUpdateState({ status: "error", error: error?.message ?? String(error) }));
+  const check = () => autoUpdater.checkForUpdates().catch(() => undefined);
+  setTimeout(check, 10_000);
+  setInterval(check, 30 * 60_000);
+}
+
+function releaseNotes(info) {
+  const notes = info?.releaseNotes;
+  const text = Array.isArray(notes) ? notes.map((n) => n.note).join("\n") : String(notes ?? "");
+  return text.replace(/<[^>]+>/g, "").trim().slice(0, 1500);
+}
+
+ipcMain.handle("furrbox:update-state", () => updateState);
+ipcMain.handle("furrbox:update-check", async () => {
+  if (!autoUpdater) return updateState;
+  await autoUpdater.checkForUpdates().catch((error) => setUpdateState({ status: "error", error: error?.message ?? String(error) }));
+  return updateState;
+});
+ipcMain.handle("furrbox:update-install", () => {
+  if (!autoUpdater || updateState.status !== "ready") return false;
+  app.isQuitting = true;
+  if (serverProcess) serverProcess.kill();
+  autoUpdater.quitAndInstall(false, true);
+  return true;
+});
+
 function setStatus(text, isError = false) {
   mainWindow?.webContents.send("furrbox:status", text, isError);
 }
@@ -137,6 +186,8 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // FurrBrowser renders real pages in a <webview> (iframes are blocked by many sites).
+      webviewTag: true,
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
@@ -164,6 +215,23 @@ async function createWindow() {
   }
 }
 
+// FurrBrowser <webview>: no preload / node access, popups open inside the same view.
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("will-attach-webview", (_e, webPreferences, params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    if (!/^https?:\/\//.test(params.src || "")) params.src = "about:blank";
+  });
+  if (contents.getType() === "webview") {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//.test(url)) contents.loadURL(url);
+      return { action: "deny" };
+    });
+  }
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -187,6 +255,7 @@ if (!app.requestSingleInstanceLock()) {
       if (choice === 0) app.quit();
     });
     createWindow();
+    setupAutoUpdater();
   });
 
   app.on("before-quit", () => {

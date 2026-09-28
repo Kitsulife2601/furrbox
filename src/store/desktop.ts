@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppId } from "@/lib/apps";
@@ -26,6 +27,31 @@ export type OsWindow = Rect & {
 
 export type WallpaperId = "bloom" | "dusk" | "mist" | "plain";
 export type ThemeId = "dark" | "light";
+export type WallpaperFit = "fill" | "fit" | "stretch" | "center" | "tile";
+export type WallpaperLayout = { fit: WallpaperFit; x: number; y: number; dim: number };
+export const DEFAULT_WALLPAPER_LAYOUT: WallpaperLayout = { fit: "fill", x: 50, y: 50, dim: 0 };
+
+const FIT_CSS: Record<WallpaperFit, { size: string; repeat: string }> = {
+  fill: { size: "cover", repeat: "no-repeat" },
+  fit: { size: "contain", repeat: "no-repeat" },
+  stretch: { size: "100% 100%", repeat: "no-repeat" },
+  center: { size: "auto", repeat: "no-repeat" },
+  tile: { size: "auto", repeat: "repeat" },
+};
+
+/** Inline style for a custom wallpaper image (fit, focus point, darkening). */
+export function wallpaperStyle(url: string, layout: WallpaperLayout): CSSProperties | undefined {
+  if (!url) return undefined;
+  const fit = FIT_CSS[layout.fit] ?? FIT_CSS.fill;
+  const dim = Math.min(Math.max(layout.dim, 0), 90) / 100;
+  return {
+    backgroundColor: "#000",
+    backgroundImage: `linear-gradient(rgba(0,0,0,${dim}), rgba(0,0,0,${dim})), url("${url}")`,
+    backgroundSize: `100% 100%, ${fit.size}`,
+    backgroundRepeat: `no-repeat, ${fit.repeat}`,
+    backgroundPosition: `0 0, ${layout.x}% ${layout.y}%`,
+  };
+}
 
 export const TASKBAR_HEIGHT = 48;
 
@@ -55,6 +81,7 @@ type DesktopState = {
   theme: ThemeId;
   wallpaper: WallpaperId;
   wallpaperUrl: string;
+  wallpaperLayout: WallpaperLayout;
   accent: string;
   bootSound: boolean;
   windows: OsWindow[];
@@ -74,6 +101,7 @@ type DesktopState = {
   setTheme: (theme: ThemeId) => void;
   setWallpaper: (id: WallpaperId) => void;
   setWallpaperUrl: (url: string) => void;
+  setWallpaperLayout: (patch: Partial<WallpaperLayout>) => void;
   setAccent: (hex: string) => void;
   setBootSound: (on: boolean) => void;
   setVolume: (n: number) => void;
@@ -108,6 +136,7 @@ export const useDesktop = create<DesktopState>()(
       theme: "dark",
       wallpaper: "bloom",
       wallpaperUrl: "",
+      wallpaperLayout: DEFAULT_WALLPAPER_LAYOUT,
       accent: "#4CC2FF",
       bootSound: true,
       windows: [],
@@ -127,6 +156,7 @@ export const useDesktop = create<DesktopState>()(
       setTheme: (theme) => set({ theme }),
       setWallpaper: (wallpaper) => set({ wallpaper, wallpaperUrl: "" }),
       setWallpaperUrl: (wallpaperUrl) => set({ wallpaperUrl: wallpaperUrl.trim() }),
+      setWallpaperLayout: (patch) => set({ wallpaperLayout: { ...get().wallpaperLayout, ...patch } }),
       setAccent: (accent) => set({ accent }),
       setBootSound: (bootSound) => set({ bootSound }),
       setVolume: (volume) => set({ volume }),
@@ -244,6 +274,7 @@ export const useDesktop = create<DesktopState>()(
         theme: s.theme,
         wallpaper: s.wallpaper,
         wallpaperUrl: s.wallpaperUrl,
+        wallpaperLayout: s.wallpaperLayout,
         accent: s.accent,
         bootSound: s.bootSound,
         volume: s.volume,

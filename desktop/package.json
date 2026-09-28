@@ -9,7 +9,8 @@
     "build:server": "node build-server.mjs",
     "start": "node build-server.mjs && electron .",
     "start:fast": "electron .",
-    "dist": "node build-server.mjs && electron-builder --win nsis portable"
+    "dist": "node build-server.mjs && electron-builder --win nsis portable",
+    "release": "node build-server.mjs && electron-builder --win nsis --publish always"
   },
   "devDependencies": {
     "electron": "^38.2.0",
@@ -18,17 +19,47 @@
   "build": {
     "appId": "de.furrbox.desktop",
     "productName": "FurrBox",
-    "files": ["main.cjs", "preload.cjs", "splash.html", "package.json"],
-    "extraResources": [{ "from": "server", "to": "server" }],
-    "directories": { "output": "release" },
-    "win": { "target": ["nsis", "portable"] },
-    "portable": { "artifactName": "FurrBox-${version}-portable.exe" },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "splash.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "FurrBox-${version}-portable.exe"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "artifactName": "FurrBox-Setup-${version}.exe"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Kitsulife2601",
+        "repo": "furrbox",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

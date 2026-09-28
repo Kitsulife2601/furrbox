@@ -1,6 +1,7 @@
-// FurrBrowser: address bar, history, reload, open-in-new-tab. Many sites refuse to be framed
-// (X-Frame-Options), so "Im neuen Tab öffnen" is always available.
-import { useRef, useState, type FormEvent } from "react";
+// FurrBrowser: address bar, history, reload, open-in-new-tab. In the desktop app pages load in
+// an Electron <webview> (works for every site); on the web many sites refuse to be framed
+// (X-Frame-Options), so the iframe fallback keeps "Im neuen Tab öffnen".
+import { createElement, useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Home, RotateCw } from "lucide-react";
 import type { WindowPayload } from "@/store/desktop";
 import { Btn } from "./ui";
@@ -15,7 +16,107 @@ function normalizeUrl(raw: string) {
   return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
 }
 
+type WebviewEl = HTMLElement & {
+  src: string;
+  getURL(): string;
+  canGoBack(): boolean;
+  canGoForward(): boolean;
+  goBack(): void;
+  goForward(): void;
+  reload(): void;
+  loadURL(url: string): Promise<void>;
+};
+
+function hasWebview() {
+  return typeof window !== "undefined" && Boolean((window as { furrbox?: { webview?: boolean } }).furrbox?.webview);
+}
+
 export function Browser({ payload }: { payload?: WindowPayload }) {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => setDesktop(hasWebview()), []);
+  return desktop ? <WebviewBrowser payload={payload} /> : <FrameBrowser payload={payload} />;
+}
+
+function WebviewBrowser({ payload }: { payload?: WindowPayload }) {
+  const start = payload?.url ? normalizeUrl(payload.url) : HOME;
+  const [address, setAddress] = useState(start);
+  const [nav, setNav] = useState({ back: false, forward: false, loading: true });
+  const viewRef = useRef<WebviewEl | null>(null);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sync = () => {
+      setAddress(view.getURL());
+      setNav((n) => ({ ...n, back: view.canGoBack(), forward: view.canGoForward() }));
+    };
+    const loading = (value: boolean) => () => setNav((n) => ({ ...n, loading: value }));
+    const onStart = loading(true);
+    const onStop = loading(false);
+    view.addEventListener("did-navigate", sync);
+    view.addEventListener("did-navigate-in-page", sync);
+    view.addEventListener("did-start-loading", onStart);
+    view.addEventListener("did-stop-loading", onStop);
+    return () => {
+      view.removeEventListener("did-navigate", sync);
+      view.removeEventListener("did-navigate-in-page", sync);
+      view.removeEventListener("did-start-loading", onStart);
+      view.removeEventListener("did-stop-loading", onStop);
+    };
+  }, []);
+
+  function go(raw: string) {
+    const target = normalizeUrl(raw);
+    setAddress(target);
+    void viewRef.current?.loadURL(target).catch(() => undefined);
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-bg/50">
+      <div className="flex items-center gap-1 border-b border-border bg-elevated/60 px-2 py-1.5">
+        <Btn variant="ghost" className="px-2" aria-label="Zurück" disabled={!nav.back} onClick={() => viewRef.current?.goBack()}>
+          <ArrowLeft className="size-4" />
+        </Btn>
+        <Btn variant="ghost" className="px-2" aria-label="Vor" disabled={!nav.forward} onClick={() => viewRef.current?.goForward()}>
+          <ArrowRight className="size-4" />
+        </Btn>
+        <Btn variant="ghost" className="px-2" aria-label="Neu laden" onClick={() => viewRef.current?.reload()}>
+          <RotateCw className={nav.loading ? "size-4 animate-spin" : "size-4"} />
+        </Btn>
+        <Btn variant="ghost" className="px-2" aria-label="Startseite" onClick={() => go(HOME)}>
+          <Home className="size-4" />
+        </Btn>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            go(address);
+          }}
+          className="min-w-0 flex-1"
+        >
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            className="h-8 w-full rounded-full bg-bg px-3 text-[13px] outline-none"
+            aria-label="Adresse"
+          />
+        </form>
+        <Btn variant="ghost" className="px-2" aria-label="Im Systembrowser öffnen" onClick={() => window.open(address, "_blank", "noopener,noreferrer")}>
+          <ExternalLink className="size-4" />
+        </Btn>
+      </div>
+      {createElement("webview", {
+        ref: viewRef,
+        src: start,
+        partition: "persist:furrbrowser",
+        className: "min-h-0 w-full flex-1 bg-white",
+        style: { display: "flex" },
+      })}
+    </div>
+  );
+}
+
+function FrameBrowser({ payload }: { payload?: WindowPayload }) {
   const [stack, setStack] = useState<string[]>([payload?.url ? normalizeUrl(payload.url) : HOME]);
   const [index, setIndex] = useState(0);
   const [address, setAddress] = useState(stack[0]);

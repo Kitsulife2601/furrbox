@@ -3,17 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { APPS, canLaunch } from "@/lib/apps";
-import { listFiles, saveTextFile, createFolder } from "@/lib/furr/api/files";
+import { createFolder, deleteEntry, listFiles, renameEntry, saveTextFile } from "@/lib/furr/api/files";
+import type { FurrFile } from "@/lib/furr/types";
 import { useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
-import { useDesktop } from "@/store/desktop";
+import { DEFAULT_WALLPAPER_LAYOUT, useDesktop, wallpaperStyle } from "@/store/desktop";
 import { notifyError } from "@/store/notifications";
 import { ChatPanel } from "@/components/furr/ChatPanel";
 import { filesKey, openFurrFile, uploadBrowserFiles } from "@/components/furr/FurrFS";
 import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
-import { PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
+import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
+import { UpdatePopup } from "./UpdatePopup";
 import { Taskbar } from "./Taskbar";
 import { WindowFrame } from "./WindowFrame";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
@@ -48,7 +50,8 @@ export function Desktop() {
     document.documentElement.style.setProperty("--os-accent", accent);
   }, [theme, accent]);
 
-  const bg: CSSProperties | undefined = wallpaperUrl ? { backgroundImage: `url("${wallpaperUrl}")` } : undefined;
+  const wallpaperLayout = useDesktop((s) => s.wallpaperLayout) ?? DEFAULT_WALLPAPER_LAYOUT;
+  const bg = wallpaperStyle(wallpaperUrl, wallpaperLayout);
 
   // Auth stages from FurrBox: lock screen -> sign in -> desktop.
   if (locked) return <LockScreen userName={sessionUser?.displayName ?? sessionUser?.primaryEmail ?? null} style={bg} />;
@@ -83,8 +86,10 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const openApp = useDesktop((s) => s.openApp);
   const closeMenus = useDesktop((s) => s.closeMenus);
   const [now, setNow] = useState(() => new Date());
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; file?: FurrFile } | null>(null);
   const [dialog, setDialog] = useState<null | "folder" | "text">(null);
+  const [renaming, setRenaming] = useState<FurrFile | null>(null);
+  const [removing, setRemoving] = useState<FurrFile | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const bootPlayed = useRef(false);
 
@@ -120,6 +125,28 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   });
   const refreshDesktop = () => queryClient.invalidateQueries({ queryKey: ["furr", "files"] });
   const desktopApps = APPS.filter((a) => a.desktop && canLaunch(a, me.data?.permissions));
+  const openDesktopFile = (f: FurrFile) =>
+    f.isFolder ? openApp("explorer", { payload: { scope: "private", folder: f.path } }) : openFurrFile(f);
+
+  // Entf deletes the selected desktop file/folder (only when no text field has focus).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" || !selectedIcon) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true'], section[role='dialog']")) return;
+      const file = desktopFiles.data?.find((f) => f.id === selectedIcon);
+      if (file) setRemoving(file);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedIcon, desktopFiles.data]);
+
+  const fileMenuItems = (f: FurrFile): MenuItem[] => [
+    { label: "Öffnen", onClick: () => openDesktopFile(f) },
+    { label: "Umbenennen", onClick: () => setRenaming(f) },
+    "divider",
+    { label: "Löschen", danger: true, onClick: () => setRemoving(f) },
+  ];
 
   const menuItems: MenuItem[] = [
     { label: "Neuer Ordner", onClick: () => setDialog("folder") },
@@ -179,7 +206,13 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
             type="button"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => selectIcon(f.id)}
-            onDoubleClick={() => (f.isFolder ? openApp("explorer", { payload: { scope: "private", folder: f.path } }) : openFurrFile(f))}
+            onDoubleClick={() => openDesktopFile(f)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              selectIcon(f.id);
+              setMenu({ x: e.clientX, y: e.clientY, file: f });
+            }}
             className={cn("flex w-[76px] flex-col items-center gap-1 rounded-sm px-1 py-2 text-center", selectedIcon === f.id && "bg-accent/25")}
           >
             {f.isFolder ? <Folder className="size-8 text-accent drop-shadow-sm" strokeWidth={1.4} /> : <FileText className="size-8 drop-shadow-sm" strokeWidth={1.4} />}
@@ -201,8 +234,51 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         <Toasts />
         <Taskbar now={now} />
       </div>
+      <UpdatePopup />
 
-      {menu && <PopupMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
+      {menu && (
+        <PopupMenu x={menu.x} y={menu.y} items={menu.file ? fileMenuItems(menu.file) : menuItems} onClose={() => setMenu(null)} />
+      )}
+      {renaming && (
+        <div onMouseDown={(e) => e.stopPropagation()}>
+          <PromptDialog
+            title="Neuer Name"
+            initial={renaming.name}
+            confirmLabel="Umbenennen"
+            onCancel={() => setRenaming(null)}
+            onSubmit={async (name) => {
+              const id = renaming.id;
+              setRenaming(null);
+              try {
+                await renameEntry({ data: { id, name } });
+                await refreshDesktop();
+              } catch (error) {
+                notifyError(error, "Umbenennen fehlgeschlagen");
+              }
+            }}
+          />
+        </div>
+      )}
+      {removing && (
+        <div onMouseDown={(e) => e.stopPropagation()}>
+          <ConfirmDialog
+            title={`„${removing.name}“ löschen?`}
+            body={removing.isFolder ? "Der Ordner und sein gesamter Inhalt werden gelöscht." : "Die Datei wird dauerhaft gelöscht."}
+            onCancel={() => setRemoving(null)}
+            onConfirm={async () => {
+              const id = removing.id;
+              setRemoving(null);
+              selectIcon(null);
+              try {
+                await deleteEntry({ data: id });
+                await refreshDesktop();
+              } catch (error) {
+                notifyError(error, "Löschen fehlgeschlagen");
+              }
+            }}
+          />
+        </div>
+      )}
       {dialog && (
         <div onMouseDown={(e) => e.stopPropagation()}>
           <PromptDialog

@@ -8,8 +8,16 @@ import { goOffline, updateMyProfile } from "@/lib/furr/api/session";
 import { ME_KEY, errorMessage, useMe } from "@/lib/furr/client";
 import { formatSize } from "@/lib/furr/paths";
 import { cn } from "@/lib/utils";
-import { useDesktop, type ThemeId, type WallpaperId } from "@/store/desktop";
+import {
+  DEFAULT_WALLPAPER_LAYOUT,
+  useDesktop,
+  wallpaperStyle,
+  type ThemeId,
+  type WallpaperFit,
+  type WallpaperId,
+} from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
+import { updateBridge, useUpdateState, type UpdateState } from "@/components/desktop/UpdatePopup";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
@@ -18,6 +26,14 @@ const WALLS: { id: WallpaperId; label: string }[] = [
   { id: "dusk", label: "Dämmerung" },
   { id: "mist", label: "Nebel" },
   { id: "plain", label: "Einfarbig" },
+];
+
+const FITS: { id: WallpaperFit; label: string }[] = [
+  { id: "fill", label: "Füllen" },
+  { id: "fit", label: "Anpassen" },
+  { id: "stretch", label: "Strecken" },
+  { id: "center", label: "Zentrieren" },
+  { id: "tile", label: "Kacheln" },
 ];
 
 type Section = "personal" | "account" | "chat" | "system";
@@ -59,6 +75,7 @@ function Personal() {
   const s = useDesktop();
   const [url, setUrl] = useState(s.wallpaperUrl.startsWith("data:") ? "" : s.wallpaperUrl);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="grid max-w-xl gap-5">
@@ -96,26 +113,31 @@ function Personal() {
           </Field>
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex h-8 cursor-pointer items-center rounded-md bg-elevated px-3 text-[13px] hover:bg-fg/10">
-              Bilddatei hochladen
+              {busy ? "Bild wird vorbereitet…" : "Bilddatei hochladen"}
               <input
                 type="file"
                 accept="image/*"
                 hidden
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   e.target.value = "";
                   if (!file) return;
-                  if (file.size > 1.5 * 1024 * 1024) return setError("Bild ist zu groß (max. 1,5 MB).");
                   setError("");
-                  const reader = new FileReader();
-                  reader.onload = () => s.setWallpaperUrl(String(reader.result ?? ""));
-                  reader.readAsDataURL(file);
+                  setBusy(true);
+                  try {
+                    s.setWallpaperUrl(await wallpaperDataUrl(file));
+                  } catch {
+                    setError("Das Bild konnte nicht gelesen werden.");
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
               />
             </label>
             {s.wallpaperUrl && <Btn onClick={() => s.setWallpaperUrl("")}>Zurücksetzen</Btn>}
           </div>
           <ErrorText>{error}</ErrorText>
+          {s.wallpaperUrl && <WallpaperAdjust />}
         </div>
       </div>
       <div>
@@ -139,6 +161,102 @@ function Personal() {
       </label>
     </div>
   );
+}
+
+/** Live preview + fit / focus point / darkening for a custom wallpaper image. */
+function WallpaperAdjust() {
+  const url = useDesktop((st) => st.wallpaperUrl);
+  const layout = useDesktop((st) => st.wallpaperLayout) ?? DEFAULT_WALLPAPER_LAYOUT;
+  const setLayout = useDesktop((st) => st.setWallpaperLayout);
+  const canMove = layout.fit !== "stretch";
+
+  function focusAt(e: React.PointerEvent<HTMLDivElement>) {
+    if (!canMove) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clamp = (v: number) => Math.round(Math.min(Math.max(v, 0), 100));
+    setLayout({ x: clamp(((e.clientX - rect.left) / rect.width) * 100), y: clamp(((e.clientY - rect.top) / rect.height) * 100) });
+  }
+
+  return (
+    <div className="mt-2 grid gap-3 rounded-md bg-elevated/50 p-3">
+      <p className="text-[13px] font-medium">Bild anpassen</p>
+      <div
+        className={cn("relative aspect-video w-full overflow-hidden rounded-md border border-border", canMove && "cursor-crosshair")}
+        style={wallpaperStyle(url, layout)}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          focusAt(e);
+        }}
+        onPointerMove={(e) => e.buttons === 1 && focusAt(e)}
+      >
+        {canMove && (
+          <span
+            className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+            style={{ left: `${layout.x}%`, top: `${layout.y}%` }}
+          />
+        )}
+      </div>
+      <p className="text-[11px] text-muted">
+        {canMove ? "Klicke oder ziehe in der Vorschau, um den sichtbaren Bildausschnitt festzulegen." : "Beim Strecken wird das ganze Bild verzerrt angezeigt."}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {FITS.map((f) => (
+          <Btn key={f.id} variant={layout.fit === f.id ? "primary" : "default"} onClick={() => setLayout({ fit: f.id })}>
+            {f.label}
+          </Btn>
+        ))}
+      </div>
+      <label className="grid gap-1 text-[12px]">
+        <span className="flex justify-between">
+          Waagerecht <span className="text-muted">{layout.x}%</span>
+        </span>
+        <input type="range" min={0} max={100} value={layout.x} disabled={!canMove} onChange={(e) => setLayout({ x: Number(e.target.value) })} />
+      </label>
+      <label className="grid gap-1 text-[12px]">
+        <span className="flex justify-between">
+          Senkrecht <span className="text-muted">{layout.y}%</span>
+        </span>
+        <input type="range" min={0} max={100} value={layout.y} disabled={!canMove} onChange={(e) => setLayout({ y: Number(e.target.value) })} />
+      </label>
+      <label className="grid gap-1 text-[12px]">
+        <span className="flex justify-between">
+          Abdunkeln <span className="text-muted">{layout.dim}%</span>
+        </span>
+        <input type="range" min={0} max={80} value={layout.dim} onChange={(e) => setLayout({ dim: Number(e.target.value) })} />
+      </label>
+      <div>
+        <Btn variant="ghost" onClick={() => setLayout(DEFAULT_WALLPAPER_LAYOUT)}>
+          Anpassung zurücksetzen
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// Wallpapers live in browser storage (a few MB), so any image is scaled to screen size and
+// re-encoded until it fits instead of rejecting large files.
+const WALLPAPER_MAX_CHARS = 1_800_000;
+
+async function wallpaperDataUrl(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const maxW = Math.min(2560, Math.round(window.screen.width * (window.devicePixelRatio || 1)) || 2560);
+  let scale = Math.min(1, maxW / bitmap.width);
+  let quality = 0.88;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const url = canvas.toDataURL("image/webp", quality);
+    if (url.length <= WALLPAPER_MAX_CHARS) {
+      bitmap.close();
+      return url;
+    }
+    if (quality > 0.7) quality -= 0.08;
+    else scale *= 0.8;
+  }
+  bitmap.close();
+  throw new Error("too large");
 }
 
 function Account() {
@@ -243,8 +361,9 @@ function SystemInfo() {
     navigator.storage?.estimate?.().then((e) => setStorage({ usage: e.usage ?? 0, quota: e.quota ?? 0 })).catch(() => undefined);
   }, []);
   const nav = typeof navigator === "undefined" ? null : (navigator as Navigator & { deviceMemory?: number });
+  const update = useUpdateState();
   const rows: [string, string][] = [
-    ["Version", "FurrBox Web 2.0"],
+    ["Version", update ? `FurrBox Desktop ${update.version}` : "FurrBox Web 2.0"],
     ["CPU-Kerne", String(nav?.hardwareConcurrency ?? "?")],
     ["Arbeitsspeicher", nav?.deviceMemory ? `≈ ${nav.deviceMemory} GB` : "unbekannt"],
     ["Browser-Speicher", storage ? `${formatSize(storage.usage)} von ${formatSize(storage.quota)}` : "unbekannt"],
@@ -263,6 +382,53 @@ function SystemInfo() {
           </div>
         ))}
       </dl>
+      {update && <UpdateSection state={update} />}
+    </div>
+  );
+}
+
+const UPDATE_TEXT: Record<UpdateState["status"], string> = {
+  idle: "Noch nicht geprüft.",
+  unsupported: "Automatische Updates gibt es nur in der installierten Version (Setup), nicht in der portablen.",
+  checking: "Suche nach Updates…",
+  current: "FurrBox ist auf dem neuesten Stand.",
+  downloading: "Update wird heruntergeladen…",
+  ready: "Update ist bereit zum Installieren.",
+  error: "Update-Prüfung fehlgeschlagen.",
+};
+
+function UpdateSection({ state }: { state: UpdateState }) {
+  const [busy, setBusy] = useState(false);
+  const detail =
+    state.status === "downloading" && state.newVersion
+      ? `Version ${state.newVersion} wird heruntergeladen (${state.percent ?? 0} %).`
+      : state.status === "ready" && state.newVersion
+        ? `Version ${state.newVersion} ist bereit.`
+        : UPDATE_TEXT[state.status];
+  return (
+    <div className="mt-6 grid gap-2 rounded-md bg-elevated/50 p-3 text-[13px]">
+      <p className="font-medium">Updates</p>
+      <p className="text-muted">{detail}</p>
+      {state.status === "error" && state.error && <ErrorText>{state.error}</ErrorText>}
+      <div className="flex gap-2">
+        {state.status === "ready" ? (
+          <Btn variant="primary" onClick={() => void updateBridge()?.install()}>
+            Jetzt neu starten und installieren
+          </Btn>
+        ) : (
+          <Btn
+            disabled={busy || state.status === "unsupported" || state.status === "checking" || state.status === "downloading"}
+            onClick={async () => {
+              setBusy(true);
+              await updateBridge()?.check().catch(() => undefined);
+              setBusy(false);
+            }}
+          >
+            Nach Updates suchen
+          </Btn>
+        )}
+      </div>
+      <p className="text-[11px] text-subtle">Updates kommen automatisch aus den GitHub-Releases von FurrBox.</p>
     </div>
   );
 }
