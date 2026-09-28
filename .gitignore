@@ -13,3 +13,6 @@ attachments/
 .env.*
 .claude/
 .node_modules.lock
+desktop/node_modules/
+desktop/server/
+desktop/release/

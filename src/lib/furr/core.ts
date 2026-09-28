@@ -2,6 +2,7 @@
 // Only call these from createServerFn handlers or server routes.
 import { getSql, type Sql } from "@/lib/db";
 import { effectiveRole, permissionsFor, ROLE_LABEL, type Permissions, type Role } from "./roles";
+import { syncDiscordLogin } from "./discord-staff";
 import { joinPath, normalizePath, PRIVATE_DEFAULT_FOLDERS } from "./paths";
 import type { FurrFile, Me, Scope } from "./types";
 
@@ -25,11 +26,15 @@ type ProfileRow = {
   role: string;
   email: string | null;
   highest_privilege: string | null;
+  synced_at: unknown;
+  discord_privilege: string | null;
+  discord_checked_at: unknown;
 };
 
 async function readProfile(sql: Sql, userId: string) {
   const rows = await sql<ProfileRow>`
-    select p.user_id, p.username, p.display_name, p.discord_id, p.role, u.email, dm.highest_privilege
+    select p.user_id, p.username, p.display_name, p.discord_id, p.role, u.email, dm.highest_privilege,
+      dm.synced_at, p.discord_privilege, p.discord_checked_at
     from furr_profile p
     left join "user" u on u.id = p.user_id
     left join discord_member dm on dm.discord_id = p.discord_id
@@ -66,7 +71,7 @@ export async function ensureDefaultFolders(sql: Sql, userId: string) {
   }
 }
 
-/** Creates a profile for a first-time user (the very first account becomes Dev). */
+/** Creates a profile for a first-time user. Admin rights only ever come from Discord staff roles. */
 export async function createProfile(
   sql: Sql,
   userId: string,
@@ -75,8 +80,7 @@ export async function createProfile(
   const users = await sql<{ name: string | null; email: string | null }>`
     select name, email from "user" where id = ${userId}`;
   const user = users[0] ?? { name: null, email: null };
-  const existing = await sql<{ n: number }>`select count(*)::int as n from furr_profile`;
-  const role: Role = opts.role ?? (existing[0]?.n ? "member" : "dev");
+  const role: Role = opts.role ?? "member";
   const username = await uniqueUsername(sql, usernameBase(opts.username ?? user.name, user.email));
   const displayName = opts.displayName?.trim() || user.name?.trim() || username;
   await sql`
@@ -86,15 +90,24 @@ export async function createProfile(
   await ensureDefaultFolders(sql, userId);
 }
 
+/** The fresher of the two Discord sources: the bot bridge sync or the login check. */
+function discordPrivilege(row: ProfileRow) {
+  const synced = iso(row.synced_at);
+  const checked = iso(row.discord_checked_at);
+  if (checked && (!synced || checked >= synced)) return row.discord_privilege;
+  return row.highest_privilege;
+}
+
 export async function loadMe(userId: string): Promise<Me> {
   const sql = await getSql();
+  await syncDiscordLogin(sql, userId, (discordId) => createProfile(sql, userId, { discordId }));
   let row = await readProfile(sql, userId);
   if (!row) {
     await createProfile(sql, userId);
     row = await readProfile(sql, userId);
   }
   if (!row) throw new Error("Profil konnte nicht angelegt werden.");
-  const role = effectiveRole(row.role, row.highest_privilege);
+  const role = effectiveRole(row.role, discordPrivilege(row));
   return {
     userId: row.user_id,
     email: row.email,

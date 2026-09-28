@@ -55,7 +55,7 @@ export async function queryPresence(showEmail: boolean): Promise<PresenceUser[]>
   const sql = await getSql();
   const rows = await sql.query<Row>(`
     select p.user_id as id, p.username, p.display_name, u.email, p.discord_id,
-           dm.username as discord_username, dm.nickname, p.role, dm.highest_privilege, dm.discord_status,
+           dm.username as discord_username, dm.nickname, p.role, coalesce(dm.highest_privilege, p.discord_privilege) as highest_privilege, dm.discord_status,
            pr.platform, coalesce(pr.last_heartbeat_at > now() - interval '${ONLINE_WINDOW}', false) as app_online,
            pr.connected_at, pr.last_heartbeat_at, pr.last_seen_at, true as has_account
     from furr_profile p

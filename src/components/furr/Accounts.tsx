@@ -1,44 +1,25 @@
-// FurrAccountManager (Dev only): create accounts with start password, set roles / Discord IDs, delete.
+// FurrAccountManager (Dev only): accounts come from Discord logins; set roles, delete.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { createAccount, deleteAccount, listAccounts, updateAccount } from "@/lib/furr/api/accounts";
+import { deleteAccount, listAccounts, updateAccount } from "@/lib/furr/api/accounts";
 import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
 import { ROLES, ROLE_LABEL, type Role } from "@/lib/furr/roles";
 import { useNotifications } from "@/store/notifications";
 import { dualLabel } from "./Presence";
-import { Btn, ConfirmDialog, Empty, ErrorText, Field, PromptDialog, TextInput } from "./ui";
+import { Btn, ConfirmDialog, Empty } from "./ui";
 
 export function Accounts() {
   const me = useMe();
   const queryClient = useQueryClient();
   const accounts = useQuery({ queryKey: ["furr", "accounts"], queryFn: () => listAccounts(), refetchInterval: 10_000 });
-  const [form, setForm] = useState({ email: "", username: "", password: "", discordId: "", role: "member" as Role });
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
   const [removeId, setRemoveId] = useState<string | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["furr"] });
   const toast = (title: string, description: string) =>
     useNotifications.getState().notify({ version: "FurrAccountManager", title, description });
 
-  async function create() {
-    setError("");
-    setBusy(true);
-    try {
-      await createAccount({ data: form });
-      toast("Account erstellt", `${form.username} kann sich jetzt mit ${form.email} anmelden.`);
-      setForm({ email: "", username: "", password: "", discordId: "", role: "member" });
-      await refresh();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function update(userId: string, patch: { role?: Role; discordId?: string }) {
+  async function update(userId: string, patch: { role?: Role }) {
     try {
       await updateAccount({ data: { userId, ...patch } });
       await refresh();
@@ -47,44 +28,10 @@ export function Accounts() {
     }
   }
 
-  const editing = accounts.data?.find((a) => a.id === editId);
   const removing = accounts.data?.find((a) => a.id === removeId);
 
   return (
-    <div className="relative grid h-full min-h-0 bg-bg/40 lg:grid-cols-[320px_1fr]">
-      <div className="grid content-start gap-3 overflow-auto border-b border-border p-4 lg:border-b-0 lg:border-r">
-        <p className="text-[13px] font-semibold">Neuen Account anlegen</p>
-        <Field label="E-Mail (Login)">
-          <TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        </Field>
-        <Field label="Wunschnutzername" hint="3-32 Zeichen: a-z, 0-9, _ . -">
-          <TextInput value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        </Field>
-        <Field label="Start-Passwort" hint="Mindestens 8 Zeichen – kann später in FurrSettings geändert werden">
-          <TextInput type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        </Field>
-        <Field label="Discord-ID (optional)">
-          <TextInput value={form.discordId} inputMode="numeric" onChange={(e) => setForm({ ...form, discordId: e.target.value.trim() })} />
-        </Field>
-        <Field label="Rolle">
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
-            className="h-9 rounded-md border border-border bg-bg/60 px-2 text-[13px] text-fg outline-none"
-          >
-            {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <ErrorText>{error}</ErrorText>
-        <Btn variant="primary" disabled={busy} onClick={() => void create()}>
-          {busy ? "Wird angelegt…" : "Account erstellen"}
-        </Btn>
-      </div>
-
+    <div className="relative grid h-full min-h-0 bg-bg/40">
       <div className="min-h-0 overflow-auto">
         <div className="flex items-center justify-between px-4 py-2">
           <p className="text-[13px] font-semibold">Accounts ({accounts.data?.length ?? 0})</p>
@@ -115,7 +62,7 @@ export function Accounts() {
                       {a.displayName} {a.id === me.data?.userId && <span className="text-accent">(du)</span>}
                     </p>
                     <p className="text-muted">
-                      @{a.username} · {a.email}
+                      @{a.username}
                     </p>
                   </td>
                   <td className="px-3 py-2">
@@ -133,9 +80,7 @@ export function Accounts() {
                     {a.role !== a.accountRole && <p className="mt-1 text-muted">Discord: {a.roleLabel}</p>}
                   </td>
                   <td className="px-3 py-2">
-                    <button type="button" className="font-mono underline-offset-4 hover:underline" onClick={() => setEditId(a.id)}>
-                      {a.discordId ?? "setzen…"}
-                    </button>
+                    <span className="font-mono">{a.discordId ?? "–"}</span>
                   </td>
                   <td className="px-3 py-2 text-muted">
                     {dualLabel(a)}
@@ -154,18 +99,6 @@ export function Accounts() {
         )}
       </div>
 
-      {editing && (
-        <PromptDialog
-          title={`Discord-ID für ${editing.displayName}`}
-          initial={editing.discordId ?? ""}
-          confirmLabel="Speichern"
-          onCancel={() => setEditId(null)}
-          onSubmit={(value) => {
-            setEditId(null);
-            void update(editing.id, { discordId: value === "-" ? "" : value });
-          }}
-        />
-      )}
       {removing && (
         <ConfirmDialog
           title={`Account ${removing.displayName} löschen?`}

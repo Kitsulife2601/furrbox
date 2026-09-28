@@ -1,8 +1,8 @@
-// FurrAccountManager (Dev only): create, edit roles / Discord IDs, delete accounts.
+// FurrAccountManager (Dev only): edit roles / Discord IDs, delete accounts (accounts come from Discord logins).
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { createProfile, getSql, notify, requirePermission } from "../core";
-import { ROLE_LABEL, isRole, type Role } from "../roles";
+import { getSql, requirePermission } from "../core";
+import { isRole, type Role } from "../roles";
 import { queryPresence } from "./presence";
 
 const DISCORD_ID = /^\d{17,22}$/;
@@ -17,53 +17,6 @@ export const listAccounts = createServerFn({ method: "GET" })
     return (await queryPresence(true))
       .filter((u) => u.hasAccount)
       .map((u) => ({ ...u, accountRole: (isRole(accountRole.get(u.id)) ? accountRole.get(u.id) : "member") as Role }));
-  });
-
-export const createAccount = createServerFn({ method: "POST" })
-  .validator((input: { email: string; username: string; password: string; discordId?: string; role: Role }) => ({
-    email: String(input.email ?? "").trim().toLowerCase(),
-    username: String(input.username ?? "").trim().toLowerCase(),
-    password: String(input.password ?? ""),
-    discordId: String(input.discordId ?? "").trim(),
-    role: isRole(input.role) ? input.role : "member",
-  }))
-  .middleware([authMiddleware])
-  .handler(async ({ context, data }) => {
-    await requirePermission(context.userId, "canManageAccounts");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) throw new Error("Bitte eine gültige E-Mail-Adresse angeben.");
-    if (!/^[a-z0-9_.-]{3,32}$/.test(data.username)) throw new Error("Wunschnutzername muss 3-32 Zeichen lang sein (a-z, 0-9, _ . -).");
-    if (data.password.length < 8) throw new Error("Start-Passwort muss mindestens 8 Zeichen lang sein.");
-    if (data.discordId && !DISCORD_ID.test(data.discordId)) throw new Error("Discord-ID muss eine numerische Snowflake sein.");
-
-    const sql = await getSql();
-    const taken = await sql`
-      select 1 from furr_profile where username = ${data.username}
-        or (${data.discordId} <> '' and discord_id = ${data.discordId})`;
-    if (taken.length) throw new Error("Nutzername oder Discord-ID ist bereits vergeben.");
-    const emailTaken = await sql`select 1 from "user" where lower(email) = ${data.email}`;
-    if (emailTaken.length) throw new Error("Diese E-Mail-Adresse hat bereits ein Konto.");
-
-    const { auth } = await import("@/lib/auth/server");
-    // Create the credential account directly (like Better Auth's admin createUser) so the
-    // Dev's own session is untouched — signUpEmail would sign the caller in as the new user.
-    const ctx = await auth.$context;
-    const created = await ctx.internalAdapter.createUser({ email: data.email, name: data.username, emailVerified: false });
-    if (!created) throw new Error("Account konnte nicht erstellt werden.");
-    await ctx.internalAdapter.linkAccount({
-      userId: created.id,
-      providerId: "credential",
-      accountId: created.id,
-      password: await ctx.password.hash(data.password),
-    });
-    const newUserId = created.id;
-    await createProfile(sql, newUserId, {
-      username: data.username,
-      displayName: data.username,
-      discordId: data.discordId || null,
-      role: data.role,
-    });
-    await notify("System-Update: Neuer Account erstellt", `${data.username} wurde als ${ROLE_LABEL[data.role]} angelegt.`);
-    return { userId: newUserId };
   });
 
 export const updateAccount = createServerFn({ method: "POST" })

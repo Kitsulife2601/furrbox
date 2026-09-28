@@ -7,4 +7,5 @@
  *
  * Do NOT edit `server.ts` for this — that file is frozen pre-wired config.
  */
-export const emailAndPasswordEnabled = true;
+// FurrBox signs in with Discord only (see `socialProviders` in `server.ts`).
+export const emailAndPasswordEnabled = false;

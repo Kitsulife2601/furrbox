@@ -127,6 +127,29 @@ const trustedOrigins: string[] = explicitBaseURL
 
 const databaseUrl = env("DATABASE_URL");
 
+// FurrBox: Discord is the only sign-in method. `guilds.members.read` lets the server
+// read the user's roles on the Fish server to decide whether they are staff
+// (see `src/lib/furr/discord-staff.ts`). No e-mail scope: the user row gets a
+// synthetic, never-mailed address derived from the Discord id.
+const discordClientId = env("DISCORD_CLIENT_ID");
+const discordClientSecret = env("DISCORD_CLIENT_SECRET");
+export const discordLoginConfigured = Boolean(discordClientId && discordClientSecret);
+const socialProviders = discordLoginConfigured
+  ? {
+      discord: {
+        clientId: discordClientId as string,
+        clientSecret: discordClientSecret as string,
+        disableDefaultScope: true,
+        scope: ["identify", "guilds.members.read"],
+        mapProfileToUser: (profile: { id: string; username: string; global_name?: string | null }) => ({
+          email: `${profile.id}@discord.furrbox.invalid`,
+          emailVerified: false,
+          name: profile.global_name || profile.username,
+        }),
+      },
+    }
+  : {};
+
 // Static broker OAuth endpoints (skip OIDC discovery on every sign-in / callback).
 // Discovery would cost an extra network hop to the broker before the popup can
 // even redirect to Google/X — the live-preview popup felt stuck on the app for
@@ -209,6 +232,8 @@ export const auth = betterAuth({
   // window and reduces auth flicker. See the `auth` skill for the full
   // flicker-prevention guidance (gate on `isPending`; SSR the session).
   session: { cookieCache: { enabled: true, maxAge: 300 } },
+
+  socialProviders,
 
   // Local email/password — toggled only via `./email-password` (not a plugin).
   ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),

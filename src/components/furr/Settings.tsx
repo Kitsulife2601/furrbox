@@ -1,7 +1,7 @@
 // FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { authClient, signOut } from "@/lib/auth/client";
+import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { getChatSettings, updateChatSettings } from "@/lib/furr/api/chat";
 import { goOffline, updateMyProfile } from "@/lib/furr/api/session";
@@ -145,8 +145,6 @@ function Account() {
   const me = useMe();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const gateSession = typeof document !== "undefined" && hasGateSessionMarker();
@@ -166,16 +164,6 @@ function Account() {
     }
   }
 
-  async function changePassword() {
-    setError("");
-    setMsg("");
-    const res = await authClient.changePassword({ currentPassword: current, newPassword: next, revokeOtherSessions: false });
-    if (res.error) return setError(res.error.message || "Passwort konnte nicht geändert werden.");
-    setCurrent("");
-    setNext("");
-    setMsg("Passwort geändert.");
-  }
-
   return (
     <div className="grid max-w-md gap-4">
       {me.data && (
@@ -184,7 +172,7 @@ function Account() {
             {me.data.displayName} <span className="text-muted">@{me.data.username}</span>
           </p>
           <p className="text-muted">
-            {me.data.email} · {me.data.roleLabel}
+            {me.data.roleLabel}
             {me.data.discordId ? ` · Discord ${me.data.discordId}` : ""}
           </p>
         </div>
@@ -195,16 +183,6 @@ function Account() {
           <Btn onClick={() => void saveName()}>Speichern</Btn>
         </div>
       </Field>
-      <p className="text-[13px] font-medium">Passwort ändern</p>
-      <Field label="Aktuelles Passwort">
-        <TextInput type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-      </Field>
-      <Field label="Neues Passwort" hint="Nur für E-Mail/Passwort-Konten, mindestens 8 Zeichen">
-        <TextInput type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
-      </Field>
-      <Btn disabled={!current || next.length < 8} onClick={() => void changePassword()}>
-        Passwort ändern
-      </Btn>
       {msg && <p className="text-[12px] text-emerald-300">{msg}</p>}
       <ErrorText>{error}</ErrorText>
       {!gateSession && (

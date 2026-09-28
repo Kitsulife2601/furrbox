@@ -111,7 +111,11 @@ async function createPgliteSql(): Promise<Sql> {
   // data survives source edits (it resets on dev-server restart).
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
+    // FURRBOX_PGLITE_DIR (set by the Electron desktop app) persists the embedded
+    // database on disk; unset = the usual in-memory preview database.
+    const dataDir = process.env.FURRBOX_PGLITE_DIR || undefined;
     const pg = new PGlite({
+      dataDir,
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,

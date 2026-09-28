@@ -1,0 +1,34 @@
+{
+  "name": "furrbox-desktop",
+  "productName": "FurrBox",
+  "version": "2.0.0",
+  "private": true,
+  "description": "FurrBox Desktop – Electron-App mit eingebautem FurrBox-Server.",
+  "main": "main.cjs",
+  "scripts": {
+    "build:server": "node build-server.mjs",
+    "start": "node build-server.mjs && electron .",
+    "start:fast": "electron .",
+    "dist": "node build-server.mjs && electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "de.furrbox.desktop",
+    "productName": "FurrBox",
+    "files": ["main.cjs", "preload.cjs", "splash.html", "package.json"],
+    "extraResources": [{ "from": "server", "to": "server" }],
+    "directories": { "output": "release" },
+    "win": { "target": ["nsis", "portable"] },
+    "portable": { "artifactName": "FurrBox-${version}-portable.exe" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "FurrBox-Setup-${version}.exe"
+    }
+  }
+}
