@@ -3,7 +3,7 @@ const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const edition = require("./edition.json");
 
-const FRONTEND_URL = process.env.FURRBOX_FRONTEND_URL || "http://localhost:3000";
+const FRONTEND_URL = process.env.FURRBOX_FRONTEND_URL || "http://localhost:3300";
 let mainWindow = null;
 let updateReady = false;
 

@@ -189,9 +189,11 @@ const updatesDir = path.resolve(process.env.UPDATES_DIR || path.join(storageDir,
 const databaseUrl = process.env.DATABASE_URL || `file:${path.join(storageDir, "furrbox.db")}`;
 process.env.DATABASE_URL = databaseUrl;
 const prisma = new PrismaClient();
-const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
+const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3300";
 const allowedOrigins = new Set([
   ...corsOrigin.split(",").map((origin) => origin.trim()).filter(Boolean),
+  "http://localhost:3300",
+  "http://127.0.0.1:3300",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:3001",

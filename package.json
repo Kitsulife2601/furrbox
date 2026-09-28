@@ -10,9 +10,9 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run dev\" \"cross-env NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run dev\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
+    "dev": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run dev\" \"cross-env NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run dev\" \"wait-on http://localhost:3300 http://localhost:4000/health && electron ./electron/main.js\"",
     "dev:web": "concurrently -k -n backend,frontend -c cyan,green \"npm --workspace backend run dev\" \"cross-env NEXT_PUBLIC_ENABLE_PRESENCE_TOOL=true npm --workspace frontend run dev\"",
-    "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3000 http://localhost:4000/health && electron ./electron/main.js\"",
+    "start": "concurrently -k -n backend,frontend,electron -c cyan,green,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\" \"wait-on http://localhost:3300 http://localhost:4000/health && electron ./electron/main.js\"",
     "mobile:dev": "npm --workspace mobile run dev",
     "mobile:build": "npm --workspace mobile run build",
     "mobile:start": "npm --workspace mobile run start",

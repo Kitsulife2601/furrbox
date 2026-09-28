@@ -55,7 +55,7 @@ npm run dist:win
 
 The Electron app waits for:
 
-- Frontend: `http://localhost:3000`
+- Frontend: `http://localhost:3300`
 - Backend: `http://localhost:4000`
 
 Electron starts frameless, fullscreen, and kiosk-enabled by default.
@@ -105,7 +105,7 @@ PORT=4000
 STORAGE_DIR=./storage
 DATABASE_URL=file:./storage/furrbox.db
 JWT_SECRET=replace-this-for-real-use
-CORS_ORIGIN=http://localhost:3000
+CORS_ORIGIN=http://localhost:3300
 BOT_BRIDGE_TOKEN=replace-this-long-random-bridge-secret
 ```
 
