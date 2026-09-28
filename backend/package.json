@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "npm run prepare:db && tsx watch src/server.ts",
     "dev:bot": "tsx watch src/bot.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "npm run prepare:db && node dist/server.js",
     "start:bot": "node dist/bot.js",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prepare:db": "node scripts/prepare-db.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",

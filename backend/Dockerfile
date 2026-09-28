@@ -12,6 +12,7 @@ RUN npm install
 COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
+COPY scripts ./scripts
 RUN npm run build
 
 ENV NODE_ENV=production
@@ -20,4 +21,4 @@ ENV STORAGE_DIR=/app/storage
 ENV DATABASE_URL=file:/app/storage/furrbox.db
 
 EXPOSE 4000
-CMD ["node", "dist/server.js"]
+CMD ["npm", "run", "start"]

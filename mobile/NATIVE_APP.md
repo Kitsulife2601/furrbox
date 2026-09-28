@@ -35,7 +35,9 @@ Dann in Xcode Signierung/Team einstellen und auf iPhone oder Simulator starten.
 Die App verbindet sich mit dem FurrBox Backend:
 
 ```text
-http://5.249.162.130:4000
+http://localhost:4000
 ```
+
+Fuer ein echtes Handy vor dem Build `FURRBOX_SERVER_URL` auf eine Adresse setzen, die das Handy erreicht (z. B. die Tailscale-IP des FurrBox-PCs, siehe README).
 
 Wenn Android im Emulator lokal testen soll, kann der Server trotzdem remote bleiben. Fuer iOS App Store / TestFlight sollte spaeter HTTPS fuer Backend und Mobile-Distribution gesetzt werden.

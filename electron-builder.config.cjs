@@ -2,6 +2,7 @@ const isAdmin = process.env.FURRBOX_EDITION === "AdminEdition";
 const edition = isAdmin ? "AdminEdition" : "Standard";
 const channel = isAdmin ? "admin" : "standard";
 const productName = isAdmin ? "FurrBox Admin Edition" : "FurrBox Standard";
+const serverUrl = (process.env.FURRBOX_SERVER_URL || "http://localhost:4000").replace(/\/+$/, "");
 const appId = isAdmin ? "de.furrbox.desktop.admin" : "de.furrbox.desktop.standard";
 
 module.exports = {
@@ -29,7 +30,7 @@ module.exports = {
     publish: [
       {
         provider: "generic",
-        url: `http://5.249.162.130:4000/updates/${channel}`
+        url: `${serverUrl}/updates/${channel}`
       }
     ]
   },

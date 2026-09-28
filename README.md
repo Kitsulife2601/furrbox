@@ -16,6 +16,25 @@ npm install
 npm run dev
 ```
 
+`npm run dev` legt die SQLite-Datenbank beim ersten Start automatisch an. Einloggen kannst du dich mit dem Entwickler-Account `Kitsulife`; das Passwort setzt du in `backend/.env` (Vorlage: `backend/.env.example`). Weitere Accounts legst du in FurrBox über die Accounts-App an.
+
+## Kostenlos betreiben (ohne gemieteten Server)
+
+Dein eigener PC ist der Server. Alle Daten liegen in `backend/storage`.
+
+1. `backend/.env.example` nach `backend/.env` kopieren und `FURRBOX_ADMIN_PASSWORD` und `JWT_SECRET` ändern.
+2. `npm run dev` starten. Nur du auf diesem PC: fertig.
+3. Andere sollen sich verbinden: [Tailscale](https://tailscale.com) (kostenlos) auf deinem PC und bei den anderen installieren und sie in dein Tailnet einladen. Deine Tailscale-IP (`100.x.y.z`) findest du mit `tailscale ip -4`.
+4. Setup-Datei für die anderen bauen, die auf deinen PC zeigt:
+
+```bash
+# Git Bash (in cmd statt export: set FURRBOX_SERVER_URL=...)
+export FURRBOX_SERVER_URL=http://100.x.y.z:4000
+npm run dist:win
+```
+
+Fragt die Windows-Firewall beim ersten Start nach Node.js, auf "Zulassen" klicken, sonst ist Port 4000 für die anderen gesperrt. Die Datei aus `release/` an die anderen geben. Dein PC muss laufen und `npm --workspace backend run dev` (oder `npm run dev`) gestartet sein, damit sie sich anmelden können.
+
 ## Build Windows EXE
 
 The Windows build packages Electron with a static Next.js export and points the client to the hosted sync backend.

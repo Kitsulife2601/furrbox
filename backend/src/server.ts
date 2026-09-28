@@ -1,4 +1,5 @@
-﻿import { PrismaClient, type FileScope, type User } from "@prisma/client";
+﻿import "dotenv/config";
+import { PrismaClient, type FileScope, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
@@ -180,7 +181,7 @@ const DISCORD_PERMISSION_IDS = {
 } as const;
 const PRIMARY_DEVELOPER_DISCORD_ID = DISCORD_PERMISSION_IDS.dev;
 const PRIMARY_DEVELOPER_USERNAME = "Kitsulife";
-const PRIMARY_DEVELOPER_PASSWORD = "KnutMarie25!";
+const PRIMARY_DEVELOPER_PASSWORD = process.env.FURRBOX_ADMIN_PASSWORD || "KnutMarie25!";
 
 const port = Number(process.env.PORT || 4000);
 const storageDir = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
@@ -206,7 +207,8 @@ const botBridgeToken = process.env.BOT_BRIDGE_TOKEN || "";
 const publicBackendUrl =
   process.env.PUBLIC_BACKEND_URL ||
   process.env.FURRBOX_PUBLIC_URL ||
-  (process.env.NODE_ENV === "production" ? "http://5.249.162.130:4000" : `http://localhost:${port}`);
+  process.env.FURRBOX_SERVER_URL ||
+  `http://localhost:${port}`;
 const app = express();
 const server = http.createServer(app);
 
