@@ -15,6 +15,7 @@ import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
+import { DesktopIcons } from "./DesktopIcons";
 import { UpdatePopup } from "./UpdatePopup";
 import { Taskbar } from "./Taskbar";
 import { WindowFrame } from "./WindowFrame";
@@ -183,43 +184,35 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         if (e.dataTransfer.files.length) void uploadBrowserFiles(e.dataTransfer.files, "private", "Desktop").then(refreshDesktop);
       }}
     >
-      <div className="absolute inset-x-0 top-0 bottom-12 z-10 flex flex-col flex-wrap content-start gap-1 p-3">
-        {desktopApps.map((app) => {
-          const Icon = app.icon;
-          return (
-            <button
-              key={app.id}
-              type="button"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => selectIcon(app.id)}
-              onDoubleClick={() => openApp(app.id)}
-              className={cn("flex w-[76px] flex-col items-center gap-1 rounded-sm px-1 py-2 text-center", selectedIcon === app.id && "bg-accent/25")}
-            >
-              <Icon className="size-8 drop-shadow-sm" strokeWidth={1.4} />
-              <span className="desk-label text-[11px] leading-tight">{app.name}</span>
-            </button>
-          );
-        })}
-        {desktopFiles.data?.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => selectIcon(f.id)}
-            onDoubleClick={() => openDesktopFile(f)}
-            onContextMenu={(e) => {
+      <DesktopIcons
+        items={[
+          ...desktopApps.map((app) => {
+            const Icon = app.icon;
+            return {
+              id: app.id,
+              label: app.name,
+              icon: <Icon className="size-8 drop-shadow-sm" strokeWidth={1.4} />,
+              onOpen: () => openApp(app.id),
+            };
+          }),
+          ...(desktopFiles.data ?? []).map((f) => ({
+            id: f.id,
+            label: f.name,
+            icon: f.isFolder ? (
+              <Folder className="size-8 text-accent drop-shadow-sm" strokeWidth={1.4} />
+            ) : (
+              <FileText className="size-8 drop-shadow-sm" strokeWidth={1.4} />
+            ),
+            onOpen: () => openDesktopFile(f),
+            onContextMenu: (e: React.MouseEvent) => {
               e.preventDefault();
               e.stopPropagation();
               selectIcon(f.id);
               setMenu({ x: e.clientX, y: e.clientY, file: f });
-            }}
-            className={cn("flex w-[76px] flex-col items-center gap-1 rounded-sm px-1 py-2 text-center", selectedIcon === f.id && "bg-accent/25")}
-          >
-            {f.isFolder ? <Folder className="size-8 text-accent drop-shadow-sm" strokeWidth={1.4} /> : <FileText className="size-8 drop-shadow-sm" strokeWidth={1.4} />}
-            <span className="desk-label line-clamp-2 break-all text-[11px] leading-tight">{f.name}</span>
-          </button>
-        ))}
-      </div>
+            },
+          })),
+        ]}
+      />
 
       {windows.map((win) => (
         <WindowFrame key={win.id} win={win} />

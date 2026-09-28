@@ -27,6 +27,7 @@ export type OsWindow = Rect & {
 
 export type WallpaperId = "bloom" | "dusk" | "mist" | "plain";
 export type ThemeId = "dark" | "light";
+export type IconCell = { c: number; r: number };
 export type WallpaperFit = "fill" | "fit" | "stretch" | "center" | "tile";
 export type WallpaperLayout = { fit: WallpaperFit; x: number; y: number; dim: number };
 export const DEFAULT_WALLPAPER_LAYOUT: WallpaperLayout = { fit: "fill", x: 50, y: 50, dim: 0 };
@@ -88,6 +89,7 @@ type DesktopState = {
   zTop: number;
   focusedId: string | null;
   selectedIcon: string | null;
+  iconCells: Record<string, IconCell>;
   startOpen: boolean;
   searchOpen: boolean;
   chatOpen: boolean;
@@ -114,6 +116,7 @@ type DesktopState = {
   setTray: (tray: DesktopState["tray"]) => void;
   setSearchQuery: (q: string) => void;
   selectIcon: (id: string | null) => void;
+  setIconCell: (id: string, cell: IconCell) => void;
   openApp: (appId: AppId, opts?: OpenOptions) => string;
   focusWindow: (id: string) => void;
   closeWindow: (id: string) => void;
@@ -143,6 +146,7 @@ export const useDesktop = create<DesktopState>()(
       zTop: 10,
       focusedId: null,
       selectedIcon: null,
+      iconCells: {},
       startOpen: false,
       searchOpen: false,
       chatOpen: false,
@@ -169,6 +173,7 @@ export const useDesktop = create<DesktopState>()(
       setTray: (tray) => set({ ...menusClosed, tray: get().tray === tray ? "none" : tray }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       selectIcon: (selectedIcon) => set({ selectedIcon }),
+      setIconCell: (id, cell) => set((st) => ({ iconCells: { ...st.iconCells, [id]: cell } })),
       openApp: (appId, opts) => {
         const app = getApp(appId);
         const existing = get().windows.find((w) =>
@@ -275,6 +280,7 @@ export const useDesktop = create<DesktopState>()(
         wallpaper: s.wallpaper,
         wallpaperUrl: s.wallpaperUrl,
         wallpaperLayout: s.wallpaperLayout,
+        iconCells: s.iconCells,
         accent: s.accent,
         bootSound: s.bootSound,
         volume: s.volume,
