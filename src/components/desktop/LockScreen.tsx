@@ -1,23 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useDesktop } from "@/store/desktop";
 
-// Played from the unlock click / key press itself, so the browser's autoplay rules allow it.
-function playUnlockSound() {
-  const { bootSound, volume } = useDesktop.getState();
-  if (!bootSound) return;
-  const audio = new Audio("/audio/boot.mp3");
-  audio.volume = Math.max(0, Math.min(volume / 100, 1)) * 0.5;
-  audio.play().catch(() => undefined);
-}
-
 export function LockScreen({ userName, style }: { userName: string | null; style?: React.CSSProperties }) {
-  const unlockDesktop = useDesktop((s) => s.unlock);
-  const unlock = useCallback(() => {
-    playUnlockSound();
-    unlockDesktop();
-  }, [unlockDesktop]);
+  const unlock = useDesktop((s) => s.unlock);
   const wallpaper = useDesktop((s) => s.wallpaper);
   const [now, setNow] = useState(() => new Date());
 

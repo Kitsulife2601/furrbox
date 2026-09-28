@@ -1,7 +1,7 @@
 {
   "name": "furrbox-desktop",
   "productName": "FurrBox",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "description": "FurrBox Desktop – Electron-App mit eingebautem FurrBox-Server.",
   "main": "main.cjs",
@@ -29,16 +29,25 @@
       {
         "from": "server",
         "to": "server"
+      },
+      {
+        "from": "build",
+        "to": ".",
+        "filter": [
+          "discord.json"
+        ]
       }
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "win": {
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "FurrBox-${version}-portable.exe"
@@ -48,7 +57,20 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "FurrBox-Setup-${version}.exe"
+      "artifactName": "FurrBox-Setup-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerLanguages": [
+        "de_DE"
+      ],
+      "language": "1031",
+      "include": "build/installer.nsh",
+      "shortcutName": "FurrBox",
+      "uninstallDisplayName": "FurrBox"
     },
     "publish": [
       {

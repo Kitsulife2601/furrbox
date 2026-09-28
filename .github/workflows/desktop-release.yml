@@ -33,6 +33,22 @@ jobs:
         shell: bash
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
+      # Bakes the Discord login into the app so installs work without any setup.
+      # Repository secrets: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET (optional DISCORD_GUILD_ID).
+      - name: Bundle Discord login
+        working-directory: desktop
+        shell: bash
+        run: |
+          if [ -z "$DISCORD_CLIENT_ID" ] || [ -z "$DISCORD_CLIENT_SECRET" ]; then
+            echo "::warning::DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET fehlen – Installationen müssen Discord selbst einrichten."
+            exit 0
+          fi
+          node -e 'require("fs").writeFileSync("build/discord.json", JSON.stringify({ discordClientId: process.env.DISCORD_CLIENT_ID, discordClientSecret: process.env.DISCORD_CLIENT_SECRET, discordGuildId: process.env.DISCORD_GUILD_ID || "" }))'
+        env:
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+
       # Create the release up front: electron-builder then uploads into it instead of racing
       # to create one per file (which produced duplicate releases for the same tag).
       - name: Create GitHub release

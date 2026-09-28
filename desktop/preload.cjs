@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("furrbox", {
   platform: "desktop",
   webview: true,
+  saveDiscordConfig: (data) => ipcRenderer.invoke("furrbox:save-discord", data),
   update: {
     getState: () => ipcRenderer.invoke("furrbox:update-state"),
     check: () => ipcRenderer.invoke("furrbox:update-check"),

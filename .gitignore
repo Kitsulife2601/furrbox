@@ -16,3 +16,5 @@ attachments/
 desktop/node_modules/
 desktop/server/
 desktop/release/
+
+desktop/build/discord.json

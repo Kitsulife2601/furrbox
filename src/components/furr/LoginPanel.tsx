@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth/client";
 
 function DiscordIcon() {
@@ -9,9 +9,70 @@ function DiscordIcon() {
   );
 }
 
+type SaveDiscord = (data: { clientId: string; clientSecret: string }) => Promise<{ ok: boolean; error?: string }>;
+
+function desktopSetup(): SaveDiscord | null {
+  if (typeof window === "undefined") return null;
+  return (window as { furrbox?: { saveDiscordConfig?: SaveDiscord } }).furrbox?.saveDiscordConfig ?? null;
+}
+
+/** First-run setup in the desktop app: stores the Discord app credentials locally. */
+function DiscordSetup({ onCancel }: { onCancel: () => void }) {
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const save = desktopSetup();
+    if (!save) return;
+    setBusy(true);
+    setError("");
+    const result = await save({ clientId, clientSecret }).catch((err: unknown) => ({
+      ok: false,
+      error: err instanceof Error ? err.message : "Speichern fehlgeschlagen.",
+    }));
+    // On success the app reloads itself with the Discord login enabled.
+    if (!result.ok) {
+      setBusy(false);
+      setError(result.error || "Speichern fehlgeschlagen.");
+    }
+  }
+
+  const input = "h-10 rounded-md border border-border bg-bg/70 px-3 text-[13px] outline-none focus:border-accent";
+  return (
+    <form onSubmit={submit} className="mt-4 grid min-w-0 gap-3 rounded-md bg-elevated/50 p-3">
+      <p className="text-[13px] font-medium">Discord-Login einrichten</p>
+      <p className="text-[12px] text-muted">
+        Einmalig pro PC: Werte aus dem Discord Developer Portal → deine Application → OAuth2. Dort muss als Redirect{" "}
+        <span className="break-all font-mono text-fg">http://127.0.0.1:47821/api/auth/callback/discord</span> eingetragen sein.
+      </p>
+      <label className="grid gap-1 text-[12px]">
+        Client-ID
+        <input value={clientId} onChange={(e) => setClientId(e.target.value.trim())} inputMode="numeric" className={input} required />
+      </label>
+      <label className="grid gap-1 text-[12px]">
+        Client-Secret
+        <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value.trim())} className={input} required />
+      </label>
+      {error && <p className="rounded-md bg-danger/15 px-3 py-2 text-[12px] text-fg">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="h-9 rounded-md px-3 text-[13px] hover:bg-fg/6">
+          Abbrechen
+        </button>
+        <button type="submit" disabled={busy} className="h-9 rounded-md bg-accent px-4 text-[13px] font-semibold text-accent-fg disabled:opacity-60">
+          {busy ? "Wird eingerichtet…" : "Speichern & neu starten"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function LoginPanel({ onBack }: { onBack?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [setup, setSetup] = useState(false);
 
   async function signInWithDiscord() {
     setBusy(true);
@@ -20,8 +81,13 @@ export function LoginPanel({ onBack }: { onBack?: () => void }) {
     // On success the browser is already on its way to Discord.
     if (result.error) {
       setBusy(false);
+      const notConfigured = result.error.status === 404 || /not found|provider/i.test(result.error.message ?? "");
+      if (notConfigured && desktopSetup()) {
+        setSetup(true);
+        return;
+      }
       setError(
-        result.error.status === 404 || /not found|provider/i.test(result.error.message ?? "")
+        notConfigured
           ? "Discord-Login ist auf diesem Server noch nicht eingerichtet."
           : result.error.message || "Anmeldung fehlgeschlagen.",
       );
@@ -46,6 +112,7 @@ export function LoginPanel({ onBack }: { onBack?: () => void }) {
         {busy ? "Weiterleitung zu Discord…" : "Mit Discord anmelden"}
       </button>
       {error && <p className="mt-3 rounded-md bg-danger/15 px-3 py-2 text-[13px] text-fg">{error}</p>}
+      {setup && <DiscordSetup onCancel={() => setSetup(false)} />}
 
       {onBack && (
         <div className="mt-4 flex justify-end text-[12px] text-muted">

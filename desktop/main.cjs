@@ -29,6 +29,19 @@ function readConfig() {
   }
 }
 
+/**
+ * Discord app credentials baked in by the release build (desktop/build/discord.json,
+ * written by the GitHub workflow from repository secrets), so installs work without setup.
+ */
+function bundledDiscord() {
+  const file = app.isPackaged ? path.join(process.resourcesPath, "discord.json") : path.join(__dirname, "build", "discord.json");
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 /** A stable auth secret per installation, so sessions survive restarts. */
 function authSecret() {
   const file = path.join(userData, "auth-secret");
@@ -80,9 +93,10 @@ function serverDir() {
 async function startLocalServer(config) {
   const entry = path.join(serverDir(), "server", "index.mjs");
   if (!fs.existsSync(entry)) throw new Error(`Server-Build fehlt: ${entry}\nBitte "npm run build:server" im Ordner desktop ausführen.`);
+  const bundled = bundledDiscord();
   const port = await freePort(47821);
   // The Discord redirect URI is registered for port 47821, so a fallback port would break the login.
-  if (port !== 47821 && (config.discordClientId || process.env.DISCORD_CLIENT_ID)) {
+  if (port !== 47821 && (config.discordClientId || process.env.DISCORD_CLIENT_ID || bundled.discordClientId)) {
     throw new Error("Port 47821 ist belegt – der Discord-Login braucht genau diesen Port. Bitte das Programm auf dem Port beenden und FurrBox neu starten.");
   }
   const origin = `http://127.0.0.1:${port}`;
@@ -101,16 +115,17 @@ async function startLocalServer(config) {
       BETTER_AUTH_URL: origin,
       BETTER_AUTH_SECRET: authSecret(),
       FURRBOX_PGLITE_DIR: dbDir,
-      DISCORD_CLIENT_ID: String(config.discordClientId || process.env.DISCORD_CLIENT_ID || ""),
-      DISCORD_CLIENT_SECRET: String(config.discordClientSecret || process.env.DISCORD_CLIENT_SECRET || ""),
-      DISCORD_GUILD_ID: String(config.discordGuildId || process.env.DISCORD_GUILD_ID || ""),
+      DISCORD_CLIENT_ID: String(config.discordClientId || process.env.DISCORD_CLIENT_ID || bundled.discordClientId || ""),
+      DISCORD_CLIENT_SECRET: String(config.discordClientSecret || process.env.DISCORD_CLIENT_SECRET || bundled.discordClientSecret || ""),
+      DISCORD_GUILD_ID: String(config.discordGuildId || process.env.DISCORD_GUILD_ID || bundled.discordGuildId || ""),
     },
     stdio: ["ignore", logFile, logFile],
     windowsHide: true,
   });
-  serverProcess.on("exit", (code) => {
-    serverProcess = null;
-    if (!app.isQuitting) setStatus(`Der FurrBox-Server wurde beendet (Code ${code}). Details: ${path.join(userData, "server.log")}`, true);
+  const child = serverProcess;
+  child.on("exit", (code) => {
+    if (serverProcess === child) serverProcess = null;
+    if (!app.isQuitting && !child.restarting) setStatus(`Der FurrBox-Server wurde beendet (Code ${code}). Details: ${path.join(userData, "server.log")}`, true);
   });
   await waitForServer(`${origin}/`);
   return origin;
@@ -150,6 +165,29 @@ function releaseNotes(info) {
   const text = Array.isArray(notes) ? notes.map((n) => n.note).join("\n") : String(notes ?? "");
   return text.replace(/<[^>]+>/g, "").trim().slice(0, 1500);
 }
+
+// First-run setup from the login screen: store the Discord app credentials and restart the
+// bundled server so the Discord login is active immediately.
+ipcMain.handle("furrbox:save-discord", async (_event, input) => {
+  const clientId = String(input?.clientId ?? "").trim();
+  const clientSecret = String(input?.clientSecret ?? "").trim();
+  if (!/^\d{15,22}$/.test(clientId)) return { ok: false, error: "Die Client-ID ist eine lange Zahl (Discord Developer Portal → OAuth2)." };
+  if (clientSecret.length < 16) return { ok: false, error: "Das Client-Secret fehlt oder ist zu kurz." };
+  const config = { ...readConfig(), discordClientId: clientId, discordClientSecret: clientSecret };
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+  if (String(config.serverUrl || "").trim()) return { ok: true };
+  if (serverProcess) {
+    const old = serverProcess;
+    old.restarting = true;
+    await new Promise((resolve) => {
+      old.once("exit", resolve);
+      old.kill();
+    });
+  }
+  const url = await startLocalServer(config);
+  await mainWindow?.loadURL(url);
+  return { ok: true };
+});
 
 ipcMain.handle("furrbox:update-state", () => updateState);
 ipcMain.handle("furrbox:update-check", async () => {

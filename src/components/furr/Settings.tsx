@@ -155,10 +155,6 @@ function Personal() {
           ))}
         </div>
       </div>
-      <label className="flex items-center gap-2 text-[13px]">
-        <input type="checkbox" checked={s.bootSound} onChange={(e) => s.setBootSound(e.target.checked)} />
-        Startsound beim Entsperren abspielen
-      </label>
     </div>
   );
 }
