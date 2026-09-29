@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
 
@@ -15,6 +16,16 @@ let serverProcess = null;
 
 const userData = app.getPath("userData");
 const configPath = path.join(userData, "furrbox-config.json");
+
+// Central FurrBox server (Vercel). Every install connects here unless furrbox-config.json sets
+// its own "serverUrl" – or "local" to run the bundled server on this PC instead.
+const DEFAULT_SERVER_URL = "https://furrbox-88ir.vercel.app";
+
+function serverUrlFor(config) {
+  const value = String(config.serverUrl || "").trim();
+  if (value === "local") return "";
+  return (value || DEFAULT_SERVER_URL).replace(/\/+$/, "");
+}
 
 function readConfig() {
   // discordClientId/-Secret: Discord application for the login (redirect URI
@@ -72,7 +83,7 @@ function waitForServer(url, timeoutMs = 60_000) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const attempt = () => {
-      const req = http.get(url, (res) => {
+      const req = (url.startsWith("https:") ? https : http).get(url, (res) => {
         res.resume();
         resolve();
       });
@@ -175,7 +186,7 @@ ipcMain.handle("furrbox:save-discord", async (_event, input) => {
   if (clientSecret.length < 16) return { ok: false, error: "Das Client-Secret fehlt oder ist zu kurz." };
   const config = { ...readConfig(), discordClientId: clientId, discordClientSecret: clientSecret };
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
-  if (String(config.serverUrl || "").trim()) return { ok: true };
+  if (serverUrlFor(config)) return { ok: true };
   if (serverProcess) {
     const old = serverProcess;
     old.restarting = true;
@@ -239,7 +250,7 @@ async function createWindow() {
   await mainWindow.loadFile(path.join(__dirname, "splash.html"));
 
   try {
-    let url = String(config.serverUrl || "").trim().replace(/\/+$/, "");
+    let url = serverUrlFor(config);
     if (url) {
       setStatus(`Verbinde mit ${url}…`);
       await waitForServer(`${url}/`, 20_000);
