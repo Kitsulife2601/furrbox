@@ -6,5 +6,5 @@ cd /d "%~dp0"
 echo [%date% %time%] Bot startet >> bot.log
 node --env-file=.env index.mjs >> bot.log 2>&1
 echo [%date% %time%] Bot beendet (Code %errorlevel%), Neustart in 30 Sekunden >> bot.log
-timeout /t 30 /nobreak > nul
+ping -n 31 127.0.0.1 > nul
 goto loop
