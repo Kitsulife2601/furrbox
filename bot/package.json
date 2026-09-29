@@ -1,0 +1,17 @@
+{
+  "name": "furrbox-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FurrBox Discord-Bot: synchronisiert Mitglieder/Rollen/Status und führt Moderation aus dem FurrBox-Dashboard aus.",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0"
+  }
+}

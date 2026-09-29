@@ -59,7 +59,11 @@ async function handle(request: Request, action: string) {
       update message_inspect set status = 'dispatched'
       where id in (select id from message_inspect where status = 'queued' order by created_at limit 20)
       returning id, message_id`;
+    // Lets the bot poll fast only while someone has FurrBox open (keeps the database asleep otherwise).
+    const activeRows = await sql<{ n: number }>`
+      select count(*)::int as n from furr_presence where last_heartbeat_at > now() - interval '3 minutes'`;
     return json({
+      active: (activeRows[0]?.n ?? 0) > 0,
       moderation: moderation.map((m) => ({
         requestId: m.id,
         source: "dashboard",
