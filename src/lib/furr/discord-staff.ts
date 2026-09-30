@@ -25,7 +25,13 @@ export function privilegeFor(discordId: string, roleIds: string[]): Role | "none
   return "none";
 }
 
-type Link = { discord_id: string; profile_discord_id: string | null; has_profile: boolean; checked_at: unknown };
+type Link = {
+  discord_id: string;
+  profile_discord_id: string | null;
+  has_profile: boolean;
+  checked_at: unknown;
+  in_guild: boolean | null;
+};
 
 /**
  * Links the signed-in user's Discord account to their profile and refreshes the
@@ -39,7 +45,8 @@ export async function syncDiscordLogin(
 ) {
   const rows = await sql<Link>`
     select a."accountId" as discord_id, p.discord_id as profile_discord_id,
-           p.user_id is not null as has_profile, p.discord_checked_at as checked_at
+           p.user_id is not null as has_profile, p.discord_checked_at as checked_at,
+           p.discord_in_guild as in_guild
     from account a
     left join furr_profile p on p.user_id = a."userId"
     where a."userId" = ${userId} and a."providerId" = 'discord'
@@ -55,18 +62,21 @@ export async function syncDiscordLogin(
     await sql`update furr_profile set discord_id = ${link.discord_id} where user_id = ${userId}`;
   }
 
+  // Members are re-checked every 5 minutes; non-members on every request, so
+  // "Erneut prüfen" works right after joining the server.
   const checkedAt = link.checked_at ? new Date(String(link.checked_at)).getTime() : 0;
-  if (Date.now() - checkedAt < RECHECK_MS) return;
+  if (link.in_guild === true && Date.now() - checkedAt < RECHECK_MS) return;
 
-  const privilege = await fetchPrivilege(userId, link.discord_id);
-  if (privilege === null) return; // Discord unreachable: keep the last known value.
+  const result = await fetchPrivilege(userId, link.discord_id);
+  if (result === null) return; // Discord unreachable: keep the last known value.
   await sql`
-    update furr_profile set discord_privilege = ${privilege}, discord_checked_at = now()
+    update furr_profile
+    set discord_privilege = ${result.privilege}, discord_in_guild = ${result.inGuild}, discord_checked_at = now()
     where user_id = ${userId}`;
 }
 
 // Server-only so the Better Auth server never lands in the client bundle.
-const fetchPrivilege = createServerOnlyFn(async (userId: string, discordId: string): Promise<Role | "none" | null> => {
+const fetchPrivilege = createServerOnlyFn(async (userId: string, discordId: string): Promise<{ inGuild: boolean; privilege: Role | "none" } | null> => {
   try {
     const { auth } = await import("@/lib/auth/server");
     const { accessToken } = await auth.api.getAccessToken({ body: { providerId: "discord", userId } });
@@ -75,10 +85,10 @@ const fetchPrivilege = createServerOnlyFn(async (userId: string, discordId: stri
     const res = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
-    if (res.status === 404) return "none"; // not on the server
+    if (res.status === 404) return { inGuild: false, privilege: "none" }; // not on the server
     if (!res.ok) return null;
     const member = (await res.json()) as { roles?: string[] };
-    return privilegeFor(discordId, member.roles ?? []);
+    return { inGuild: true, privilege: privilegeFor(discordId, member.roles ?? []) };
   } catch (error) {
     console.warn("[furrbox] Discord staff check failed", error);
     return null;

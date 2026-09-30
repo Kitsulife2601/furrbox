@@ -29,12 +29,15 @@ type ProfileRow = {
   synced_at: unknown;
   discord_privilege: string | null;
   discord_checked_at: unknown;
+  discord_in_guild: boolean | null;
+  has_member_row: boolean;
 };
 
 async function readProfile(sql: Sql, userId: string) {
   const rows = await sql<ProfileRow>`
     select p.user_id, p.username, p.display_name, p.discord_id, p.role, u.email, dm.highest_privilege,
-      dm.synced_at, p.discord_privilege, p.discord_checked_at
+      dm.synced_at, p.discord_privilege, p.discord_checked_at, p.discord_in_guild,
+      dm.discord_id is not null as has_member_row
     from furr_profile p
     left join "user" u on u.id = p.user_id
     left join discord_member dm on dm.discord_id = p.discord_id
@@ -90,6 +93,17 @@ export async function createProfile(
   await ensureDefaultFolders(sql, userId);
 }
 
+/**
+ * Server membership from the fresher source: the login check (Discord API) or the bot
+ * bridge sync (the bot deletes members who leave). Unknown counts as "not a member".
+ */
+function inGuild(row: ProfileRow) {
+  const synced = iso(row.synced_at);
+  const checked = iso(row.discord_checked_at);
+  if (row.discord_in_guild !== null && checked && (!synced || checked >= synced)) return row.discord_in_guild;
+  return row.has_member_row || row.discord_in_guild === true;
+}
+
 /** The fresher of the two Discord sources: the bot bridge sync or the login check. */
 function discordPrivilege(row: ProfileRow) {
   const synced = iso(row.synced_at);
@@ -118,22 +132,31 @@ export async function loadMe(userId: string): Promise<Me> {
     role,
     roleLabel: ROLE_LABEL[role],
     permissions,
-    hasAccess: await hasAccess(sql, row.discord_id, row.role, permissions.isTeam),
+    ...(await access(sql, row, permissions.isTeam)),
   };
 }
 
-/** Staff and manually promoted accounts always get in; everyone else needs a whitelist entry. */
-async function hasAccess(sql: Sql, discordId: string | null, accountRole: string, isTeam: boolean) {
-  if (isTeam || (accountRole && accountRole !== "member")) return true;
-  if ((await getSetting("whitelist_enabled", "true")) !== "true") return true;
-  if (!discordId) return false;
-  const rows = await sql`select 1 from furr_whitelist where discord_id = ${discordId}`;
-  return rows.length > 0;
+/**
+ * Only members of the Fish Discord server get in – no exceptions. On top of that, staff
+ * and manually promoted accounts pass directly; everyone else needs a whitelist entry.
+ */
+async function access(sql: Sql, row: ProfileRow, isTeam: boolean): Promise<Pick<Me, "hasAccess" | "accessReason">> {
+  if (!row.discord_id || !inGuild(row)) return { hasAccess: false, accessReason: "not_in_guild" };
+  if (isTeam || (row.role && row.role !== "member")) return { hasAccess: true, accessReason: "ok" };
+  if ((await getSetting("whitelist_enabled", "true")) !== "true") return { hasAccess: true, accessReason: "ok" };
+  const rows = await sql`select 1 from furr_whitelist where discord_id = ${row.discord_id}`;
+  return rows.length ? { hasAccess: true, accessReason: "ok" } : { hasAccess: false, accessReason: "not_whitelisted" };
 }
 
 export async function requireAccess(userId: string) {
   const me = await loadMe(userId);
-  if (!me.hasAccess) throw new Error("Du bist nicht auf der FurrBox-Whitelist. Bitte den Owner um Freischaltung.");
+  if (!me.hasAccess) {
+    throw new Error(
+      me.accessReason === "not_in_guild"
+        ? "Du bist nicht auf dem Fish-Discord-Server. Nur Server-Mitglieder dürfen FurrBox nutzen."
+        : "Du bist nicht auf der FurrBox-Whitelist. Bitte den Owner um Freischaltung.",
+    );
+  }
   return me;
 }
 

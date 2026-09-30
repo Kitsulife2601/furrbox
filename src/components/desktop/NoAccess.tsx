@@ -6,6 +6,7 @@ import type { Me } from "@/lib/furr/types";
 
 export function NoAccess({ me, onRetry, style, wallpaper }: { me: Me; onRetry: () => void; style?: CSSProperties; wallpaper: string }) {
   const [copied, setCopied] = useState(false);
+  const notInGuild = me.accessReason === "not_in_guild";
   return (
     <div className={`grid h-dvh place-items-center bg-cover bg-center p-4 wallpaper-${wallpaper}`} style={style}>
       <div className="mica w-[min(440px,calc(100vw-2rem))] rounded-xl p-6 text-fg">
@@ -15,14 +16,17 @@ export function NoAccess({ me, onRetry, style, wallpaper }: { me: Me; onRetry: (
           </span>
           <div>
             <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-accent">FurrBox</p>
-            <h1 className="text-lg font-semibold tracking-tight">Noch nicht freigeschaltet</h1>
+            <h1 className="text-lg font-semibold tracking-tight">
+              {notInGuild ? "Nicht auf dem Fish-Server" : "Noch nicht freigeschaltet"}
+            </h1>
           </div>
         </div>
         <p className="mt-3 text-[13px] text-muted">
-          Hallo {me.displayName}! Du bist mit Discord angemeldet, aber noch nicht auf der FurrBox-Whitelist. Schick dem Owner
-          deine Discord-ID, damit er dich freischaltet.
+          {notInGuild
+            ? `Hallo ${me.displayName}! FurrBox ist nur für Mitglieder des Fish-Discord-Servers. Tritt dem Server bei und klicke dann auf „Erneut prüfen“.`
+            : `Hallo ${me.displayName}! Du bist mit Discord angemeldet, aber noch nicht auf der FurrBox-Whitelist. Schick dem Owner deine Discord-ID, damit er dich freischaltet.`}
         </p>
-        {me.discordId && (
+        {!notInGuild && me.discordId && (
           <button
             type="button"
             onClick={() => {

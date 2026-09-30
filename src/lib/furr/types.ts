@@ -11,8 +11,10 @@ export type Me = {
   role: Role;
   roleLabel: string;
   permissions: Permissions;
-  /** Whitelisted, Discord staff, manually promoted – or the whitelist is switched off. */
+  /** On the Fish server and (Discord staff, manually promoted, whitelisted or whitelist off). */
   hasAccess: boolean;
+  /** Why access is denied: not on the Fish Discord server, or not on the whitelist. */
+  accessReason: "ok" | "not_in_guild" | "not_whitelisted";
 };
 
 export type FurrFile = {
