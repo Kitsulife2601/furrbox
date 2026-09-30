@@ -3,6 +3,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { accessMiddleware } from "../access";
 import { bridgeStatus, getSql, iso, loadMe } from "../core";
 import type { Platform, SystemNotification } from "../types";
+import UPDATES from "../updates.json";
 
 export const getMe = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -72,3 +73,9 @@ export const listNotifications = createServerFn({ method: "GET" })
 export const getBridgeStatus = createServerFn({ method: "GET" })
   .middleware([accessMiddleware])
   .handler(async () => bridgeStatus());
+
+/** The deployed build id + its update history, so open apps can notice a newer FurrBox. */
+export const getAppBuild = createServerFn({ method: "GET" }).handler(async () => ({
+  build: __FURRBOX_BUILD__,
+  updates: UPDATES as { date: string; version?: string; title: string; items: string[] }[],
+}));

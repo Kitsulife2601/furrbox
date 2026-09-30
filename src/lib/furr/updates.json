@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-09-30",
+    "title": "Updates finden jede Änderung",
+    "items": [
+      "„Nach Updates suchen“ findet jetzt auch Änderungen am FurrBox-Server – nicht nur neue Desktop-Installer.",
+      "FurrBox prüft alle 5 Minuten selbst und zeigt bei einem neuen Update ein Fenster mit „Das ist neu“.",
+      "Mit „Jetzt aktualisieren“ lädt FurrBox sich kurz neu und ist sofort auf dem neuesten Stand."
+    ]
+  },
+  {
+    "date": "2026-09-30",
     "title": "Whitelist fürs Team & Updateverlauf",
     "items": [
       "Supporter und Moderatoren können in der FurrWhitelist Leute freischalten und entfernen.",

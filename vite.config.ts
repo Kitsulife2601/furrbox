@@ -145,7 +145,12 @@ function authPopupPlugin(): Plugin {
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
+// One id per build, baked into client AND server: the running app compares its own id with the
+// server's to detect that a newer FurrBox was deployed ("Nach Updates suchen").
+const FURRBOX_BUILD = process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`;
+
 export default defineConfig(({ command, isPreview }) => ({
+  define: { __FURRBOX_BUILD__: JSON.stringify(FURRBOX_BUILD) },
   server: {
     host: "0.0.0.0",
     port: 8080,

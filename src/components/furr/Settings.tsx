@@ -17,7 +17,13 @@ import {
   type WallpaperId,
 } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
-import { updateBridge, useUpdateState, type UpdateState } from "@/components/desktop/UpdatePopup";
+import {
+  applyServerUpdate,
+  updateBridge,
+  useServerUpdate,
+  useUpdateState,
+  type UpdateState,
+} from "@/components/desktop/UpdatePopup";
 import UPDATES from "@/lib/furr/updates.json";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 
@@ -478,53 +484,66 @@ const UPDATE_TEXT: Record<UpdateState["status"], string> = {
 };
 
 function UpdateSection({ state }: { state: UpdateState | null }) {
+  const server = useServerUpdate();
   const [busy, setBusy] = useState(false);
-  const detail = !state
-    ? "Die Web-Version ist immer automatisch auf dem neuesten Stand."
-    : state.status === "downloading" && state.newVersion
-      ? `Ein Update wird heruntergeladen (${state.percent ?? 0} %).`
-      : state.status === "ready" && state.newVersion
-        ? "Ein Update ist bereit – FurrBox startet zum Installieren kurz neu."
-        : UPDATE_TEXT[state.status];
+  const desktopBusy = state?.status === "checking" || state?.status === "downloading";
+
+  // Priority: desktop installer ready > new server version > desktop download > plain status.
+  const detail =
+    state?.status === "ready"
+      ? "Ein Update ist bereit – FurrBox startet zum Installieren kurz neu."
+      : server.status === "available"
+        ? "Ein Update ist verfügbar."
+        : state?.status === "downloading"
+          ? `Ein Update wird heruntergeladen (${state.percent ?? 0} %).`
+          : busy || server.status === "checking" || state?.status === "checking"
+            ? "Suche nach Updates…"
+            : server.status === "error" && !state
+              ? "Update-Prüfung fehlgeschlagen. Bitte später erneut versuchen."
+              : state && state.status !== "current" && state.status !== "idle"
+                ? UPDATE_TEXT[state.status]
+                : server.checkedAt || state?.status === "current"
+                  ? "FurrBox ist auf dem neuesten Stand."
+                  : "Noch nicht geprüft.";
+
+  async function checkAll() {
+    setBusy(true);
+    await Promise.all([
+      server.check(),
+      state && state.status !== "unsupported" ? updateBridge()?.check().catch(() => undefined) : undefined,
+    ]);
+    setBusy(false);
+  }
+
   return (
     <div className="mt-6 grid gap-2 rounded-md bg-elevated/50 p-3 text-[13px]">
       <p className="font-medium">Updates</p>
       <p className="text-muted">{detail}</p>
       {state?.status === "error" && state.error && <ErrorText>{state.error}</ErrorText>}
-      {state && (
-        <div className="flex gap-2">
-          {state.status === "ready" ? (
-            <Btn variant="primary" onClick={() => void updateBridge()?.install()}>
-              Jetzt neu starten und installieren
-            </Btn>
-          ) : (
-            <Btn
-              disabled={
-                busy ||
-                state.status === "unsupported" ||
-                state.status === "checking" ||
-                state.status === "downloading"
-              }
-              onClick={async () => {
-                setBusy(true);
-                await updateBridge()
-                  ?.check()
-                  .catch(() => undefined);
-                setBusy(false);
-              }}
-            >
-              Nach Updates suchen
-            </Btn>
-          )}
-        </div>
-      )}
-      {state && (
+      <div className="flex gap-2">
+        {state?.status === "ready" ? (
+          <Btn variant="primary" onClick={() => void updateBridge()?.install()}>
+            Jetzt neu starten und installieren
+          </Btn>
+        ) : server.status === "available" ? (
+          <Btn variant="primary" onClick={applyServerUpdate}>
+            Jetzt aktualisieren
+          </Btn>
+        ) : (
+          <Btn disabled={busy || desktopBusy || server.status === "checking"} onClick={() => void checkAll()}>
+            Nach Updates suchen
+          </Btn>
+        )}
+      </div>
+      {server.checkedAt && (
         <p className="text-[11px] text-subtle">
-          Updates kommen automatisch aus den GitHub-Releases von FurrBox.
+          Zuletzt geprüft: {new Date(server.checkedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
         </p>
       )}
-      {state?.newVersion && (state.status === "downloading" || state.status === "ready") && (
+      {state?.newVersion && (state.status === "downloading" || state.status === "ready") ? (
         <PendingUpdate version={state.newVersion} notes={state.notes} />
+      ) : (
+        server.status === "available" && <NewItems items={server.news.flatMap((u) => u.items)} />
       )}
       <UpdateHistory />
     </div>
@@ -538,7 +557,22 @@ function formatDay(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("de-DE");
 }
 
-/** "Was ist neu" for an update that is downloading or ready (like Windows Update). */
+/** "Das ist neu" box for a found update. */
+function NewItems({ items }: { items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
+      <p className="font-medium">Das ist neu</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** "Das ist neu" for a desktop update that is downloading or ready (like Windows Update). */
 function PendingUpdate({ version, notes }: { version: string; notes?: string }) {
   const entry = UPDATE_LIST.find((u) => u.version === version);
   if (!entry && !notes) return null;
