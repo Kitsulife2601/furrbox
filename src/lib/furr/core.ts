@@ -112,7 +112,8 @@ function discordPrivilege(row: ProfileRow) {
   return row.highest_privilege;
 }
 
-export async function loadMe(userId: string): Promise<Me> {
+/** `bearerToken` identifies the login session for the whitelist name/password step. */
+export async function loadMe(userId: string, bearerToken?: string): Promise<Me> {
   const sql = await getSql();
   await syncDiscordLogin(sql, userId, (discordId) => createProfile(sql, userId, { discordId }));
   let row = await readProfile(sql, userId);
@@ -132,31 +133,59 @@ export async function loadMe(userId: string): Promise<Me> {
     role,
     roleLabel: ROLE_LABEL[role],
     permissions,
-    ...(await access(sql, row, permissions.isTeam)),
+    ...(await access(sql, row, permissions.isTeam, bearerToken)),
   };
 }
 
 /**
- * Only members of the Fish Discord server get in – no exceptions. On top of that, staff
- * and manually promoted accounts pass directly; everyone else needs a whitelist entry.
+ * Only members of the Fish Discord server get in – no exceptions. Staff and manually promoted
+ * accounts pass directly. Everyone else needs a whitelist entry from the owner and must sign in
+ * with its name + password once per login session (changing the start password on first use).
  */
-async function access(sql: Sql, row: ProfileRow, isTeam: boolean): Promise<Pick<Me, "hasAccess" | "accessReason">> {
-  if (!row.discord_id || !inGuild(row)) return { hasAccess: false, accessReason: "not_in_guild" };
-  if (isTeam || (row.role && row.role !== "member")) return { hasAccess: true, accessReason: "ok" };
-  if ((await getSetting("whitelist_enabled", "true")) !== "true") return { hasAccess: true, accessReason: "ok" };
-  const rows = await sql`select 1 from furr_whitelist where discord_id = ${row.discord_id}`;
-  return rows.length ? { hasAccess: true, accessReason: "ok" } : { hasAccess: false, accessReason: "not_whitelisted" };
+async function access(
+  sql: Sql,
+  row: ProfileRow,
+  isTeam: boolean,
+  bearerToken?: string,
+): Promise<Pick<Me, "hasAccess" | "accessReason" | "whitelistUsername">> {
+  const deny = (accessReason: Me["accessReason"], whitelistUsername: string | null = null) => ({
+    hasAccess: false,
+    accessReason,
+    whitelistUsername,
+  });
+  if (!row.discord_id || !inGuild(row)) return deny("not_in_guild");
+  if (isTeam || (row.role && row.role !== "member")) return { hasAccess: true, accessReason: "ok", whitelistUsername: null };
+  if ((await getSetting("whitelist_enabled", "true")) !== "true") {
+    return { hasAccess: true, accessReason: "ok", whitelistUsername: null };
+  }
+  const entries = await sql<{ username: string | null; password_hash: string | null; must_change_password: boolean }>`
+    select username, password_hash, must_change_password from furr_whitelist where discord_id = ${row.discord_id}`;
+  const entry = entries[0];
+  if (!entry) return deny("not_whitelisted");
+  if (!entry.username || !entry.password_hash) return deny("no_credentials");
+
+  const { currentSessionKey } = await import("./whitelist-login.server");
+  const key = await currentSessionKey(bearerToken);
+  const unlocked = key
+    ? await sql`select 1 from furr_whitelist_unlock where token_hash = ${key} and user_id = ${row.user_id}`
+    : [];
+  if (!unlocked.length) return deny("needs_password", entry.username);
+  if (entry.must_change_password) return deny("must_change_password", entry.username);
+  return { hasAccess: true, accessReason: "ok", whitelistUsername: entry.username };
 }
 
-export async function requireAccess(userId: string) {
-  const me = await loadMe(userId);
-  if (!me.hasAccess) {
-    throw new Error(
-      me.accessReason === "not_in_guild"
-        ? "Du bist nicht auf dem Fish-Discord-Server. Nur Server-Mitglieder dürfen FurrBox nutzen."
-        : "Du bist nicht auf der FurrBox-Whitelist. Bitte den Owner um Freischaltung.",
-    );
-  }
+const ACCESS_ERRORS: Record<Me["accessReason"], string> = {
+  ok: "",
+  not_in_guild: "Du bist nicht auf dem Fish-Discord-Server. Nur Server-Mitglieder dürfen FurrBox nutzen.",
+  not_whitelisted: "Du bist nicht auf der FurrBox-Whitelist. Bitte den Owner um Freischaltung.",
+  no_credentials: "Der Owner hat für dich noch keinen Nutzernamen und kein Passwort vergeben.",
+  needs_password: "Bitte melde dich zuerst mit deinem FurrBox-Nutzernamen und Passwort an.",
+  must_change_password: "Bitte lege zuerst ein eigenes Passwort fest.",
+};
+
+export async function requireAccess(userId: string, bearerToken?: string) {
+  const me = await loadMe(userId, bearerToken);
+  if (!me.hasAccess) throw new Error(ACCESS_ERRORS[me.accessReason]);
   return me;
 }
 

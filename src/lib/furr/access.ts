@@ -10,6 +10,6 @@ export const accessMiddleware = createMiddleware({ type: "function" })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
     const { requireAccess } = await import("./core");
-    await requireAccess(context.userId);
+    await requireAccess(context.userId, context.bearerToken);
     return next();
   });

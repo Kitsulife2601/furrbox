@@ -32,7 +32,7 @@ export type Permissions = {
   canUseEvidence: boolean;
   canManageAccounts: boolean;
   canConfigureChat: boolean;
-  /** Add / remove people on the whitelist (Supporter and up). */
+  /** Add / remove people on the whitelist and hand out their passwords (Owner and Dev). */
   canManageWhitelist: boolean;
   /** Switch the whole whitelist on or off (Owner and Dev). */
   canToggleWhitelist: boolean;
@@ -51,7 +51,7 @@ export function permissionsFor(role: Role): Permissions {
     canUseEvidence: isTeam,
     canManageAccounts: role === "dev",
     canConfigureChat: role === "dev",
-    canManageWhitelist: isTeam,
+    canManageWhitelist: rank >= roleRank("owner"),
     canToggleWhitelist: rank >= roleRank("owner"),
     moderationActions:
       rank >= roleRank("moderator") ? [...MODERATION_ACTIONS] : isTeam ? ["warn", "timeout"] : [],

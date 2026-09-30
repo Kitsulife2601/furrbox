@@ -14,7 +14,9 @@ export type Me = {
   /** On the Fish server and (Discord staff, manually promoted, whitelisted or whitelist off). */
   hasAccess: boolean;
   /** Why access is denied: not on the Fish Discord server, or not on the whitelist. */
-  accessReason: "ok" | "not_in_guild" | "not_whitelisted";
+  accessReason: "ok" | "not_in_guild" | "not_whitelisted" | "no_credentials" | "needs_password" | "must_change_password";
+  /** FurrBox login name from the whitelist (whitelisted non-staff users only). */
+  whitelistUsername: string | null;
 };
 
 export type FurrFile = {

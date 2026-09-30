@@ -58,6 +58,54 @@ type ServerUpdate = {
 
 const entryKey = (u: UpdateEntry) => `${u.date}|${u.title}`;
 
+const GITHUB_REPO = "Kitsulife2601/furrbox";
+const SHA = /^[0-9a-f]{40}$/;
+
+/**
+ * What changed between the running build and the server's build, straight from the GitHub
+ * commits (one entry per commit: title = first line, items = its "- " bullet lines).
+ * Returns null when GitHub can't answer (then updates.json is used instead).
+ */
+async function githubChanges(from: string, to: string): Promise<UpdateEntry[] | null> {
+  if (!SHA.test(from) || !SHA.test(to)) return null;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/compare/${from}...${to}`, {
+      headers: { accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      commits?: { commit: { message: string; author?: { date?: string } }; parents?: unknown[] }[];
+    };
+    return (data.commits ?? [])
+      .filter((c) => (c.parents?.length ?? 1) <= 1)
+      .reverse()
+      .map((c) => {
+        const raw = c.commit.message.split("\n");
+        const lines = raw.map((l) => l.trim());
+        // "- " starts a point; indented lines right after it continue that point.
+        const items: string[] = [];
+        let inItem = false;
+        for (const line of raw) {
+          if (/^[-*] /.test(line)) {
+            items.push(line.slice(2).trim());
+            inItem = true;
+          } else if (inItem && /^\s+\S/.test(line)) {
+            items[items.length - 1] += ` ${line.trim()}`;
+          } else {
+            inItem = false;
+          }
+        }
+        return {
+          date: (c.commit.author?.date ?? new Date().toISOString()).slice(0, 10),
+          title: lines[0] ?? "Update",
+          items: items.length ? items : [lines[0] ?? "Verbesserungen"],
+        };
+      });
+  } catch {
+    return null;
+  }
+}
+
 export const useServerUpdate = create<ServerUpdate>((set, get) => ({
   status: "idle",
   news: [],
@@ -67,18 +115,27 @@ export const useServerUpdate = create<ServerUpdate>((set, get) => ({
     set({ status: get().status === "available" ? "available" : "checking" });
     try {
       const server = await getAppBuild();
-      const known = new Set(UPDATE_LIST.map((u) => entryKey(u as UpdateEntry)));
       const available = server.build !== __FURRBOX_BUILD__;
-      set({
-        status: available ? "available" : "current",
-        news: available ? server.updates.filter((u) => !known.has(entryKey(u))) : [],
-        checkedAt: new Date().toISOString(),
-      });
+      let news: UpdateEntry[] = [];
+      if (available) {
+        const known = new Set(UPDATE_LIST.map((u) => entryKey(u as UpdateEntry)));
+        news =
+          (await githubChanges(__FURRBOX_BUILD__, server.build)) ??
+          server.updates.filter((u) => !known.has(entryKey(u)));
+      }
+      set({ status: available ? "available" : "current", news, checkedAt: new Date().toISOString() });
     } catch {
       set({ status: "error", checkedAt: new Date().toISOString() });
     }
   },
 }));
+
+/** Flat list for "Das ist neu": each change, with its details indented. */
+export function newsLines(news: UpdateEntry[]) {
+  return news.flatMap((u) =>
+    u.items.length === 1 && u.items[0] === u.title ? [u.title] : [u.title, ...u.items.map((i) => `– ${i}`)],
+  );
+}
 
 /** Reloads FurrBox so the newest server version is used. */
 export function applyServerUpdate() {
@@ -112,7 +169,7 @@ export function UpdatePopup() {
         <UpdateDialog
           title="Ein Update ist verfügbar"
           text="FurrBox lädt sich zum Aktualisieren kurz neu – deine Dateien und Fenster-Einstellungen bleiben erhalten."
-          items={server.news.flatMap((u) => u.items)}
+          items={newsLines(server.news)}
           confirmLabel="Jetzt aktualisieren"
           onLater={() => setServerDismissed(true)}
           onConfirm={applyServerUpdate}

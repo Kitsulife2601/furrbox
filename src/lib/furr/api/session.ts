@@ -7,7 +7,7 @@ import UPDATES from "../updates.json";
 
 export const getMe = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => loadMe(context.userId));
+  .handler(async ({ context }) => loadMe(context.userId, context.bearerToken));
 
 /** Replaces the Socket.io presence heartbeat: called every 15s while the desktop is open. */
 export const heartbeat = createServerFn({ method: "POST" })

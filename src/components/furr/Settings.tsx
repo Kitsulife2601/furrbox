@@ -5,6 +5,7 @@ import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { getChatSettings, updateChatSettings } from "@/lib/furr/api/chat";
 import { goOffline, updateMyProfile } from "@/lib/furr/api/session";
+import { changeWhitelistPassword } from "@/lib/furr/api/whitelist";
 import { ME_KEY, errorMessage, useMe } from "@/lib/furr/client";
 import { formatSize } from "@/lib/furr/paths";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import {
 import { useNotifications } from "@/store/notifications";
 import {
   applyServerUpdate,
+  newsLines,
   updateBridge,
   useServerUpdate,
   useUpdateState,
@@ -360,6 +362,7 @@ function Account() {
       </Field>
       {msg && <p className="text-[12px] text-emerald-300">{msg}</p>}
       <ErrorText>{error}</ErrorText>
+      {me.data?.whitelistUsername && <WhitelistPassword username={me.data.whitelistUsername} />}
       {!gateSession && (
         <Btn
           variant="danger"
@@ -381,6 +384,55 @@ function Account() {
           Abmelden
         </Btn>
       )}
+    </div>
+  );
+}
+
+/** Whitelisted users change their FurrBox login password here. */
+function WhitelistPassword({ username }: { username: string }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  async function save() {
+    setMsg("");
+    setError("");
+    if (next !== repeat) return setError("Die beiden neuen Passwörter stimmen nicht überein.");
+    setBusy(true);
+    try {
+      await changeWhitelistPassword({ data: { currentPassword: current, newPassword: next } });
+      setCurrent("");
+      setNext("");
+      setRepeat("");
+      setMsg("Passwort geändert.");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-2 rounded-md bg-elevated/50 p-3">
+      <p className="text-[13px] font-medium">FurrBox-Passwort ändern</p>
+      <p className="text-[12px] text-muted">Dein Login-Name: <span className="font-mono text-fg">{username}</span></p>
+      <Field label="Aktuelles Passwort">
+        <TextInput type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+      </Field>
+      <Field label="Neues Passwort" hint="Mindestens 8 Zeichen">
+        <TextInput type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      </Field>
+      <Field label="Neues Passwort wiederholen">
+        <TextInput type="password" value={repeat} onChange={(e) => setRepeat(e.target.value)} autoComplete="new-password" />
+      </Field>
+      {msg && <p className="text-[12px] text-emerald-300">{msg}</p>}
+      <ErrorText>{error}</ErrorText>
+      <Btn disabled={busy || !current || next.length < 8} onClick={() => void save()}>
+        Passwort ändern
+      </Btn>
     </div>
   );
 }
@@ -543,7 +595,7 @@ function UpdateSection({ state }: { state: UpdateState | null }) {
       {state?.newVersion && (state.status === "downloading" || state.status === "ready") ? (
         <PendingUpdate version={state.newVersion} notes={state.notes} />
       ) : (
-        server.status === "available" && <NewItems items={server.news.flatMap((u) => u.items)} />
+        server.status === "available" && <NewItems items={newsLines(server.news)} />
       )}
       <UpdateHistory />
     </div>

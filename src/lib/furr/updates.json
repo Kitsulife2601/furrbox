@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-09-30",
+    "title": "Neuer Login für die Whitelist",
+    "items": [
+      "Freigeschaltete Nutzer melden sich zuerst mit Discord an und dann mit Nutzername und Passwort.",
+      "Den Nutzernamen und das Start-Passwort vergibt der Owner in der FurrWhitelist.",
+      "Beim ersten Login legt jeder sein eigenes Passwort fest – später auch unter FurrSettings → Konto änderbar.",
+      "Nur Owner und Dev können die Whitelist verwalten.",
+      "Die Update-Suche zeigt jetzt direkt aus GitHub, was sich geändert hat."
+    ]
+  },
+  {
+    "date": "2026-09-30",
     "title": "Updates finden jede Änderung",
     "items": [
       "„Nach Updates suchen“ findet jetzt auch Änderungen am FurrBox-Server – nicht nur neue Desktop-Installer.",
