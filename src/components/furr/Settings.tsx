@@ -18,7 +18,7 @@ import {
 } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { updateBridge, useUpdateState, type UpdateState } from "@/components/desktop/UpdatePopup";
-import { CHANGELOG } from "@/lib/furr/changelog";
+import UPDATES from "@/lib/furr/updates.json";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
@@ -45,7 +45,9 @@ export function Settings() {
   const sections: [Section, string][] = [
     ["personal", "Personalisierung"],
     ["account", "Konto"],
-    ...(me.data?.permissions.canConfigureChat ? ([["chat", "FurrChat"]] as [Section, string][]) : []),
+    ...(me.data?.permissions.canConfigureChat
+      ? ([["chat", "FurrChat"]] as [Section, string][])
+      : []),
     ["system", "System"],
   ];
   return (
@@ -56,7 +58,10 @@ export function Settings() {
             key={id}
             type="button"
             onClick={() => setSection(id)}
-            className={cn("block w-full rounded-sm px-2 py-1.5 text-left hover:bg-fg/6", section === id && "bg-fg/10 font-medium")}
+            className={cn(
+              "block w-full rounded-sm px-2 py-1.5 text-left hover:bg-fg/6",
+              section === id && "bg-fg/10 font-medium",
+            )}
           >
             {label}
           </button>
@@ -84,7 +89,11 @@ function Personal() {
         <p className="text-[13px] font-medium">Modus</p>
         <div className="mt-2 flex gap-2">
           {(["dark", "light"] as ThemeId[]).map((t) => (
-            <Btn key={t} variant={s.theme === t ? "primary" : "default"} onClick={() => s.setTheme(t)}>
+            <Btn
+              key={t}
+              variant={s.theme === t ? "primary" : "default"}
+              onClick={() => s.setTheme(t)}
+            >
               {t === "dark" ? "Dunkel" : "Hell"}
             </Btn>
           ))}
@@ -98,7 +107,10 @@ function Personal() {
               key={w.id}
               type="button"
               onClick={() => s.setWallpaper(w.id)}
-              className={cn("overflow-hidden rounded-md text-left", !s.wallpaperUrl && s.wallpaper === w.id && "ring-2 ring-accent")}
+              className={cn(
+                "overflow-hidden rounded-md text-left",
+                !s.wallpaperUrl && s.wallpaper === w.id && "ring-2 ring-accent",
+              )}
             >
               <div className={`h-14 wallpaper-${w.id}`} />
               <span className="block bg-elevated px-2 py-1 text-[12px]">{w.label}</span>
@@ -108,7 +120,11 @@ function Personal() {
         <div className="mt-3 grid gap-2">
           <Field label="Eigenes Hintergrundbild (URL)">
             <div className="flex gap-2">
-              <TextInput value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+              <TextInput
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://…"
+              />
               <Btn onClick={() => s.setWallpaperUrl(url)}>Übernehmen</Btn>
             </div>
           </Field>
@@ -150,7 +166,10 @@ function Personal() {
               type="button"
               aria-label={hex}
               onClick={() => s.setAccent(hex)}
-              className={cn("size-8 rounded-full", s.accent === hex && "ring-2 ring-fg ring-offset-2 ring-offset-surface")}
+              className={cn(
+                "size-8 rounded-full",
+                s.accent === hex && "ring-2 ring-fg ring-offset-2 ring-offset-surface",
+              )}
               style={{ background: hex }}
             />
           ))}
@@ -171,14 +190,20 @@ function WallpaperAdjust() {
     if (!canMove) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clamp = (v: number) => Math.round(Math.min(Math.max(v, 0), 100));
-    setLayout({ x: clamp(((e.clientX - rect.left) / rect.width) * 100), y: clamp(((e.clientY - rect.top) / rect.height) * 100) });
+    setLayout({
+      x: clamp(((e.clientX - rect.left) / rect.width) * 100),
+      y: clamp(((e.clientY - rect.top) / rect.height) * 100),
+    });
   }
 
   return (
     <div className="mt-2 grid gap-3 rounded-md bg-elevated/50 p-3">
       <p className="text-[13px] font-medium">Bild anpassen</p>
       <div
-        className={cn("relative aspect-video w-full overflow-hidden rounded-md border border-border", canMove && "cursor-crosshair")}
+        className={cn(
+          "relative aspect-video w-full overflow-hidden rounded-md border border-border",
+          canMove && "cursor-crosshair",
+        )}
         style={wallpaperStyle(url, layout)}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -194,11 +219,17 @@ function WallpaperAdjust() {
         )}
       </div>
       <p className="text-[11px] text-muted">
-        {canMove ? "Klicke oder ziehe in der Vorschau, um den sichtbaren Bildausschnitt festzulegen." : "Beim Strecken wird das ganze Bild verzerrt angezeigt."}
+        {canMove
+          ? "Klicke oder ziehe in der Vorschau, um den sichtbaren Bildausschnitt festzulegen."
+          : "Beim Strecken wird das ganze Bild verzerrt angezeigt."}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {FITS.map((f) => (
-          <Btn key={f.id} variant={layout.fit === f.id ? "primary" : "default"} onClick={() => setLayout({ fit: f.id })}>
+          <Btn
+            key={f.id}
+            variant={layout.fit === f.id ? "primary" : "default"}
+            onClick={() => setLayout({ fit: f.id })}
+          >
             {f.label}
           </Btn>
         ))}
@@ -207,19 +238,39 @@ function WallpaperAdjust() {
         <span className="flex justify-between">
           Waagerecht <span className="text-muted">{layout.x}%</span>
         </span>
-        <input type="range" min={0} max={100} value={layout.x} disabled={!canMove} onChange={(e) => setLayout({ x: Number(e.target.value) })} />
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={layout.x}
+          disabled={!canMove}
+          onChange={(e) => setLayout({ x: Number(e.target.value) })}
+        />
       </label>
       <label className="grid gap-1 text-[12px]">
         <span className="flex justify-between">
           Senkrecht <span className="text-muted">{layout.y}%</span>
         </span>
-        <input type="range" min={0} max={100} value={layout.y} disabled={!canMove} onChange={(e) => setLayout({ y: Number(e.target.value) })} />
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={layout.y}
+          disabled={!canMove}
+          onChange={(e) => setLayout({ y: Number(e.target.value) })}
+        />
       </label>
       <label className="grid gap-1 text-[12px]">
         <span className="flex justify-between">
           Abdunkeln <span className="text-muted">{layout.dim}%</span>
         </span>
-        <input type="range" min={0} max={80} value={layout.dim} onChange={(e) => setLayout({ dim: Number(e.target.value) })} />
+        <input
+          type="range"
+          min={0}
+          max={80}
+          value={layout.dim}
+          onChange={(e) => setLayout({ dim: Number(e.target.value) })}
+        />
       </label>
       <div>
         <Btn variant="ghost" onClick={() => setLayout(DEFAULT_WALLPAPER_LAYOUT)}>
@@ -236,7 +287,10 @@ const WALLPAPER_MAX_CHARS = 1_800_000;
 
 async function wallpaperDataUrl(file: File) {
   const bitmap = await createImageBitmap(file);
-  const maxW = Math.min(2560, Math.round(window.screen.width * (window.devicePixelRatio || 1)) || 2560);
+  const maxW = Math.min(
+    2560,
+    Math.round(window.screen.width * (window.devicePixelRatio || 1)) || 2560,
+  );
   let scale = Math.min(1, maxW / bitmap.width);
   let quality = 0.88;
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -308,7 +362,13 @@ function Account() {
             try {
               await signOut("/");
             } catch (e) {
-              useNotifications.getState().notify({ version: "FurrBox", title: "Abmelden fehlgeschlagen", description: errorMessage(e) });
+              useNotifications
+                .getState()
+                .notify({
+                  version: "FurrBox",
+                  title: "Abmelden fehlgeschlagen",
+                  description: errorMessage(e),
+                });
             }
           }}
         >
@@ -321,7 +381,10 @@ function Account() {
 
 function ChatRetention() {
   const queryClient = useQueryClient();
-  const settings = useQuery({ queryKey: ["furr", "chat-settings"], queryFn: () => getChatSettings() });
+  const settings = useQuery({
+    queryKey: ["furr", "chat-settings"],
+    queryFn: () => getChatSettings(),
+  });
   const [days, setDays] = useState(7);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -329,8 +392,17 @@ function ChatRetention() {
   }, [settings.data]);
   return (
     <div className="grid max-w-sm gap-3">
-      <Field label="Auto-Löschung von Chatnachrichten nach (Tagen)" hint="1–365 Tage, gilt für Team- und Privatchats">
-        <TextInput type="number" min={1} max={365} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+      <Field
+        label="Auto-Löschung von Chatnachrichten nach (Tagen)"
+        hint="1–365 Tage, gilt für Team- und Privatchats"
+      >
+        <TextInput
+          type="number"
+          min={1}
+          max={365}
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        />
       </Field>
       <Btn
         variant="primary"
@@ -355,16 +427,26 @@ function ChatRetention() {
 function SystemInfo() {
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null);
   useEffect(() => {
-    navigator.storage?.estimate?.().then((e) => setStorage({ usage: e.usage ?? 0, quota: e.quota ?? 0 })).catch(() => undefined);
+    navigator.storage
+      ?.estimate?.()
+      .then((e) => setStorage({ usage: e.usage ?? 0, quota: e.quota ?? 0 }))
+      .catch(() => undefined);
   }, []);
-  const nav = typeof navigator === "undefined" ? null : (navigator as Navigator & { deviceMemory?: number });
+  const nav =
+    typeof navigator === "undefined" ? null : (navigator as Navigator & { deviceMemory?: number });
   const update = useUpdateState();
   const rows: [string, string][] = [
     ["Version", update ? `FurrBox Desktop ${update.version}` : "FurrBox Web 2.0"],
     ["CPU-Kerne", String(nav?.hardwareConcurrency ?? "?")],
     ["Arbeitsspeicher", nav?.deviceMemory ? `≈ ${nav.deviceMemory} GB` : "unbekannt"],
-    ["Browser-Speicher", storage ? `${formatSize(storage.usage)} von ${formatSize(storage.quota)}` : "unbekannt"],
-    ["Bildschirm", typeof window === "undefined" ? "" : `${window.screen.width} × ${window.screen.height}`],
+    [
+      "Browser-Speicher",
+      storage ? `${formatSize(storage.usage)} von ${formatSize(storage.quota)}` : "unbekannt",
+    ],
+    [
+      "Bildschirm",
+      typeof window === "undefined" ? "" : `${window.screen.width} × ${window.screen.height}`,
+    ],
     ["Sprache", nav?.language ?? ""],
     ["Online", nav?.onLine ? "ja" : "nein"],
   ];
@@ -379,15 +461,15 @@ function SystemInfo() {
           </div>
         ))}
       </dl>
-      {update && <UpdateSection state={update} />}
-      <News />
+      <UpdateSection state={update} />
     </div>
   );
 }
 
 const UPDATE_TEXT: Record<UpdateState["status"], string> = {
   idle: "Noch nicht geprüft.",
-  unsupported: "Automatische Updates gibt es nur in der installierten Version (Setup), nicht in der portablen.",
+  unsupported:
+    "Automatische Updates gibt es nur in der installierten Version (Setup), nicht in der portablen.",
   checking: "Suche nach Updates…",
   current: "FurrBox ist auf dem neuesten Stand.",
   downloading: "Update wird heruntergeladen…",
@@ -395,62 +477,106 @@ const UPDATE_TEXT: Record<UpdateState["status"], string> = {
   error: "Update-Prüfung fehlgeschlagen.",
 };
 
-function UpdateSection({ state }: { state: UpdateState }) {
+function UpdateSection({ state }: { state: UpdateState | null }) {
   const [busy, setBusy] = useState(false);
-  const detail =
-    state.status === "downloading" && state.newVersion
-      ? `Version ${state.newVersion} wird heruntergeladen (${state.percent ?? 0} %).`
+  const detail = !state
+    ? "Die Web-Version ist immer automatisch auf dem neuesten Stand."
+    : state.status === "downloading" && state.newVersion
+      ? `Ein Update wird heruntergeladen (${state.percent ?? 0} %).`
       : state.status === "ready" && state.newVersion
-        ? `Version ${state.newVersion} ist bereit.`
+        ? "Ein Update ist bereit – FurrBox startet zum Installieren kurz neu."
         : UPDATE_TEXT[state.status];
   return (
     <div className="mt-6 grid gap-2 rounded-md bg-elevated/50 p-3 text-[13px]">
       <p className="font-medium">Updates</p>
       <p className="text-muted">{detail}</p>
-      {state.status === "error" && state.error && <ErrorText>{state.error}</ErrorText>}
-      <div className="flex gap-2">
-        {state.status === "ready" ? (
-          <Btn variant="primary" onClick={() => void updateBridge()?.install()}>
-            Jetzt neu starten und installieren
-          </Btn>
-        ) : (
-          <Btn
-            disabled={busy || state.status === "unsupported" || state.status === "checking" || state.status === "downloading"}
-            onClick={async () => {
-              setBusy(true);
-              await updateBridge()?.check().catch(() => undefined);
-              setBusy(false);
-            }}
-          >
-            Nach Updates suchen
-          </Btn>
-        )}
-      </div>
-      <p className="text-[11px] text-subtle">Updates kommen automatisch aus den GitHub-Releases von FurrBox.</p>
+      {state?.status === "error" && state.error && <ErrorText>{state.error}</ErrorText>}
+      {state && (
+        <div className="flex gap-2">
+          {state.status === "ready" ? (
+            <Btn variant="primary" onClick={() => void updateBridge()?.install()}>
+              Jetzt neu starten und installieren
+            </Btn>
+          ) : (
+            <Btn
+              disabled={
+                busy ||
+                state.status === "unsupported" ||
+                state.status === "checking" ||
+                state.status === "downloading"
+              }
+              onClick={async () => {
+                setBusy(true);
+                await updateBridge()
+                  ?.check()
+                  .catch(() => undefined);
+                setBusy(false);
+              }}
+            >
+              Nach Updates suchen
+            </Btn>
+          )}
+        </div>
+      )}
+      {state && (
+        <p className="text-[11px] text-subtle">
+          Updates kommen automatisch aus den GitHub-Releases von FurrBox.
+        </p>
+      )}
+      {state?.newVersion && (state.status === "downloading" || state.status === "ready") && (
+        <PendingUpdate version={state.newVersion} notes={state.notes} />
+      )}
+      <UpdateHistory />
     </div>
   );
 }
 
-/** "Neuigkeiten": what changed recently (src/lib/furr/changelog.ts). */
-function News() {
+type UpdateEntry = { date: string; version?: string; title: string; items: string[] };
+const UPDATE_LIST = UPDATES as UpdateEntry[];
+
+function formatDay(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("de-DE");
+}
+
+/** "Was ist neu" for an update that is downloading or ready (like Windows Update). */
+function PendingUpdate({ version, notes }: { version: string; notes?: string }) {
+  const entry = UPDATE_LIST.find((u) => u.version === version);
+  if (!entry && !notes) return null;
   return (
-    <div className="mt-4 grid gap-3 rounded-md bg-elevated/50 p-3 text-[13px]">
-      <p className="font-medium">Neuigkeiten</p>
-      {CHANGELOG.map((entry) => (
-        <div key={`${entry.date}-${entry.title}`} className="border-t border-border pt-2 first-of-type:border-t-0 first-of-type:pt-0">
-          <p className="flex flex-wrap items-baseline gap-x-2">
+    <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
+      <p className="font-medium">Das ist neu</p>
+      {entry ? (
+        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
+          {entry.items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 whitespace-pre-wrap text-[12px] text-muted">{notes}</p>
+      )}
+    </div>
+  );
+}
+
+/** Update history (src/lib/furr/updates.json): every upload gets an entry here. */
+function UpdateHistory() {
+  return (
+    <div className="mt-1 grid gap-1 border-t border-border pt-3">
+      <p className="font-medium">Updateverlauf</p>
+      {UPDATE_LIST.map((entry, i) => (
+        <details key={`${entry.date}-${entry.title}`} open={i === 0} className="rounded-md px-2 py-1.5 hover:bg-fg/5">
+          <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-2">
             <span className="font-medium">{entry.title}</span>
             <span className="text-[11px] text-subtle">
-              {new Date(`${entry.date}T12:00:00`).toLocaleDateString("de-DE")}
-              {entry.version ? ` · Version ${entry.version}` : ""}
+              {formatDay(entry.date)}
             </span>
-          </p>
+          </summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
             {entry.items.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-        </div>
+        </details>
       ))}
     </div>
   );

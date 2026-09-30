@@ -51,9 +51,21 @@ jobs:
 
       # Create the release up front: electron-builder then uploads into it instead of racing
       # to create one per file (which produced duplicate releases for the same tag).
+      # Release notes = the matching entry in src/lib/furr/updates.json (what users see in FurrSettings → Updates).
       - name: Create GitHub release
         shell: bash
-        run: gh release create "$GITHUB_REF_NAME" --title "FurrBox ${GITHUB_REF_NAME#v}" --generate-notes
+        run: |
+          node -e '
+            const v = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            const e = require("./src/lib/furr/updates.json").find((u) => u.version === v);
+            require("fs").writeFileSync("release-notes.md", e ? e.items.map((i) => "- " + i).join("
+") : "");
+          '
+          if [ -s release-notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" --title "FurrBox Update" --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --title "FurrBox Update" --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
