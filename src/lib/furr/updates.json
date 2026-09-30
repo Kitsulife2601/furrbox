@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-09-30",
+    "title": "Schmalere Scrollleisten",
+    "items": [
+      "Scrollleisten sind jetzt schmal, ohne Pfeile und passen farblich zu FurrBox.",
+      "Beim Drüberfahren leuchten sie in der Akzentfarbe."
+    ]
+  },
+  {
+    "date": "2026-09-30",
     "title": "Neuer Login für die Whitelist",
     "items": [
       "Freigeschaltete Nutzer melden sich zuerst mit Discord an und dann mit Nutzername und Passwort.",
