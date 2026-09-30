@@ -11,6 +11,8 @@ export type Me = {
   role: Role;
   roleLabel: string;
   permissions: Permissions;
+  /** Whitelisted, Discord staff, manually promoted – or the whitelist is switched off. */
+  hasAccess: boolean;
 };
 
 export type FurrFile = {

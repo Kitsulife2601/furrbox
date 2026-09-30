@@ -1,6 +1,6 @@
 // FurrChat: team channel + private messages with auto-deletion (retention days).
 import { createServerFn } from "@tanstack/react-start";
-import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import { getSetting, getSql, iso, newId, requirePermission, setSetting } from "../core";
 import { ROLE_LABEL, effectiveRole } from "../roles";
 import type { ChatChannel, ChatMessage } from "../types";
@@ -57,7 +57,7 @@ export const listChatMessages = createServerFn({ method: "GET" })
     channel: (input.channel === "private" ? "private" : "team") as ChatChannel,
     partnerId: String(input.partnerId ?? ""),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }): Promise<ChatMessage[]> => {
     await purgeExpired();
     const sql = await getSql();
@@ -75,7 +75,7 @@ export const listChatMessages = createServerFn({ method: "GET" })
 
 /** Newest messages addressed to me (team or private) — drives the taskbar unread badge/toasts. */
 export const latestIncoming = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<ChatMessage[]> => {
     const sql = await getSql();
     const rows = await sql.query<Row>(
@@ -92,7 +92,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     content: String(input.content ?? "").trim(),
     recipientId: String(input.recipientId ?? "").trim(),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     if (!data.content) throw new Error("Nachricht ist leer.");
     if (data.content.length > 2000) throw new Error("Nachricht ist zu lang.");
@@ -112,12 +112,12 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   });
 
 export const getChatSettings = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async () => ({ retentionDays: await retentionDays() }));
 
 export const updateChatSettings = createServerFn({ method: "POST" })
   .validator((retentionDays: number) => Math.min(Math.max(Math.trunc(Number(retentionDays) || 7), 1), 365))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: days }) => {
     await requirePermission(context.userId, "canConfigureChat");
     await setSetting("chat_retention_days", String(days));

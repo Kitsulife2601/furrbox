@@ -1,6 +1,6 @@
 // FurrEvidence: structured evidence cases in the shared FurrFS + Discord moderation queue.
 import { createServerFn } from "@tanstack/react-start";
-import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import {
   discordName,
   getSql,
@@ -117,7 +117,7 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
       })),
     };
   })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const me = await requirePermission(context.userId, "canUseEvidence");
     if (!data.targetPrimary) throw new Error("Zielperson muss angegeben werden.");
@@ -154,7 +154,7 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
   });
 
 export const listEvidenceCases = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<EvidenceCase[]> => {
     await requirePermission(context.userId, "canUseEvidence");
     const sql = await getSql();
@@ -180,7 +180,7 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
 
 export const requestMessageInspect = createServerFn({ method: "POST" })
   .validator((messageId: string) => String(messageId ?? "").trim())
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: messageId }) => {
     await requirePermission(context.userId, "canUseEvidence");
     if (!/^\d{17,22}$/.test(messageId)) throw new Error("Nachrichten-ID muss eine Discord-Snowflake sein.");
@@ -192,7 +192,7 @@ export const requestMessageInspect = createServerFn({ method: "POST" })
 
 export const getMessageInspect = createServerFn({ method: "GET" })
   .validator((requestId: string) => String(requestId ?? ""))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: requestId }) => {
     const sql = await getSql();
     const rows = await sql<{ status: string; result_json: string | null }>`
@@ -219,7 +219,7 @@ export const queueModeration = createServerFn({ method: "POST" })
     reason: String(input.reason ?? "").trim(),
     durationMs: input.durationMs === undefined ? undefined : Number(input.durationMs),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const me = await loadMe(context.userId);
     if (!MODERATION_ACTIONS.includes(data.action)) throw new Error("Unbekannte Moderationsaktion.");
@@ -243,7 +243,7 @@ export const queueModeration = createServerFn({ method: "POST" })
   });
 
 export const listModeration = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<ModerationEntry[]> => {
     await requirePermission(context.userId, "canUseEvidence");
     const sql = await getSql();

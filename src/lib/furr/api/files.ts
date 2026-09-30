@@ -1,6 +1,6 @@
 // FurrFS: private home per user + shared public ("Shared Network") storage.
 import { createServerFn } from "@tanstack/react-start";
-import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import {
   FILE_COLUMNS,
   base64ToText,
@@ -30,7 +30,7 @@ export const listFiles = createServerFn({ method: "GET" })
     folder: normalizePath(String(input.folder ?? "")),
     recursive: Boolean(input.recursive),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }): Promise<FurrFile[]> => {
     const sql = await getSql();
     const rows = data.recursive
@@ -51,7 +51,7 @@ export const listFiles = createServerFn({ method: "GET" })
 /** Name search across both scopes (taskbar Deep Search). */
 export const searchFiles = createServerFn({ method: "GET" })
   .validator((query: string) => String(query ?? "").trim().slice(0, 80))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: query }): Promise<FurrFile[]> => {
     if (!query) return [];
     const sql = await getSql();
@@ -65,7 +65,7 @@ export const searchFiles = createServerFn({ method: "GET" })
   });
 
 export const recentFiles = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<FurrFile[]> => {
     const sql = await getSql();
     const rows = await sql.query<FileRow>(
@@ -83,7 +83,7 @@ export const createFolder = createServerFn({ method: "POST" })
     folder: normalizePath(String(input.folder ?? "")),
     name: sanitizeName(String(input.name ?? "")) || "Neuer Ordner",
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     await ensureFolderPath(data.scope, ownerFor(data.scope, context.userId), joinPath(data.folder, data.name), context.userId);
     return { path: joinPath(data.folder, data.name) };
@@ -103,7 +103,7 @@ export const uploadFile = createServerFn({ method: "POST" })
       size,
     };
   })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) =>
     writeFile({ ...data, ownerId: ownerFor(data.scope, context.userId), createdBy: context.userId }),
   );
@@ -116,7 +116,7 @@ export const saveTextFile = createServerFn({ method: "POST" })
     if (content.length > 1_000_000) throw new Error("Textdokument ist zu groß.");
     return { scope: asScope(input.scope), folder: normalizePath(String(input.folder ?? "")), name, content };
   })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) =>
     writeFile({
       scope: data.scope,
@@ -142,7 +142,7 @@ async function findVisible(userId: string, id: string) {
 
 export const readFile = createServerFn({ method: "GET" })
   .validator((id: string) => String(id ?? ""))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: id }) => {
     const row = await findVisible(context.userId, id);
     if (!row || row.is_folder) throw new Error("Datei nicht gefunden.");
@@ -151,7 +151,7 @@ export const readFile = createServerFn({ method: "GET" })
 
 export const readFileByPath = createServerFn({ method: "GET" })
   .validator((input: { scope: Scope; path: string }) => ({ scope: asScope(input.scope), path: normalizePath(String(input.path ?? "")) }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const idx = data.path.lastIndexOf("/");
     const folder = idx === -1 ? "" : data.path.slice(0, idx);
@@ -170,7 +170,7 @@ export const readFileByPath = createServerFn({ method: "GET" })
 /** Deletes a file, or a folder with everything inside it. */
 export const deleteEntry = createServerFn({ method: "POST" })
   .validator((id: string) => String(id ?? ""))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: id }) => {
     const row = await findVisible(context.userId, id);
     if (!row) throw new Error("Element nicht gefunden.");
@@ -191,7 +191,7 @@ export const renameEntry = createServerFn({ method: "POST" })
     id: String(input.id ?? ""),
     name: sanitizeName(String(input.name ?? "")),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     if (!data.name) throw new Error("Name fehlt.");
     const row = await findVisible(context.userId, data.id);
@@ -223,7 +223,7 @@ export const pasteEntry = createServerFn({ method: "POST" })
     folder: normalizePath(String(input.folder ?? "")),
     move: Boolean(input.move),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const row = await findVisible(context.userId, data.id);
     if (!row) throw new Error("Element nicht gefunden.");

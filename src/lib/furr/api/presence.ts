@@ -1,6 +1,6 @@
 // FurrPresence: dual presence (App heartbeat + Discord status) for accounts and Discord members.
 import { createServerFn } from "@tanstack/react-start";
-import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import { FILE_COLUMNS, base64ToText, getSql, iso, loadMe, requirePermission, toFileDto, type FileRow } from "../core";
 import { DISCORD_LOGS, sanitizeSegment } from "../paths";
 import { ROLE_LABEL, effectiveRole, isRole } from "../roles";
@@ -81,7 +81,7 @@ export async function queryPresence(showEmail: boolean): Promise<PresenceUser[]>
 /** `team` = accounts/members with Supporter+ role, `global` = everyone incl. Discord-only members. */
 export const listPresence = createServerFn({ method: "GET" })
   .validator((view: "team" | "global") => (view === "global" ? "global" : "team"))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: view }) => {
     const me = await loadMe(context.userId);
     const users = await queryPresence(me.permissions.canManageAccounts);
@@ -93,7 +93,7 @@ export const listPresence = createServerFn({ method: "GET" })
 /** Discord text reports (Dokumente/Moderation_Beweise/Discord_Logs) that mention a member. */
 export const listPresenceLogs = createServerFn({ method: "GET" })
   .validator((discordId: string) => String(discordId ?? "").trim())
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: discordId }): Promise<PresenceLog[]> => {
     await requirePermission(context.userId, "canViewPresence");
     if (!/^\d{17,22}$/.test(discordId)) throw new Error("Discord-ID muss eine numerische Snowflake sein.");
@@ -125,7 +125,7 @@ export const listPresenceLogs = createServerFn({ method: "GET" })
   });
 
 export const listDiscordMembers = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<DiscordMemberOption[]> => {
     await requirePermission(context.userId, "canUseEvidence");
     const sql = await getSql();

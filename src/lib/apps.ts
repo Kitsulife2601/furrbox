@@ -8,6 +8,7 @@ import {
   Radio,
   Settings,
   Shield,
+  ShieldCheck,
   StickyNote,
   TerminalSquare,
   UserCircle2,
@@ -23,6 +24,7 @@ export type AppId =
   | "evidence"
   | "presence"
   | "accounts"
+  | "whitelist"
   | "notepad"
   | "viewer"
   | "taskmgr";
@@ -116,6 +118,17 @@ export const APPS: AppDef[] = [
     desktop: false,
     requires: "canManageAccounts",
     defaultSize: { w: 940, h: 620 },
+    minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "whitelist",
+    name: "FurrWhitelist",
+    subtitle: "Wer FurrBox nutzen darf",
+    icon: ShieldCheck,
+    pinned: true,
+    desktop: true,
+    requires: "canManageWhitelist",
+    defaultSize: { w: 900, h: 600 },
     minSize: { w: 520, h: 400 },
   },
   {

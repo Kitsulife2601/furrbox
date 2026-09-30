@@ -1,6 +1,6 @@
 // FurrAccountManager (Dev only): edit roles / Discord IDs, delete accounts (accounts come from Discord logins).
 import { createServerFn } from "@tanstack/react-start";
-import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import { getSql, requirePermission } from "../core";
 import { isRole, type Role } from "../roles";
 import { queryPresence } from "./presence";
@@ -8,7 +8,7 @@ import { queryPresence } from "./presence";
 const DISCORD_ID = /^\d{17,22}$/;
 
 export const listAccounts = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context }) => {
     await requirePermission(context.userId, "canManageAccounts");
     const sql = await getSql();
@@ -26,7 +26,7 @@ export const updateAccount = createServerFn({ method: "POST" })
     discordId: input.discordId === undefined ? undefined : String(input.discordId ?? "").trim(),
     displayName: input.displayName === undefined ? undefined : String(input.displayName).trim(),
   }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     await requirePermission(context.userId, "canManageAccounts");
     const sql = await getSql();
@@ -56,7 +56,7 @@ export const updateAccount = createServerFn({ method: "POST" })
 
 export const deleteAccount = createServerFn({ method: "POST" })
   .validator((userId: string) => String(userId ?? ""))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: userId }) => {
     await requirePermission(context.userId, "canManageAccounts");
     if (userId === context.userId) throw new Error("Du kannst deinen eigenen Account hier nicht löschen.");

@@ -15,6 +15,7 @@ import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
+import { NoAccess } from "./NoAccess";
 import { BootScreen } from "./BootScreen";
 import { DesktopIcons } from "./DesktopIcons";
 import { UpdatePopup } from "./UpdatePopup";
@@ -64,7 +65,16 @@ export function Desktop() {
       </div>
     );
   }
-  return <DesktopShell backgroundStyle={bg} />;
+  return <AccessGate backgroundStyle={bg} wallpaper={wallpaper} />;
+}
+
+/** Whitelist check: non-staff users need an entry on the FurrWhitelist (managed by the owner). */
+function AccessGate({ backgroundStyle, wallpaper }: { backgroundStyle?: CSSProperties; wallpaper: string }) {
+  const me = useMe();
+  if (me.data && !me.data.hasAccess) {
+    return <NoAccess me={me.data} onRetry={() => void me.refetch()} style={backgroundStyle} wallpaper={wallpaper} />;
+  }
+  return <DesktopShell backgroundStyle={backgroundStyle} />;
 }
 
 function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) {

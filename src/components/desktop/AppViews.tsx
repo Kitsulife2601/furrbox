@@ -10,6 +10,7 @@ import { Presence } from "@/components/furr/Presence";
 import { Settings } from "@/components/furr/Settings";
 import { TaskManager } from "@/components/furr/TaskManager";
 import { Terminal } from "@/components/furr/Terminal";
+import { Whitelist } from "@/components/furr/Whitelist";
 import { Empty } from "@/components/furr/ui";
 
 export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId: string; payload?: WindowPayload }) {
@@ -32,6 +33,8 @@ export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId:
       return <Presence />;
     case "accounts":
       return <Accounts />;
+    case "whitelist":
+      return <Whitelist />;
     case "settings":
       return <Settings />;
     case "notepad":

@@ -32,6 +32,7 @@ export type Permissions = {
   canUseEvidence: boolean;
   canManageAccounts: boolean;
   canConfigureChat: boolean;
+  canManageWhitelist: boolean;
   moderationActions: ModerationAction[];
 };
 
@@ -47,6 +48,7 @@ export function permissionsFor(role: Role): Permissions {
     canUseEvidence: isTeam,
     canManageAccounts: role === "dev",
     canConfigureChat: role === "dev",
+    canManageWhitelist: rank >= roleRank("owner"),
     moderationActions:
       rank >= roleRank("moderator") ? [...MODERATION_ACTIONS] : isTeam ? ["warn", "timeout"] : [],
   };

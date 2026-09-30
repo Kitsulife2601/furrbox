@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { accessMiddleware } from "../access";
 import { bridgeStatus, getSql, iso, loadMe } from "../core";
 import type { Platform, SystemNotification } from "../types";
 
@@ -10,7 +11,7 @@ export const getMe = createServerFn({ method: "GET" })
 /** Replaces the Socket.io presence heartbeat: called every 15s while the desktop is open. */
 export const heartbeat = createServerFn({ method: "POST" })
   .validator((platform: Platform) => (platform === "mobile" ? "mobile" : "desktop") as Platform)
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: platform }) => {
     const sql = await getSql();
     await sql`
@@ -38,7 +39,7 @@ export const goOffline = createServerFn({ method: "POST" })
 
 export const updateMyProfile = createServerFn({ method: "POST" })
   .validator((input: { displayName: string }) => ({ displayName: String(input.displayName ?? "").trim() }))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     if (data.displayName.length < 2 || data.displayName.length > 80) {
       throw new Error("Anzeigename muss 2-80 Zeichen lang sein.");
@@ -51,7 +52,7 @@ export const updateMyProfile = createServerFn({ method: "POST" })
 /** System notifications (replaces the `system:notification` socket event). */
 export const listNotifications = createServerFn({ method: "GET" })
   .validator((afterId: number) => (Number.isFinite(afterId) ? Math.max(0, Math.trunc(afterId)) : 0))
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async ({ context, data: afterId }): Promise<SystemNotification[]> => {
     const me = await loadMe(context.userId);
     const sql = await getSql();
@@ -69,5 +70,5 @@ export const listNotifications = createServerFn({ method: "GET" })
   });
 
 export const getBridgeStatus = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
+  .middleware([accessMiddleware])
   .handler(async () => bridgeStatus());

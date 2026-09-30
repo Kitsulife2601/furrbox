@@ -108,6 +108,7 @@ export async function loadMe(userId: string): Promise<Me> {
   }
   if (!row) throw new Error("Profil konnte nicht angelegt werden.");
   const role = effectiveRole(row.role, discordPrivilege(row));
+  const permissions = permissionsFor(role);
   return {
     userId: row.user_id,
     email: row.email,
@@ -116,8 +117,24 @@ export async function loadMe(userId: string): Promise<Me> {
     discordId: row.discord_id,
     role,
     roleLabel: ROLE_LABEL[role],
-    permissions: permissionsFor(role),
+    permissions,
+    hasAccess: await hasAccess(sql, row.discord_id, row.role, permissions.isTeam),
   };
+}
+
+/** Staff and manually promoted accounts always get in; everyone else needs a whitelist entry. */
+async function hasAccess(sql: Sql, discordId: string | null, accountRole: string, isTeam: boolean) {
+  if (isTeam || (accountRole && accountRole !== "member")) return true;
+  if ((await getSetting("whitelist_enabled", "true")) !== "true") return true;
+  if (!discordId) return false;
+  const rows = await sql`select 1 from furr_whitelist where discord_id = ${discordId}`;
+  return rows.length > 0;
+}
+
+export async function requireAccess(userId: string) {
+  const me = await loadMe(userId);
+  if (!me.hasAccess) throw new Error("Du bist nicht auf der FurrBox-Whitelist. Bitte den Owner um Freischaltung.");
+  return me;
 }
 
 export async function requirePermission(userId: string, key: keyof Omit<Permissions, "moderationActions">) {
