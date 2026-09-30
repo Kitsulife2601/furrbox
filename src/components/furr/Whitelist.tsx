@@ -1,9 +1,10 @@
-// FurrWhitelist (Owner/Dev): grant or revoke FurrBox access for non-staff Discord users.
+// FurrWhitelist (Supporter and up): grant or revoke FurrBox access for non-staff Discord users.
+// Switching the whole whitelist on/off stays with Owner/Dev.
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { addToWhitelist, getWhitelist, removeFromWhitelist, setWhitelistEnabled, type WhitelistEntry } from "@/lib/furr/api/whitelist";
-import { errorMessage, timeAgo } from "@/lib/furr/client";
+import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/store/notifications";
 import { Btn, ConfirmDialog, Empty, ErrorText, Field, TextInput } from "./ui";
@@ -11,6 +12,7 @@ import { Btn, ConfirmDialog, Empty, ErrorText, Field, TextInput } from "./ui";
 const KEY = ["furr", "whitelist"];
 
 export function Whitelist() {
+  const me = useMe();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: KEY, queryFn: () => getWhitelist(), refetchInterval: 15_000 });
   const [discordId, setDiscordId] = useState("");
@@ -64,6 +66,8 @@ export function Whitelist() {
             <input
               type="checkbox"
               checked={data.enabled}
+              disabled={!me.data?.permissions.canToggleWhitelist}
+              title={me.data?.permissions.canToggleWhitelist ? undefined : "Nur Owner und Dev können die Whitelist ein- oder ausschalten."}
               onChange={async (e) => {
                 const enabled = e.target.checked;
                 try {

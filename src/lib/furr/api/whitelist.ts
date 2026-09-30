@@ -95,7 +95,7 @@ export const setWhitelistEnabled = createServerFn({ method: "POST" })
   .validator((enabled: boolean) => Boolean(enabled))
   .middleware([accessMiddleware])
   .handler(async ({ context, data: enabled }) => {
-    await requirePermission(context.userId, "canManageWhitelist");
+    await requirePermission(context.userId, "canToggleWhitelist");
     await setSetting("whitelist_enabled", enabled ? "true" : "false");
     return { enabled };
   });

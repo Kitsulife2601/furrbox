@@ -18,6 +18,7 @@ import {
 } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { updateBridge, useUpdateState, type UpdateState } from "@/components/desktop/UpdatePopup";
+import { CHANGELOG } from "@/lib/furr/changelog";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
@@ -379,6 +380,7 @@ function SystemInfo() {
         ))}
       </dl>
       {update && <UpdateSection state={update} />}
+      <News />
     </div>
   );
 }
@@ -425,6 +427,31 @@ function UpdateSection({ state }: { state: UpdateState }) {
         )}
       </div>
       <p className="text-[11px] text-subtle">Updates kommen automatisch aus den GitHub-Releases von FurrBox.</p>
+    </div>
+  );
+}
+
+/** "Neuigkeiten": what changed recently (src/lib/furr/changelog.ts). */
+function News() {
+  return (
+    <div className="mt-4 grid gap-3 rounded-md bg-elevated/50 p-3 text-[13px]">
+      <p className="font-medium">Neuigkeiten</p>
+      {CHANGELOG.map((entry) => (
+        <div key={`${entry.date}-${entry.title}`} className="border-t border-border pt-2 first-of-type:border-t-0 first-of-type:pt-0">
+          <p className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium">{entry.title}</span>
+            <span className="text-[11px] text-subtle">
+              {new Date(`${entry.date}T12:00:00`).toLocaleDateString("de-DE")}
+              {entry.version ? ` · Version ${entry.version}` : ""}
+            </span>
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
+            {entry.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }
