@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-09-30",
+    "title": "FurrEvidence neu gestaltet",
+    "items": [
+      "Neuer Fall ist jetzt in übersichtliche Schritte aufgeteilt: Zielperson, Nachricht, Einordnung und Beweise.",
+      "Mitglieder-Auswahl mit Suche, Profilbild-Kürzel und Rolle statt der weißen Liste.",
+      "Kategorien wählst du per Klick, Beweise ziehst du einfach in die große Ablagefläche.",
+      "Unten zeigt eine Leiste, was gespeichert wird – mit dem Knopf „Fall speichern“.",
+      "Das Fenster passt sich jetzt der Fenstergröße an statt der Bildschirmgröße."
+    ]
+  },
+  {
+    "date": "2026-09-30",
     "title": "Schmalere Scrollleisten",
     "items": [
       "Scrollleisten sind jetzt schmal, ohne Pfeile und passen farblich zu FurrBox.",

@@ -1,7 +1,7 @@
 // FurrEvidence: evidence case intake (Discord/VRChat), message proof via bot, moderation queue.
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Paperclip, Search, Trash2 } from "lucide-react";
+import { FileText, FolderOpen, Globe2, Image as ImageIcon, MessagesSquare, Save, Search, UploadCloud, X } from "lucide-react";
 import {
   VIOLATION_CATEGORIES,
   getMessageInspect,
@@ -15,8 +15,8 @@ import { listDiscordMembers } from "@/lib/furr/api/presence";
 import { getBridgeStatus } from "@/lib/furr/api/session";
 import { errorMessage, fileToBase64, timeAgo, useMe } from "@/lib/furr/client";
 import { MAX_UPLOAD_BYTES, formatSize } from "@/lib/furr/paths";
-import type { ModerationAction } from "@/lib/furr/roles";
-import type { MessageProof } from "@/lib/furr/types";
+import { ROLE_LABEL, isRole, type ModerationAction } from "@/lib/furr/roles";
+import type { DiscordMemberOption, MessageProof } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
@@ -48,18 +48,28 @@ export function Evidence() {
 
   return (
     <div className="flex h-full flex-col bg-bg/40">
-      <div className="flex items-center gap-1 border-b border-border px-3 py-1.5">
-        {(
-          [
-            ["case", "Neuer Fall"],
-            ["cases", "Fallakten"],
-            ["moderation", "Moderation"],
-          ] as const
-        ).map(([id, label]) => (
-          <Btn key={id} variant={tab === id ? "default" : "ghost"} onClick={() => setTab(id)}>
-            {label}
-          </Btn>
-        ))}
+      <div className="flex items-center gap-3 border-b border-border px-3 py-2">
+        <div className="flex gap-1 rounded-lg bg-bg/60 p-1">
+          {(
+            [
+              ["case", "Neuer Fall"],
+              ["cases", "Fallakten"],
+              ["moderation", "Moderation"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={cn(
+                "h-8 rounded-md px-3 text-[13px] font-medium transition-colors",
+                tab === id ? "bg-elevated text-fg shadow-sm" : "text-muted hover:text-fg",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto text-[11px] text-muted">
           Discord-Bot:{" "}
           {bridge.data?.connected ? (
@@ -94,9 +104,14 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [manual, setManual] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const filteredMembers = useMemo(
-    () => (members.data ?? []).filter((m) => m.label.toLowerCase().includes(memberFilter.toLowerCase())).slice(0, 50),
+    () =>
+      (members.data ?? [])
+        .filter((m) => `${m.label} ${m.displayName} ${m.discordId}`.toLowerCase().includes(memberFilter.toLowerCase()))
+        .slice(0, 60),
     [members.data, memberFilter],
   );
   const totalSize = files.reduce((s, f) => s + f.size, 0);
@@ -153,136 +168,310 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
     }
   }
 
-  return (
-    <div className="grid gap-4 p-4 lg:grid-cols-2">
-      <div className="grid content-start gap-3">
-        <div className="flex gap-2">
-          {(["Discord", "VRChat"] as const).map((p) => (
-            <Btn key={p} variant={platform === p ? "primary" : "default"} onClick={() => setPlatform(p)}>
-              {p}
-            </Btn>
-          ))}
-        </div>
-        {platform === "Discord" && (
-          <Field label="Discord-Nutzer auswählen" hint={members.isError ? errorMessage(members.error) : `${members.data?.length ?? 0} synchronisierte Mitglieder`}>
-            <TextInput placeholder="Mitglied suchen…" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)} />
-            <select
-              size={Math.min(6, Math.max(2, filteredMembers.length))}
-              value={targetDiscordId}
-              onChange={(e) => {
-                const m = members.data?.find((x) => x.discordId === e.target.value);
-                setTargetDiscordId(e.target.value);
-                if (m) setTargetPrimary(m.label);
-              }}
-              className="rounded-md border border-border bg-bg/60 p-1 text-[13px] text-fg outline-none"
-            >
-              {filteredMembers.map((m) => (
-                <option key={m.discordId} value={m.discordId}>
-                  {m.label} · {m.roleNames[0] ?? m.highestPrivilege}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        <Field label={platform === "Discord" ? "Zielperson (Name)" : "VRChat Display Name"}>
-          <TextInput value={targetPrimary} onChange={(e) => setTargetPrimary(e.target.value)} />
-        </Field>
-        {platform === "Discord" && (
-          <Field label="Discord-ID der Zielperson">
-            <TextInput value={targetDiscordId} onChange={(e) => setTargetDiscordId(e.target.value.trim())} inputMode="numeric" />
-          </Field>
-        )}
-        <Field label={platform === "Discord" ? "Server / Channel / Message Link" : "Instance ID / World / Time"}>
-          <TextInput value={targetSecondary} onChange={(e) => setTargetSecondary(e.target.value)} />
-        </Field>
-        {platform === "Discord" && (
-          <Field label="Nachrichten-ID (optional)">
-            <div className="flex gap-2">
-              <TextInput value={messageId} onChange={(e) => setMessageId(e.target.value.trim())} inputMode="numeric" />
-              <Btn disabled={!messageId || inspecting} onClick={() => void inspect()}>
-                <Search className="size-3.5" /> {inspecting ? "Lädt…" : "Laden"}
-              </Btn>
-            </div>
-          </Field>
-        )}
-        {proof?.found && (
-          <div className="rounded-md border border-border bg-elevated/40 p-3 text-[12px]">
-            <p className="text-muted">
-              {proof.authorName ?? proof.authorId} in #{proof.channelName ?? "?"} · {proof.createdAt ? new Date(proof.createdAt).toLocaleString("de-DE") : ""}
-            </p>
-            <p className="mt-1 whitespace-pre-wrap">{proof.content || "(kein Text)"}</p>
-          </div>
-        )}
-      </div>
+  const selected = members.data?.find((m) => m.discordId === targetDiscordId) ?? null;
+  const ready = Boolean(targetPrimary || targetDiscordId);
+  const usage = Math.min(100, Math.round((totalSize / MAX_UPLOAD_BYTES) * 100));
 
-      <div className="grid content-start gap-3">
-        <Field label="Violation Category">
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-9 rounded-md border border-border bg-bg/60 px-2 text-[13px] text-fg outline-none"
-          >
-            {VIOLATION_CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Moderator Notes">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={6}
-            className="rounded-md border border-border bg-bg/60 p-2 text-[13px] text-fg outline-none focus:border-accent"
-          />
-        </Field>
-        <div
-          className="rounded-md border border-dashed border-border p-3 text-[12px] text-muted"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            setFiles((f) => [...f, ...Array.from(e.dataTransfer.files)].slice(0, 32));
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <span>
-              Beweisdateien ({files.length}) · {formatSize(totalSize)} / 3 MB
-            </span>
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-elevated px-2 py-1 text-fg hover:bg-fg/10">
-              <Paperclip className="size-3.5" /> Hinzufügen
+  function pick(m: DiscordMemberOption) {
+    setTargetDiscordId(m.discordId);
+    setTargetPrimary(m.label);
+    setManual(false);
+  }
+
+  function clearTarget() {
+    setTargetDiscordId("");
+    setTargetPrimary("");
+  }
+
+  function addFiles(list: FileList | File[]) {
+    setFiles((f) => [...f, ...Array.from(list)].slice(0, 32));
+  }
+
+  return (
+    <div className="@container flex min-h-full flex-col">
+      <div className="mx-auto grid w-full max-w-5xl flex-1 content-start gap-4 p-4 @3xl:grid-cols-2">
+        <div className="grid content-start gap-4">
+          <Card step={1} title="Plattform & Zielperson" subtitle="Um wen geht es?">
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-bg/60 p-1">
+              {(["Discord", "VRChat"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => {
+                    setPlatform(p);
+                    clearTarget();
+                  }}
+                  className={cn(
+                    "flex h-9 items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors",
+                    platform === p ? "bg-accent text-accent-fg shadow-sm" : "text-muted hover:bg-fg/6 hover:text-fg",
+                  )}
+                >
+                  {p === "Discord" ? <MessagesSquare className="size-4" /> : <Globe2 className="size-4" />}
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            {platform === "Discord" && !manual && selected ? (
+              <div className="flex items-center gap-3 rounded-lg border border-accent/40 bg-accent/10 p-3">
+                <Avatar name={selected.nickname || selected.displayName} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold">{selected.nickname || selected.displayName}</p>
+                  <p className="truncate text-[12px] text-muted">
+                    @{selected.username} · <span className="font-mono">{selected.discordId}</span>
+                  </p>
+                </div>
+                <button type="button" onClick={clearTarget} className="rounded-md p-1.5 text-muted hover:bg-fg/10 hover:text-fg" aria-label="Andere Person wählen">
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : platform === "Discord" && !manual ? (
+              <div className="grid gap-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle" />
+                  <TextInput
+                    placeholder={`Mitglied suchen… (${members.data?.length ?? 0} synchronisiert)`}
+                    value={memberFilter}
+                    onChange={(e) => setMemberFilter(e.target.value)}
+                    className="h-10 pl-9"
+                  />
+                </div>
+                <div className="grid max-h-56 gap-0.5 overflow-auto rounded-lg border border-border bg-bg/40 p-1">
+                  {members.isError ? (
+                    <p className="px-3 py-4 text-center text-[12px] text-muted">{errorMessage(members.error)}</p>
+                  ) : !members.data ? (
+                    <p className="px-3 py-4 text-center text-[12px] text-muted">Lade Mitglieder…</p>
+                  ) : filteredMembers.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-[12px] text-muted">Niemand gefunden.</p>
+                  ) : (
+                    filteredMembers.map((m) => {
+                      const role = memberRole(m);
+                      return (
+                        <button
+                          key={m.discordId}
+                          type="button"
+                          onClick={() => pick(m)}
+                          className="flex items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-fg/8"
+                        >
+                          <Avatar name={m.nickname || m.displayName} small />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium">{m.nickname || m.displayName}</span>
+                            <span className="block truncate text-[11px] text-muted">@{m.username}</span>
+                          </span>
+                          {role && <Badge tone="accent">{role}</Badge>}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <button type="button" onClick={() => setManual(true)} className="justify-self-start text-[12px] text-accent hover:underline">
+                  Nicht in der Liste? Manuell eingeben
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                <Field label={platform === "Discord" ? "Name der Person" : "VRChat Display Name"}>
+                  <TextInput value={targetPrimary} onChange={(e) => setTargetPrimary(e.target.value)} className="h-10" />
+                </Field>
+                {platform === "Discord" && (
+                  <>
+                    <Field label="Discord-ID" hint="Rechtsklick auf die Person → „Benutzer-ID kopieren“">
+                      <TextInput value={targetDiscordId} onChange={(e) => setTargetDiscordId(e.target.value.trim())} inputMode="numeric" className="h-10 font-mono" />
+                    </Field>
+                    <button type="button" onClick={() => setManual(false)} className="justify-self-start text-[12px] text-accent hover:underline">
+                      Zurück zur Mitgliederliste
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            <Field label={platform === "Discord" ? "Wo ist es passiert? (Server, Channel oder Link)" : "Instanz, Welt und Uhrzeit"}>
+              <TextInput value={targetSecondary} onChange={(e) => setTargetSecondary(e.target.value)} className="h-10" placeholder={platform === "Discord" ? "#allgemein oder https://discord.com/channels/…" : "wrld_… · 21:30 Uhr"} />
+            </Field>
+          </Card>
+
+          {platform === "Discord" && (
+            <Card step={2} title="Nachricht als Beweis" subtitle="Optional: der Bot holt die Nachricht direkt aus Discord.">
+              <div className="flex gap-2">
+                <TextInput value={messageId} onChange={(e) => setMessageId(e.target.value.trim())} inputMode="numeric" placeholder="Nachrichten-ID" className="h-10 font-mono" />
+                <Btn className="h-10 px-4" disabled={!messageId || inspecting} onClick={() => void inspect()}>
+                  <Search className="size-4" /> {inspecting ? "Lädt…" : "Laden"}
+                </Btn>
+              </div>
+              {proof?.found && (
+                <div className="flex gap-3 rounded-lg bg-bg/60 p-3">
+                  <Avatar name={proof.authorName ?? "?"} small />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px]">
+                      <span className="font-semibold">{proof.authorName ?? proof.authorId}</span>{" "}
+                      <span className="text-subtle">
+                        in #{proof.channelName ?? "?"}
+                        {proof.createdAt ? ` · ${new Date(proof.createdAt).toLocaleString("de-DE")}` : ""}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{proof.content || "(kein Text)"}</p>
+                  </div>
+                  <button type="button" onClick={() => setProof(null)} className="self-start rounded p-1 text-muted hover:text-fg" aria-label="Nachricht entfernen">
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
+
+        <div className="grid content-start gap-4">
+          <Card step={platform === "Discord" ? 3 : 2} title="Einordnung" subtitle="Was ist passiert?">
+            <div className="flex flex-wrap gap-1.5">
+              {VIOLATION_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors",
+                    category === c ? "border-accent bg-accent text-accent-fg" : "border-border text-muted hover:border-fg/30 hover:text-fg",
+                  )}
+                >
+                  {CATEGORY_LABEL[c] ?? c}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-1">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={5}
+                maxLength={10_000}
+                placeholder="Notizen für das Team: Was genau ist passiert, gab es Vorwarnungen, …"
+                className="resize-y rounded-lg border border-border bg-bg/60 p-3 text-[13px] text-fg outline-none placeholder:text-subtle focus:border-accent"
+              />
+              <span className="justify-self-end text-[11px] text-subtle">{notes.length} / 10.000</span>
+            </div>
+          </Card>
+
+          <Card step={platform === "Discord" ? 4 : 3} title="Beweisdateien" subtitle="Screenshots, Videos oder Logs – zusammen max. 3 MB.">
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                addFiles(e.dataTransfer.files);
+              }}
+              className={cn(
+                "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors",
+                dragging ? "border-accent bg-accent/10" : "border-border hover:border-fg/30 hover:bg-fg/4",
+              )}
+            >
+              <UploadCloud className={cn("size-7", dragging ? "text-accent" : "text-subtle")} />
+              <span className="text-[13px] font-medium">Dateien hierher ziehen</span>
+              <span className="text-[12px] text-muted">oder klicken zum Auswählen</span>
               <input
                 type="file"
                 multiple
                 hidden
                 onChange={(e) => {
-                  const list = e.target.files;
-                  if (list) setFiles((f) => [...f, ...Array.from(list)].slice(0, 32));
+                  if (e.target.files) addFiles(e.target.files);
                   e.target.value = "";
                 }}
               />
             </label>
-          </div>
-          {files.length === 0 ? (
-            <p className="mt-2">Noch keine Beweise hinzugefügt. Dateien hierher ziehen.</p>
-          ) : (
-            <ul className="mt-2 grid gap-1">
-              {files.map((f, i) => (
-                <li key={`${f.name}-${i}`} className="flex items-center gap-2 text-fg">
-                  <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                  <span className="text-muted">{formatSize(f.size)}</span>
-                  <button type="button" aria-label="Entfernen" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
-                    <Trash2 className="size-3.5 text-muted hover:text-fg" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+            <div className="grid gap-1">
+              <div className="h-1.5 overflow-hidden rounded-full bg-bg/70">
+                <div className={cn("h-full rounded-full", usage >= 100 ? "bg-danger" : "bg-accent")} style={{ width: `${usage}%` }} />
+              </div>
+              <span className="text-[11px] text-subtle">
+                {files.length} {files.length === 1 ? "Datei" : "Dateien"} · {formatSize(totalSize)} von 3 MB
+              </span>
+            </div>
+            {files.length > 0 && (
+              <ul className="grid gap-1">
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md bg-bg/50 px-2 py-1.5 text-[12px]">
+                    {f.type.startsWith("image/") ? <ImageIcon className="size-4 shrink-0 text-accent" /> : <FileText className="size-4 shrink-0 text-muted" />}
+                    <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                    <span className="text-muted">{formatSize(f.size)}</span>
+                    <button type="button" aria-label="Entfernen" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))} className="rounded p-0.5 text-muted hover:text-fg">
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
-        <ErrorText>{error}</ErrorText>
-        <Btn variant="primary" disabled={saving || (!targetPrimary && !targetDiscordId)} onClick={() => void submit()}>
-          {saving ? "Beweise werden gespeichert…" : "Fall speichern"}
-        </Btn>
+      </div>
+
+      <div className="sticky bottom-0 border-t border-border bg-surface/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1 text-[12px] text-muted">
+            {ready ? (
+              <>
+                <span className="font-medium text-fg">{selected ? selected.nickname || selected.displayName : targetPrimary || targetDiscordId}</span>
+                {" · "}
+                {platform} · {CATEGORY_LABEL[category] ?? category} · {files.length} {files.length === 1 ? "Datei" : "Dateien"}
+                {proof?.found ? " · Nachricht" : ""}
+              </>
+            ) : (
+              "Wähle zuerst die Zielperson aus."
+            )}
+            {error && <p className="mt-1 text-red-300">{error}</p>}
+          </div>
+          <Btn variant="primary" className="h-10 px-5" disabled={saving || !ready} onClick={() => void submit()}>
+            <Save className="size-4" /> {saving ? "Wird gespeichert…" : "Fall speichern"}
+          </Btn>
+        </div>
       </div>
     </div>
+  );
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  Harassment: "Belästigung",
+  "Chat Spam": "Spam",
+  "NSFW Content": "NSFW-Inhalte",
+  Threats: "Drohungen",
+  Impersonation: "Identitätsbetrug",
+  "ToS Violation": "Regelverstoß",
+  Other: "Sonstiges",
+};
+
+function memberRole(m: DiscordMemberOption) {
+  const name = m.roleNames.find((r) => r && r !== "@everyone");
+  if (name) return name;
+  return isRole(m.highestPrivilege) && m.highestPrivilege !== "member" ? ROLE_LABEL[m.highestPrivilege] : null;
+}
+
+function Avatar({ name, small }: { name: string; small?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent/80 to-violet-500/70 font-semibold text-white",
+        small ? "size-8 text-[12px]" : "size-10 text-[14px]",
+      )}
+    >
+      {(name.trim()[0] ?? "?").toUpperCase()}
+    </span>
+  );
+}
+
+function Card({ step, title, subtitle, children }: { step: number; title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-border bg-elevated/40 p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent/20 text-[12px] font-semibold text-accent">{step}</span>
+        <div>
+          <h3 className="text-[14px] font-semibold leading-6">{title}</h3>
+          {subtitle && <p className="text-[12px] text-muted">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
