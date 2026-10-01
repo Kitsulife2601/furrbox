@@ -31,6 +31,7 @@ import {
   type VrchatStatus,
 } from "@/lib/furr/api/vrchat";
 import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
+import { updateBridge } from "@/components/desktop/UpdatePopup";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
@@ -61,6 +62,38 @@ type DesktopVrchat = {
 function desktopVrchat(): DesktopVrchat | null {
   if (typeof window === "undefined") return null;
   return (window as { furrbox?: { vrchat?: DesktopVrchat } }).furrbox?.vrchat ?? null;
+}
+
+/** Running inside the FurrBox desktop app (any version)? */
+function inDesktopApp() {
+  return typeof window !== "undefined" && Boolean((window as { furrbox?: unknown }).furrbox);
+}
+
+/** Shown when the desktop app is too old for the personal VRChat login. */
+function DesktopHint({ what }: { what: string }) {
+  const [state, setState] = useState<"idle" | "checking" | "done">("idle");
+  if (!inDesktopApp()) {
+    return <p className="text-[12px] text-muted">{what} gibt es nur in der FurrBox-Desktop-App – VRChat erlaubt das nur vom eigenen PC.</p>;
+  }
+  return (
+    <div className="grid gap-2 rounded-lg border border-accent/40 bg-accent/10 p-3 text-[12px]">
+      <p className="font-medium">FurrBox-Update nötig</p>
+      <p className="text-muted">
+        {what} braucht die Desktop-Version 2.0.8 oder neuer. Lade das Update – danach unten rechts auf das Update-Symbol klicken.
+      </p>
+      <Btn
+        variant="primary"
+        disabled={state !== "idle"}
+        onClick={async () => {
+          setState("checking");
+          await updateBridge()?.check().catch(() => undefined);
+          setState("done");
+        }}
+      >
+        {state === "checking" ? "Suche Update…" : state === "done" ? "Update wird geladen – Symbol unten rechts beachten" : "Jetzt nach Update suchen"}
+      </Btn>
+    </div>
+  );
 }
 
 async function unwrap<T>(p: Promise<Result<T>> | undefined): Promise<T> {
@@ -604,7 +637,7 @@ function Moderation({ groupId }: { groupId: string }) {
         </p>
       ) : !desktopVrchat() ? (
         <p className="text-[12px] text-muted">
-          Moderieren geht nur in der FurrBox-Desktop-App mit deinem eigenen VRChat-Konto.
+          Moderieren geht nur in der FurrBox-Desktop-App mit deinem eigenen VRChat-Konto (siehe „Dein VRChat-Konto“).
         </p>
       ) : !mine.data?.loggedIn ? (
         <p className="text-[12px] text-muted">
@@ -762,10 +795,7 @@ function MyAccount({ groupId, groupName }: { groupId: string; groupName: string 
   return (
     <Card title="Dein VRChat-Konto" icon={<KeyRound className="size-4" />}>
       {!bridge ? (
-        <p className="text-[12px] text-muted">
-          Die eigene VRChat-Anmeldung gibt es nur in der FurrBox-Desktop-App – VRChat erlaubt sie
-          nur vom eigenen PC.
-        </p>
+        <DesktopHint what="Die eigene VRChat-Anmeldung" />
       ) : !st ? (
         <p className="text-[12px] text-muted">Lade…</p>
       ) : st.loggedIn ? (

@@ -1,5 +1,13 @@
 [
   {
+    "date": "2026-10-02",
+    "title": "Klarer Hinweis bei alter Desktop-Version",
+    "items": [
+      "Ist die FurrBox-App zu alt für die eigene VRChat-Anmeldung, steht jetzt „FurrBox-Update nötig“ statt „nur in der Desktop-App“.",
+      "Mit „Jetzt nach Update suchen“ holt sich die App das Update sofort – danach unten rechts auf das Update-Symbol klicken."
+    ]
+  },
+  {
     "date": "2026-10-01",
     "title": "Jeder meldet sich selbst an",
     "items": [
