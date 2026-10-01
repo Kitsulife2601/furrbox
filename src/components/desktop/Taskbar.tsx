@@ -1,3 +1,4 @@
+import { UpdateTrayButton } from "./UpdatePopup";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Bell, MessageSquare, Search, Wifi, WifiOff } from "lucide-react";
@@ -99,6 +100,7 @@ export function Taskbar({ now }: { now: Date }) {
         })}
       </nav>
       <div className="flex items-center gap-0.5 pr-1">
+        <UpdateTrayButton />
         <button
           type="button"
           aria-label="FurrChat öffnen"

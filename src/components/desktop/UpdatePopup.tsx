@@ -144,10 +144,40 @@ export function applyServerUpdate() {
 
 const SERVER_CHECK_MS = 5 * 60_000;
 
-export function UpdatePopup() {
+/** One update the user can apply right now (desktop installer first, then server update). */
+export function usePendingUpdate() {
   const server = useServerUpdate();
   const desktop = useUpdateState();
-  const [serverDismissed, setServerDismissed] = useState(false);
+  if (desktop?.status === "ready" && desktop.newVersion) {
+    const items = UPDATE_LIST.find((u) => u.version === desktop.newVersion)?.items ?? [];
+    return {
+      kind: "desktop" as const,
+      key: `desktop-${desktop.newVersion}`,
+      label: "Update bereit – zum Installieren neu starten",
+      items,
+      apply: () => void updateBridge()?.install(),
+    };
+  }
+  if (server.status === "available") {
+    return {
+      kind: "server" as const,
+      key: `server-${server.news.map((n) => n.title).join("|")}`,
+      label: "Update verfügbar – klicken zum Aktualisieren",
+      items: newsLines(server.news),
+      apply: applyServerUpdate,
+    };
+  }
+  return null;
+}
+
+/**
+ * Background update watcher: checks the server regularly and announces a new update once as a
+ * notification. Applying happens via the taskbar icon (UpdateTrayButton) or the notification.
+ */
+export function UpdatePopup() {
+  const pending = usePendingUpdate();
+  const desktop = useUpdateState();
+  const announced = useRef<string | null>(null);
 
   useEffect(() => {
     const check = () => void useServerUpdate.getState().check();
@@ -162,121 +192,57 @@ export function UpdatePopup() {
     };
   }, []);
 
-  return (
-    <>
-      <DesktopUpdatePopup />
-      {server.status === "available" && !serverDismissed && desktop?.status !== "ready" && (
-        <UpdateDialog
-          title="Ein Update ist verfügbar"
-          text="FurrBox lädt sich zum Aktualisieren kurz neu – deine Dateien und Fenster-Einstellungen bleiben erhalten."
-          items={newsLines(server.news)}
-          confirmLabel="Jetzt aktualisieren"
-          onLater={() => setServerDismissed(true)}
-          onConfirm={applyServerUpdate}
-        />
-      )}
-    </>
-  );
-}
-
-function UpdateDialog({
-  title,
-  text,
-  items,
-  notes,
-  confirmLabel,
-  busyLabel,
-  onLater,
-  onConfirm,
-}: {
-  title: string;
-  text: string;
-  items: string[];
-  notes?: string;
-  confirmLabel: string;
-  busyLabel?: string;
-  onLater: () => void;
-  onConfirm: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <div className="fixed inset-0 z-[9000] grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.stopPropagation()}>
-      <div role="dialog" aria-label={title} className="mica w-[min(440px,100%)] rounded-xl p-6 text-fg win-shadow">
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-full bg-accent/20 text-accent">
-            <Download className="size-5" />
-          </span>
-          <div>
-            <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-accent">FurrBox Update</p>
-            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-          </div>
-        </div>
-        <p className="mt-3 text-[13px] text-muted">{text}</p>
-        {items.length > 0 ? (
-          <div className="mt-3 max-h-48 overflow-auto rounded-md bg-bg/60 p-3">
-            <p className="text-[12px] font-medium">Das ist neu</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-fg/85">
-              {items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          notes && (
-            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-bg/60 p-3 font-sans text-[12px] text-fg/85">
-              {notes}
-            </pre>
-          )
-        )}
-        <div className="mt-5 flex justify-end gap-2">
-          <Btn variant="ghost" onClick={onLater}>
-            Später
-          </Btn>
-          <Btn
-            variant="primary"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              onConfirm();
-            }}
-          >
-            {busy ? (busyLabel ?? "Wird aktualisiert…") : confirmLabel}
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DesktopUpdatePopup() {
-  const state = useUpdateState();
-  const [dismissed, setDismissed] = useState<string | null>(null);
-  const announced = useRef<string | null>(null);
-
+  // Desktop installer download started.
   useEffect(() => {
-    if (state?.status === "downloading" && state.newVersion && announced.current !== state.newVersion) {
-      announced.current = state.newVersion;
+    if (desktop?.status === "downloading" && desktop.newVersion && announced.current !== `dl-${desktop.newVersion}`) {
+      announced.current = `dl-${desktop.newVersion}`;
       useNotifications.getState().notify({
         version: "FurrBox Update",
         title: "Neues Update gefunden",
         description: "Das Update wird im Hintergrund heruntergeladen.",
       });
     }
-  }, [state]);
+  }, [desktop]);
 
-  if (state?.status !== "ready" || !state.newVersion || dismissed === state.newVersion) return null;
-  const items = UPDATE_LIST.find((u) => u.version === state.newVersion)?.items ?? [];
+  // Update ready to apply: one notification, clicking it applies the update.
+  useEffect(() => {
+    if (!pending || announced.current === pending.key) return;
+    announced.current = pending.key;
+    const preview = pending.items.filter((i) => !i.startsWith("– ")).slice(0, 3);
+    useNotifications.getState().notify({
+      id: `update-${pending.key}`,
+      version: "FurrBox Update",
+      title: pending.kind === "desktop" ? "Update bereit zum Installieren" : "Ein Update ist verfügbar",
+      description: preview.length
+        ? `${preview.join(" · ")} – klicken zum Aktualisieren`
+        : "Klicken zum Aktualisieren – oder über das Symbol unten rechts.",
+      onClick: pending.apply,
+    });
+  }, [pending]);
 
+  return null;
+}
+
+/** Taskbar icon (bottom right) shown while an update is waiting; click applies it. */
+export function UpdateTrayButton() {
+  const pending = usePendingUpdate();
+  const [busy, setBusy] = useState(false);
+  if (!pending) return null;
+  const tooltip = [pending.label, ...pending.items.slice(0, 6)].join("\n");
   return (
-    <UpdateDialog
-      title="Ein Update ist bereit"
-      text="FurrBox startet zum Installieren kurz neu – deine Dateien bleiben erhalten."
-      items={items}
-      notes={state.notes}
-      confirmLabel="Jetzt neu starten"
-      busyLabel="Wird neu gestartet…"
-      onLater={() => setDismissed(state.newVersion ?? null)}
-      onConfirm={() => void updateBridge()?.install()}
-    />
+    <button
+      type="button"
+      aria-label={pending.label}
+      title={tooltip}
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        pending.apply();
+      }}
+      className="relative grid size-10 place-items-center rounded-md text-accent hover:bg-fg/8 disabled:opacity-60"
+    >
+      <Download className={busy ? "size-4 animate-pulse" : "size-4"} />
+      <span className="absolute right-2 top-2 size-2 rounded-full bg-accent ring-2 ring-[var(--os-taskbar)]" />
+    </button>
   );
 }

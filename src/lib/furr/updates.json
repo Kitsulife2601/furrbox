@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-01",
+    "title": "Updates ohne Popup",
+    "items": [
+      "Kein Update-Fenster mehr mitten auf dem Bildschirm.",
+      "Gibt es ein Update, erscheint unten rechts in der Taskleiste ein Update-Symbol – ein Klick aktualisiert FurrBox.",
+      "Zusätzlich kommt einmal eine Benachrichtigung; auch ein Klick darauf startet das Update."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat-Gruppe in FurrEvidence",
     "items": [
       "Neuer Reiter „VRChat“ in FurrEvidence: FurrBox verbindet sich mit der VRChat-Gruppe (z. B. Flausch stube).",
