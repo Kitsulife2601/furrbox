@@ -150,18 +150,31 @@ export const getVrchatStatus = createServerFn({ method: "GET" })
 
 /** Owner: connect a VRChat account. Returns whether a 2FA code is needed next. */
 export const vrchatLogin = createServerFn({ method: "POST" })
-  .validator((input: { username: string; password: string }) => ({
+  .validator((input: { username: string; password: string; code?: string }) => ({
     username: String(input.username ?? "").trim(),
     password: String(input.password ?? ""),
+    code: String(input.code ?? "").replace(/\s+/g, ""),
   }))
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     await requirePermission(context.userId, "canManageVrchat");
     if (!data.username || !data.password) throw new Error("Bitte VRChat-Nutzername und Passwort eingeben.");
-    const { vrcLogin } = await import("../vrchat.server");
+    const { vrcLogin, vrcVerify2fa } = await import("../vrchat.server");
     const result = await vrcLogin(data.username, data.password);
     const sql = await getSql();
     await sql`insert into vrchat_connection (id) values (1) on conflict (id) do nothing`;
+    // Authenticator code given together with the password: verify right away in the same
+    // request, so VRChat sees login and 2FA from the same server.
+    if (result.step === "2fa" && data.code && !result.methods.includes("emailOtp")) {
+      const method = data.code.length > 6 ? "otp" : "totp";
+      const verified = await vrcVerify2fa(result.pendingAuth, method, data.code);
+      await sql`
+        update vrchat_connection set auth_cookie = ${verified.cookies.auth}, two_factor_cookie = ${verified.cookies.twoFactor ?? null},
+          pending_cookie = null, pending_methods = null, account_id = ${verified.userId}, account_name = ${verified.displayName},
+          connected_by = ${context.userId}, connected_at = now(), last_error = null, group_fetched_at = null
+        where id = 1`;
+      return { step: "done" as const, methods: [] as string[] };
+    }
     if (result.step === "2fa") {
       await sql`
         update vrchat_connection set pending_cookie = ${result.pendingAuth}, pending_methods = ${JSON.stringify(result.methods)}

@@ -95,8 +95,8 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
   return (
     <Card title="VRChat-Gruppe verbinden" icon={<Link2 className="size-4" />}>
       <ol className="grid gap-1 text-[12px] text-muted">
-        <li className={cn(step === "login" && "font-medium text-fg")}>1. Mit einem VRChat-Konto anmelden, das in der Gruppe ist (am besten ein eigenes Bot-Konto mit Gruppen-Rechten).</li>
-        <li className={cn(step === "2fa" && "font-medium text-fg")}>2. Den 2FA-Code bestätigen (Authenticator-App oder E-Mail).</li>
+        <li className={cn(step === "login" && "font-medium text-fg")}>1. Nutzername, Passwort und 2FA-Code eines VRChat-Kontos eingeben, das in der Gruppe ist (am besten ein eigenes Bot-Konto mit Gruppen-Rechten).</li>
+        <li className={cn(step === "2fa" && "font-medium text-fg")}>2. Nur bei 2FA per E-Mail: den Code aus der VRChat-Mail bestätigen.</li>
         <li className={cn(step === "group" && "font-medium text-fg")}>3. Das Gruppen-Kürzel eintragen (z. B. FLS.0227).</li>
       </ol>
       <p className="text-[11px] text-subtle">FurrBox speichert das Passwort nicht – nur die Anmeldung von VRChat.</p>
@@ -105,7 +105,7 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           className="grid gap-3"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
-            void run(() => vrchatLogin({ data: { username, password } }));
+            void run(() => vrchatLogin({ data: { username, password, code } }));
           }}
         >
           <Field label="VRChat-Nutzername oder E-Mail">
@@ -113,6 +113,9 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           </Field>
           <Field label="VRChat-Passwort">
             <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" className="h-10" />
+          </Field>
+          <Field label="2FA-Code aus der Authenticator-App" hint="Erst ganz zum Schluss eintragen – der Code gilt nur 30 Sekunden. Bei 2FA per E-Mail leer lassen.">
+            <TextInput value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="h-10 font-mono tracking-widest" />
           </Field>
           <Btn type="submit" variant="primary" className="h-10" disabled={busy || !username || !password}>
             {busy ? "Melde an…" : "Bei VRChat anmelden"}
@@ -133,6 +136,13 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           <Btn type="submit" variant="primary" className="h-10" disabled={busy || code.length < 6}>
             {busy ? "Prüfe…" : "Code bestätigen"}
           </Btn>
+          <button
+            type="button"
+            className="justify-self-start text-[12px] text-accent hover:underline"
+            onClick={() => void run(() => disconnectVrchat())}
+          >
+            Zurück – neu mit Nutzername, Passwort und Code anmelden
+          </button>
         </form>
       )}
       {step === "group" && (

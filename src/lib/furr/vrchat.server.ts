@@ -76,7 +76,16 @@ export async function vrcVerify2fa(pendingAuth: string, method: string, code: st
       : method === "otp"
         ? "/auth/twofactorauth/otp/verify"
         : "/auth/twofactorauth/totp/verify";
-  const { res, json } = await call(path, { method: "POST", body: JSON.stringify({ code }), cookies: { auth: pendingAuth } });
+  let res: Response;
+  let json: unknown;
+  try {
+    ({ res, json } = await call(path, { method: "POST", body: JSON.stringify({ code }), cookies: { auth: pendingAuth } }));
+  } catch (error) {
+    if (error instanceof VrcError && error.status === 401) {
+      throw new VrcError("VRChat hat die Anmeldung verworfen. Bitte Nutzername, Passwort und 2FA-Code zusammen eingeben.", 401);
+    }
+    throw error;
+  }
   if (!(json as { verified?: boolean } | null)?.verified) throw new VrcError("Der Code ist falsch oder abgelaufen.", 400);
   const twoFactor = readCookie(res, "twoFactorAuth");
   const cookies: VrcCookies = { auth: pendingAuth, twoFactor };

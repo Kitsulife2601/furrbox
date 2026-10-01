@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-01",
+    "title": "VRChat-Anmeldung repariert",
+    "items": [
+      "VRChat-Login in einem Schritt: Nutzername, Passwort und 2FA-Code werden zusammen eingegeben.",
+      "Behebt den Fehler „Missing Credentials“ beim Bestätigen des 2FA-Codes.",
+      "Wer im alten Schritt hängt, kommt mit „Zurück – neu anmelden“ wieder zum Anfang."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "Sicherheits-Update",
     "items": [
       "Eine Sicherheitslücke im Grundgerüst von FurrBox wurde geschlossen.",
