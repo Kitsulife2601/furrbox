@@ -1,7 +1,17 @@
 [
   {
     "date": "2026-10-01",
-    "version": "2.0.7",
+    "title": "Herunterfahren wie bei Windows",
+    "items": [
+      "Im Startmenü gibt es jetzt unten rechts einen Ein/Aus-Knopf mit Sperren, Abmelden, Neu starten und Herunterfahren.",
+      "Beim Herunterfahren und Neustarten läuft eine Animation wie bei Windows, danach schließt sich FurrBox.",
+      "Die Karte „Offene Instanzen“ zieht sich nicht mehr leer in die Länge und zeigt „live“, solange der Bot läuft.",
+      "Lange Namen auf dem Desktop werden sauber getrennt (z. B. „Moderations-log“)."
+    ]
+  },
+  {
+    "date": "2026-10-01",
+    "version": "2.0.8",
     "title": "Eigenes VRChat-Konto für jeden",
     "items": [
       "Jeder aus dem Team meldet sich in seiner FurrBox-App mit seinem eigenen VRChat-Konto an (FurrEvidence → VRChat → „Dein VRChat-Konto“).",

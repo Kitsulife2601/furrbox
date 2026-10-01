@@ -10,6 +10,7 @@ import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { openFurrFile } from "@/components/furr/FurrFS";
 import { useSync } from "@/components/furr/useFurrSync";
+import { PowerButton } from "./Power";
 
 function useLaunchableApps() {
   const me = useMe();
@@ -95,9 +96,7 @@ export function StartMenu() {
           <button type="button" aria-label="Einstellungen" onClick={() => openApp("settings")} className="grid size-10 place-items-center rounded-md hover:bg-fg/8">
             <Settings2 className="size-4" />
           </button>
-          <button type="button" aria-label="Sperren" onClick={lock} className="grid size-10 place-items-center rounded-md hover:bg-fg/8">
-            <Lock className="size-4" />
-          </button>
+          <PowerButton />
         </div>
       </div>
     </div>

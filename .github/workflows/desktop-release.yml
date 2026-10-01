@@ -55,12 +55,7 @@ jobs:
       - name: Create GitHub release
         shell: bash
         run: |
-          node -e '
-            const v = process.env.GITHUB_REF_NAME.replace(/^v/, "");
-            const e = require("./src/lib/furr/updates.json").find((u) => u.version === v);
-            require("fs").writeFileSync("release-notes.md", e ? e.items.map((i) => "- " + i).join("
-") : "");
-          '
+          node .github/scripts/release-notes.mjs "$GITHUB_REF_NAME"
           if [ -s release-notes.md ]; then
             gh release create "$GITHUB_REF_NAME" --title "FurrBox Update" --notes-file release-notes.md
           else

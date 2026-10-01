@@ -238,3 +238,75 @@
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in oklab, var(--os-accent) 70%, transparent);
 }
+
+/* Shutdown screen (Power.tsx): fade to black + Windows-style orbiting dots. */
+.furr-power {
+  animation: furr-power-in 0.6s ease-out both;
+}
+.furr-power-done {
+  animation: furr-power-in 0.8s ease-out both;
+}
+@keyframes furr-power-in {
+  from {
+    opacity: 0;
+  }
+}
+.furr-spinner {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+.furr-spinner span {
+  position: absolute;
+  inset: 0;
+  animation: furr-orbit 2.2s infinite;
+}
+.furr-spinner span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: #fff;
+}
+@keyframes furr-orbit {
+  0% {
+    transform: rotate(225deg);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  7% {
+    transform: rotate(345deg);
+    animation-timing-function: linear;
+  }
+  30% {
+    transform: rotate(455deg);
+    animation-timing-function: ease-in-out;
+  }
+  39% {
+    transform: rotate(690deg);
+    animation-timing-function: linear;
+  }
+  70% {
+    transform: rotate(815deg);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  75% {
+    transform: rotate(945deg);
+    animation-timing-function: ease-out;
+  }
+  76%,
+  100% {
+    transform: rotate(945deg);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .furr-spinner span {
+    animation-duration: 6s;
+  }
+}

@@ -112,7 +112,7 @@ export function VRChatPanel() {
       {s.connected && s.groupId && (
         <>
           <GroupHeader status={s} canManage={canManage} />
-          <div className="grid gap-4 @3xl:grid-cols-[1.4fr_1fr]">
+          <div className="grid items-start gap-4 @3xl:grid-cols-[1.4fr_1fr]">
             <Instances />
             <div className="grid content-start gap-4">
               <MyAccount />
@@ -294,6 +294,8 @@ export function GroupHeader({ status, canManage }: { status: VrchatStatus; canMa
 
 function Instances() {
   const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => getVrchatStatus() });
+  const live = Boolean(status.data?.botOnline);
   const q = useQuery({ queryKey: ["furr", "vrchat", "instances"], queryFn: () => listVrchatInstances(), refetchInterval: 45_000 });
   const list = q.data?.instances ?? [];
   const total = list.reduce((sum, i) => sum + i.memberCount, 0);
@@ -308,7 +310,15 @@ function Instances() {
           className="flex items-center gap-1 text-[11px] text-muted hover:text-fg"
         >
           <RefreshCw className={cn("size-3", q.isFetching && "animate-spin")} />
-          {q.data?.updatedAt ? `aktualisiert ${timeAgo(q.data.updatedAt)}` : "aktualisieren"}
+          {live ? (
+            <span className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-emerald-400" /> live · Bot prüft jede Minute
+            </span>
+          ) : q.data?.updatedAt ? (
+            `Stand ${timeAgo(q.data.updatedAt)} (Bot offline)`
+          ) : (
+            "aktualisieren"
+          )}
         </button>
       }
     >
@@ -350,7 +360,7 @@ export function InstanceRow({ instance: i }: { instance: VrchatInstance }) {
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-semibold">{i.worldName}</p>
+        <p className="truncate text-[13px] font-semibold" title={i.worldName}>{i.worldName}</p>
         <div className="mt-0.5 flex flex-wrap gap-1">
           <Badge tone="accent">{i.region}</Badge>
           <Badge>{i.access}</Badge>

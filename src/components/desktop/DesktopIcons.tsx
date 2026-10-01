@@ -19,6 +19,11 @@ const DRAG_THRESHOLD = 5;
 
 const key = (c: IconCell) => `${c.c}:${c.r}`;
 
+/** Long words get a soft hyphen so labels wrap as "Moderations-log" instead of mid-letter. */
+function softBreak(label: string) {
+  return label.replace(/(\S{11})(?=\S{3,})/g, "$1­");
+}
+
 /** Saved cells first; icons without a (valid, free) cell fill the first free cells column by column. */
 function layout(items: DesktopIconItem[], saved: Record<string, IconCell>, cols: number, rows: number) {
   const taken = new Set<string>();
@@ -125,7 +130,7 @@ export function DesktopIcons({ items }: { items: DesktopIconItem[] }) {
             style={{ left, top }}
           >
             {item.icon}
-            <span className="desk-label line-clamp-2 break-all text-[11px] leading-tight">{item.label}</span>
+            <span lang="de" className="desk-label line-clamp-2 hyphens-auto break-words text-[11px] leading-tight">{softBreak(item.label)}</span>
           </button>
         );
       })}

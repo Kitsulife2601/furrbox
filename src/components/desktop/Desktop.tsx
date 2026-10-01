@@ -19,6 +19,7 @@ import { NoAccess } from "./NoAccess";
 import { BootScreen } from "./BootScreen";
 import { DesktopIcons } from "./DesktopIcons";
 import { UpdatePopup } from "./UpdatePopup";
+import { PowerOverlay } from "./Power";
 import { Taskbar } from "./Taskbar";
 import { WindowFrame } from "./WindowFrame";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
@@ -226,6 +227,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         <Taskbar now={now} />
       </div>
       <UpdatePopup />
+      <PowerOverlay />
 
       {menu && (
         <PopupMenu x={menu.x} y={menu.y} items={menu.file ? fileMenuItems(menu.file) : menuItems} onClose={() => setMenu(null)} />
