@@ -36,6 +36,10 @@ export type Permissions = {
   canManageWhitelist: boolean;
   /** Switch the whole whitelist on or off (Owner and Dev). */
   canToggleWhitelist: boolean;
+  /** Connect the VRChat account and choose the group (Owner and Dev). */
+  canManageVrchat: boolean;
+  /** Kick / ban / unban in the VRChat group (Moderator and up). */
+  canModerateVrchat: boolean;
   moderationActions: ModerationAction[];
 };
 
@@ -53,6 +57,8 @@ export function permissionsFor(role: Role): Permissions {
     canConfigureChat: role === "dev",
     canManageWhitelist: rank >= roleRank("owner"),
     canToggleWhitelist: rank >= roleRank("owner"),
+    canManageVrchat: rank >= roleRank("owner"),
+    canModerateVrchat: rank >= roleRank("moderator"),
     moderationActions:
       rank >= roleRank("moderator") ? [...MODERATION_ACTIONS] : isTeam ? ["warn", "timeout"] : [],
   };

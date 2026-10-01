@@ -1,5 +1,15 @@
 [
   {
+    "date": "2026-10-01",
+    "title": "VRChat-Gruppe in FurrEvidence",
+    "items": [
+      "Neuer Reiter „VRChat“ in FurrEvidence: FurrBox verbindet sich mit der VRChat-Gruppe (z. B. Flausch stube).",
+      "Offene Gruppen-Instanzen werden angezeigt – mit Welt, wie viele Leute drin sind, Region und Art der Instanz.",
+      "Öffnet jemand eine neue Gruppen-Instanz, bekommt das Team eine Meldung.",
+      "Moderatoren können VRChat-Leute suchen und aus der Gruppe kicken, bannen oder entbannen – alles landet im Audit-Log."
+    ]
+  },
+  {
     "date": "2026-09-30",
     "title": "FurrEvidence neu gestaltet",
     "items": [

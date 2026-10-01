@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
+import { VRChatPanel } from "./VRChat";
 
 const DURATIONS = [
   { label: "10 Minuten", ms: 10 * 60_000 },
@@ -43,7 +44,7 @@ async function waitForInspect(requestId: string): Promise<MessageProof> {
 }
 
 export function Evidence() {
-  const [tab, setTab] = useState<"case" | "cases" | "moderation">("case");
+  const [tab, setTab] = useState<"case" | "cases" | "moderation" | "vrchat">("case");
   const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: 15_000 });
 
   return (
@@ -55,6 +56,7 @@ export function Evidence() {
               ["case", "Neuer Fall"],
               ["cases", "Fallakten"],
               ["moderation", "Moderation"],
+              ["vrchat", "VRChat"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -83,6 +85,7 @@ export function Evidence() {
         {tab === "case" && <CaseForm onSaved={() => setTab("cases")} />}
         {tab === "cases" && <CaseList />}
         {tab === "moderation" && <ModerationPanel />}
+        {tab === "vrchat" && <VRChatPanel />}
       </div>
     </div>
   );

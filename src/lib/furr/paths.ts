@@ -2,6 +2,7 @@
 
 export const EVIDENCE_ROOT = "Dokumente/Moderation_Beweise";
 export const DISCORD_LOGS = `${EVIDENCE_ROOT}/Discord_Logs`;
+export const VRCHAT_LOGS = `${EVIDENCE_ROOT}/VRChat_Logs`;
 export const AUDIT_LOG_NAME = "Audit_Log.txt";
 
 export const PRIVATE_DEFAULT_FOLDERS = ["Desktop", "Dokumente", "Downloads", "Bilder"];

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { latestIncoming } from "@/lib/furr/api/chat";
+import { vrchatTick } from "@/lib/furr/api/vrchat";
 import { goOffline, heartbeat, listNotifications } from "@/lib/furr/api/session";
 import { detectPlatform } from "@/lib/furr/client";
 import { useDesktop } from "@/store/desktop";
@@ -96,6 +97,8 @@ export function useFurrSync(active: boolean) {
       window.setInterval(beat, HEARTBEAT_MS),
       window.setInterval(pollNotifications, NOTIFY_MS),
       window.setInterval(pollChat, CHAT_MS),
+      // Lets the server notice newly opened VRChat group instances (team only, server-throttled).
+      window.setInterval(() => void vrchatTick().catch(() => undefined), 60_000),
     ];
     const onVisible = () => {
       if (document.visibilityState === "visible") void beat();
