@@ -45,6 +45,12 @@ async function call(path: string, init: RequestInit & { cookies?: VrcCookies; au
     json = null;
   }
   if (!res.ok) {
+    console.warn("[vrchat] request failed", {
+      path: path.split("?")[0],
+      status: res.status,
+      body: text.slice(0, 300),
+      sentCookies: init.cookies ? cookieHeader(init.cookies).split("; ").map((c) => `${c.split("=")[0]}(${c.length})`) : [],
+    });
     const msg =
       (json as { error?: { message?: string } } | null)?.error?.message?.replace(/^"|"$/g, "") ||
       `VRChat antwortet mit Fehler ${res.status}.`;
@@ -88,7 +94,13 @@ export async function vrcVerify2fa(pendingAuth: string, method: string, code: st
   }
   if (!(json as { verified?: boolean } | null)?.verified) throw new VrcError("Der Code ist falsch oder abgelaufen.", 400);
   const twoFactor = readCookie(res, "twoFactorAuth");
-  const cookies: VrcCookies = { auth: pendingAuth, twoFactor };
+  // VRChat may hand out a fresh auth cookie together with the 2FA cookie – keep the newest one.
+  const cookies: VrcCookies = { auth: readCookie(res, "auth") ?? pendingAuth, twoFactor };
+  console.info("[vrchat] 2FA verified", {
+    setCookies: res.headers.getSetCookie().map((c) => c.split("=")[0]),
+    rotatedAuth: cookies.auth !== pendingAuth,
+    hasTwoFactor: Boolean(twoFactor),
+  });
   const me = await vrcCurrentUser(cookies);
   return { cookies, userId: me.id, displayName: me.displayName };
 }

@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-01",
+    "title": "VRChat-Verbindung stabiler",
+    "items": [
+      "FurrBox übernimmt nach dem 2FA-Code die neue Anmeldung von VRChat, damit die Verbindung bestehen bleibt.",
+      "Lehnt VRChat eine Anfrage ab, bleibt die Anmeldung erhalten, solange sie noch gültig ist.",
+      "Fehlermeldungen zeigen jetzt die genaue Antwort von VRChat."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat-Anmeldung repariert",
     "items": [
       "VRChat-Login in einem Schritt: Nutzername, Passwort und 2FA-Code werden zusammen eingegeben.",

@@ -93,10 +93,16 @@ async function withVrc<T>(fn: () => Promise<T>): Promise<T> {
     return result;
   } catch (error) {
     if (error instanceof VrcError && error.status === 401) {
+      // Only drop the stored login if VRChat confirms it is really gone.
+      const { vrcCurrentUser } = await import("../vrchat.server");
+      const c = await conn();
+      const cookies = cookiesOf(c);
+      const stillValid = cookies ? await vrcCurrentUser(cookies).then(() => true, () => false) : false;
+      if (stillValid) throw new Error(`VRChat hat die Anfrage abgelehnt: ${error.message}`);
       const sql = await getSql();
       await sql`update vrchat_connection set auth_cookie = null, two_factor_cookie = null where id = 1`;
-      await recordError("Die VRChat-Anmeldung ist abgelaufen. Bitte neu verbinden.");
-      throw new Error("Die VRChat-Anmeldung ist abgelaufen. Der Owner muss VRChat neu verbinden.");
+      await recordError(`Die VRChat-Anmeldung ist abgelaufen (${error.message}). Bitte neu verbinden.`);
+      throw new Error(`Die VRChat-Anmeldung ist abgelaufen (${error.message}). Der Owner muss VRChat neu verbinden.`);
     }
     throw error;
   }
