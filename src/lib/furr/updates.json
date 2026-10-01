@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-01",
+    "title": "Sicherheits-Update",
+    "items": [
+      "Eine Sicherheitslücke im Grundgerüst von FurrBox wurde geschlossen.",
+      "Dadurch kommen auch die VRChat-Gruppe und die neue Update-Anzeige jetzt wirklich bei allen an."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "Updates ohne Popup",
     "items": [
       "Kein Update-Fenster mehr mitten auf dem Bildschirm.",
