@@ -16,7 +16,9 @@ const SESSION_FILE = join(dirname(fileURLToPath(import.meta.url)), "vrchat-sessi
 const WATCH_MS = 60_000;
 const GROUP_REFRESH_MS = 5 * 60_000;
 const STATE_HEARTBEAT_MS = 10 * 60_000;
-const AUDIT_MS = 2 * 60_000;
+// Moderation done in VRChat should show up in FurrBox right away – the audit log is cheap to read
+// and FurrBox is only contacted when there is something new.
+const AUDIT_MS = 10_000;
 
 class VrcError extends Error {
   constructor(message, status) {
@@ -35,6 +37,7 @@ let lastError = null;
 let bridge = null;
 let auditAt = 0;
 let auditError = null;
+const auditSeen = new Set();
 let log = console.log;
 
 function loadSession() {
@@ -194,7 +197,7 @@ async function refresh(force = false) {
     const instances = await fetchInstances();
     lastError = auditError;
     await pushState(force, instances);
-    if (force || Date.now() - auditAt > AUDIT_MS) await syncAudit();
+    if (force) await syncAudit();
   } catch (err) {
     if (!(err instanceof VrcError && err.status === 401)) {
       lastError = `VRChat: ${err instanceof Error ? err.message : String(err)}`;
@@ -223,7 +226,9 @@ async function syncAudit() {
     throw err;
   }
   auditError = null;
-  const entries = (json?.results ?? []).filter((e) => e?.id);
+  // startDate is inclusive: skip what was already handed over.
+  const entries = (json?.results ?? []).filter((e) => e?.id && !auditSeen.has(e.id) && (!since || e.created_at >= since));
+  for (const e of json?.results ?? []) if (e?.id) auditSeen.add(e.id);
   if (entries.length) {
     await bridge("vrchat-audit", { entries, initial: !since });
     const newest = entries.map((e) => e.created_at).filter(Boolean).sort().pop();
@@ -334,4 +339,9 @@ export function startVrchat(bridgeFn, logFn) {
   if (session.auth) log(`VRChat: gespeicherte Anmeldung als ${session.accountName ?? "?"} gefunden.`);
   const tick = () => refresh().catch((err) => log("VRChat-Fehler:", err.message)).finally(() => setTimeout(tick, WATCH_MS));
   tick();
+  const auditTick = () =>
+    (session.auth && session.groupId ? syncAudit() : Promise.resolve())
+      .catch((err) => log("VRChat-Protokoll-Fehler:", err.message))
+      .finally(() => setTimeout(auditTick, AUDIT_MS));
+  setTimeout(auditTick, 5_000);
 }

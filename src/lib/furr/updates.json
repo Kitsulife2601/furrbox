@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-01",
+    "title": "VRChat-Moderation fast sofort im Log",
+    "items": [
+      "Was in VRChat moderiert wird, erscheint jetzt nach wenigen Sekunden im Moderationslog statt nach bis zu 2 Minuten.",
+      "Das Team bekommt die Meldung dazu ebenfalls sofort.",
+      "Das Moderationslog aktualisiert sich alle 10 Sekunden von selbst."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "Neue App: Moderationslog",
     "items": [
       "Alle Moderationen aus Discord und VRChat in einer Liste – mit Datum und Uhrzeit auf die Sekunde.",

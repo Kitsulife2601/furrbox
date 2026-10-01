@@ -88,7 +88,7 @@ export function ModLog() {
   const log = useQuery({
     queryKey: ["furr", "modlog", platform, days],
     queryFn: () => listModerationLog({ data: { platform, days } }),
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
 
   const all = log.data ?? [];
@@ -230,7 +230,7 @@ export function ModLog() {
       </div>
 
       <div className="border-t border-border px-3 py-1.5 text-[11px] text-subtle">
-        {list.length} von {all.length} Einträgen · VRChat-Aktionen aus dem Spiel kommen über das Gruppen-Protokoll (Bot prüft alle 2 Minuten).
+        {list.length} von {all.length} Einträgen · VRChat-Aktionen aus dem Spiel erscheinen nach wenigen Sekunden.
       </div>
     </div>
   );
