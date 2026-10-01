@@ -5,9 +5,12 @@
 //   POST /api/bridge/presence           -> { presences: { discordId, discordStatus }[] }
 //   POST /api/bridge/moderation-result  -> { requestId, status: "success"|"failed", error? }
 //   POST /api/bridge/inspect-result     -> { requestId, found, content, authorName?, channelName?, ... }
+//   POST /api/bridge/vrchat-result      -> { jobId, ok, result?, error? }  (VRChat jobs from the queue)
+//   POST /api/bridge/vrchat-state       -> { account, groupId, group, instances, error }
 import { createFileRoute } from "@tanstack/react-router";
-import { appendTextFile, discordName, getSql, iso, notify, setSetting } from "@/lib/furr/core";
-import { AUDIT_LOG_NAME, DISCORD_LOGS } from "@/lib/furr/paths";
+import { appendTextFile, discordName, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
+import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
+import { VRC_ACCESS, VRC_REGION, parseLocation } from "@/lib/furr/vrchat-location";
 import { isRole } from "@/lib/furr/roles";
 
 function json(body: unknown, status = 200) {
@@ -59,6 +62,19 @@ async function handle(request: Request, action: string) {
       update message_inspect set status = 'dispatched'
       where id in (select id from message_inspect where status = 'queued' order by created_at limit 20)
       returning id, message_id`;
+    // VRChat jobs. A login job's payload (contains the password) is wiped as soon as it is handed out.
+    await sql`
+      update vrchat_job set status = 'failed', error = 'Der Discord-Bot hat nicht reagiert.', payload_json = null
+      where status = 'queued' and created_at < now() - interval '12 minutes'`;
+    const vrchatJobs = await sql<{ id: string; kind: string; payload_json: string | null }>`
+      select id, kind, payload_json from vrchat_job where status = 'queued' order by created_at limit 10`;
+    for (const job of vrchatJobs) {
+      if (job.kind === "login") {
+        await sql`update vrchat_job set status = 'dispatched', payload_json = null where id = ${job.id}`;
+      } else {
+        await sql`update vrchat_job set status = 'dispatched' where id = ${job.id}`;
+      }
+    }
     // Lets the bot poll fast only while someone has FurrBox open (keeps the database asleep otherwise).
     const activeRows = await sql<{ n: number }>`
       select count(*)::int as n from furr_presence where last_heartbeat_at > now() - interval '3 minutes'`;
@@ -74,6 +90,7 @@ async function handle(request: Request, action: string) {
         durationMs: m.duration_ms ?? undefined,
       })),
       inspections: inspections.map((i) => ({ requestId: i.id, messageId: i.message_id })),
+      vrchatJobs: vrchatJobs.map((j) => ({ jobId: j.id, kind: j.kind, payload: j.payload_json ? JSON.parse(j.payload_json) : {} })),
     });
   }
 
@@ -173,6 +190,97 @@ async function handle(request: Request, action: string) {
     await sql`
       update message_inspect set status = 'done', result_json = ${JSON.stringify(result)}, completed_at = now()
       where id = ${requestId}`;
+    return json({ ok: true });
+  }
+
+  if (action === "vrchat-result") {
+    const jobId = String(body.jobId ?? "");
+    const ok = Boolean(body.ok);
+    const error = ok ? null : String(body.error ?? "Unbekannter Fehler").slice(0, 500);
+    const rows = await sql<{ kind: string; payload_json: string | null; requested_by: string }>`
+      update vrchat_job set status = ${ok ? "done" : "failed"}, result_json = ${JSON.stringify(body.result ?? null)},
+        error = ${error}, completed_at = now()
+      where id = ${jobId}
+      returning kind, payload_json, requested_by`;
+    const job = rows[0];
+    if (!job) return json({ error: "Unknown jobId" }, 404);
+    if (job.kind === "moderate" && job.payload_json) {
+      const p = JSON.parse(job.payload_json) as { action: string; userId: string; userName?: string; reason: string };
+      const label: Record<string, string> = { kick: "Kick", ban: "Bann", unban: "Entbannung" };
+      const mods = await sql<{ display_name: string; role: string }>`
+        select display_name, role from furr_profile where user_id = ${job.requested_by}`;
+      const modName = mods[0]?.display_name ?? "Unbekannt";
+      await sql`
+        insert into vrchat_moderation (id, action, target_user_id, target_name, reason, moderator_user_id, status, error)
+        values (${newId()}, ${p.action}, ${p.userId}, ${p.userName || null}, ${p.reason}, ${job.requested_by},
+                ${ok ? "success" : "failed"}, ${error})`;
+      const block = [
+        "------------------------------------------------------------",
+        `Datum: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+        "Plattform: VRChat (Gruppe)",
+        `Status: ${ok ? "ERFOLGREICH" : "FEHLGESCHLAGEN"}`,
+        `Aktion: ${label[p.action] ?? p.action}`,
+        `Moderator: ${modName}`,
+        `Ziel: ${p.userName || p.userId} (${p.userId})`,
+        "Grund:",
+        p.reason,
+        error ? `Fehler: ${error}` : "",
+        "------------------------------------------------------------",
+        "",
+      ]
+        .filter(Boolean)
+        .join("\r\n");
+      await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, job.requested_by);
+      await notify(
+        `VRChat: ${label[p.action] ?? p.action} ${ok ? "ausgeführt" : "fehlgeschlagen"}`,
+        `${p.userName || p.userId} – von ${modName}${error ? ` (${error})` : ""}`,
+      );
+    }
+    return json({ ok: true });
+  }
+
+  if (action === "vrchat-state") {
+    type Instance = {
+      instanceId: string;
+      location: string;
+      memberCount: number;
+      world: { id: string; name: string; capacity: number; image: string | null };
+    };
+    const account = body.account as { id?: string; displayName?: string } | null;
+    const group = (body.group ?? null) as Record<string, unknown> | null;
+    const error = body.error ? String(body.error).slice(0, 500) : null;
+    await sql`insert into vrchat_connection (id) values (1) on conflict (id) do nothing`;
+    await sql`
+      update vrchat_connection set account_name = ${account?.displayName ?? null}, account_id = ${account?.id ?? null},
+        group_id = ${body.groupId ? String(body.groupId) : null}, group_json = ${group ? JSON.stringify(group) : null},
+        last_error = ${error}, state_at = now()
+      where id = 1`;
+    if (Array.isArray(body.instances)) {
+      const instances = body.instances as Instance[];
+      const open = await sql<{ instance_id: string }>`select instance_id from vrchat_instance where closed_at is null`;
+      const known = new Set(open.map((r) => r.instance_id));
+      for (const i of instances) {
+        const loc = parseLocation(i.location);
+        await sql`
+          insert into vrchat_instance (instance_id, location, world_id, world_name, world_image, capacity, member_count, region, access_type)
+          values (${i.instanceId}, ${i.location}, ${i.world.id}, ${i.world.name}, ${i.world.image}, ${i.world.capacity},
+                  ${i.memberCount}, ${loc.region}, ${loc.access})
+          on conflict (instance_id) do update set
+            location = excluded.location, world_name = excluded.world_name, world_image = excluded.world_image,
+            capacity = excluded.capacity, member_count = excluded.member_count, last_seen = now(), closed_at = null,
+            first_seen = case when vrchat_instance.closed_at is not null then now() else vrchat_instance.first_seen end`;
+        if (!known.has(i.instanceId)) {
+          await notify(
+            "VRChat-Instanz geöffnet",
+            `${i.world.name} · ${VRC_REGION[loc.region] ?? loc.region} · ${VRC_ACCESS[loc.access] ?? loc.access} · ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`,
+          );
+        }
+      }
+      await sql.query(
+        `update vrchat_instance set closed_at = now() where closed_at is null and not (instance_id = any($1::text[]))`,
+        [instances.map((i) => i.instanceId)],
+      );
+    }
     return json({ ok: true });
   }
 

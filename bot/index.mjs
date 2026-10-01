@@ -1,10 +1,12 @@
 // FurrBox Discord bot: syncs members / roles / presence to FurrBox and executes moderation
 // queued in the FurrBox dashboard. Talks to the server only via HTTP (/api/bridge/*).
+// Also runs the VRChat group link (vrchat.mjs) – VRChat only accepts a login from a fixed address.
 //
 // Env: DISCORD_TOKEN, BOT_BRIDGE_TOKEN (same value as in Vercel),
 //      FURRBOX_URL (default https://furrbox-88ir.vercel.app), DISCORD_GUILD_ID (default Fish),
 //      DISCORD_MUTED_ROLE_ID / DISCORD_MUTED_ROLE_NAME (optional, for "mute").
 import { Client, EmbedBuilder, GatewayIntentBits, Partials, PermissionsBitField } from "discord.js";
+import { handleVrchatJobs, startVrchat } from "./vrchat.mjs";
 
 const token = process.env.DISCORD_TOKEN;
 const bridgeToken = process.env.BOT_BRIDGE_TOKEN;
@@ -268,6 +270,7 @@ async function poll() {
       }));
       await bridge("inspect-result", result);
     }
+    await handleVrchatJobs(queue.vrchatJobs);
     if (active) await flush();
     delay = active ? ACTIVE_POLL_MS : IDLE_POLL_MS;
   } catch (err) {
@@ -280,6 +283,7 @@ async function poll() {
 client.once("clientReady", () => {
   log(`Eingeloggt als ${client.user?.tag}. FurrBox: ${baseUrl}`);
   poll();
+  startVrchat(bridge, log);
 });
 
 client.on("guildMemberAdd", (m) => {

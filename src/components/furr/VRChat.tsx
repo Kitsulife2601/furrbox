@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, ExternalLink, Gavel, Globe2, Link2, LogOut, RefreshCw, Search, ShieldCheck, UserMinus, Users, X } from "lucide-react";
 import {
   disconnectVrchat,
+  getVrchatJob,
   getVrchatStatus,
   listVrchatInstances,
   listVrchatModeration,
@@ -21,6 +22,19 @@ import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 
 const STATUS_KEY = ["furr", "vrchat", "status"];
+
+/** VRChat runs through the Discord bot: start a job, then wait for the bot's answer. */
+async function runJob<T>(start: Promise<{ jobId: string }>): Promise<T> {
+  const { jobId } = await start;
+  const started = Date.now();
+  while (Date.now() - started < 12 * 60_000) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const job = await getVrchatJob({ data: jobId });
+    if (job.status === "done") return (job.resultJson ? JSON.parse(job.resultJson) : null) as T;
+    if (job.status === "failed") throw new Error(job.error ?? "Fehlgeschlagen.");
+  }
+  throw new Error("Der Discord-Bot hat nicht rechtzeitig geantwortet. Läuft er auf dem PC?");
+}
 
 function Card({ title, icon, action, children }: { title: string; icon?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
@@ -46,7 +60,13 @@ export function VRChatPanel() {
 
   return (
     <div className="@container mx-auto grid w-full max-w-5xl content-start gap-4 p-4">
-      {(!s.connected || !s.groupId) && (canManage ? <ConnectCard pending={s.pending2fa} connected={s.connected} accountName={s.accountName} /> : (
+      {!s.botOnline && (
+        <ErrorText>
+          Der Discord-Bot ist gerade nicht verbunden. VRChat läuft über den Bot auf dem PC – solange er aus ist, werden Instanzen nicht
+          aktualisiert und Aktionen nicht ausgeführt.
+        </ErrorText>
+      )}
+      {(!s.connected || !s.groupId) && (canManage ? <ConnectCard connected={s.connected} accountName={s.accountName} /> : (
         <Card title="VRChat ist noch nicht verbunden" icon={<Link2 className="size-4" />}>
           <p className="text-[13px] text-muted">Der Owner muss FurrBox einmalig mit der VRChat-Gruppe verbinden.</p>
         </Card>
@@ -66,7 +86,11 @@ export function VRChatPanel() {
   );
 }
 
-export function ConnectCard({ pending, connected, accountName }: { pending: string[] | null; connected: boolean; accountName: string | null }) {
+export function ConnectCard({ connected, accountName }: { connected: boolean; accountName: string | null }) {
+  // Which 2FA the bot is waiting for ("totp" = authenticator app, "emailOtp" = e-mail), if any.
+  const [needs, setNeeds] = useState<string | null>(null);
+  const emailPending = Boolean(needs);
+  const setEmailPending = (on: boolean) => setNeeds(on ? needs : null);
   const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -91,21 +115,24 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
     }
   }
 
-  const step = !connected ? (pending ? "2fa" : "login") : "group";
+  const step = !connected ? (emailPending ? "2fa" : "login") : "group";
   return (
     <Card title="VRChat-Gruppe verbinden" icon={<Link2 className="size-4" />}>
       <ol className="grid gap-1 text-[12px] text-muted">
-        <li className={cn(step === "login" && "font-medium text-fg")}>1. Nutzername, Passwort und 2FA-Code eines VRChat-Kontos eingeben, das in der Gruppe ist (am besten ein eigenes Bot-Konto mit Gruppen-Rechten).</li>
-        <li className={cn(step === "2fa" && "font-medium text-fg")}>2. Nur bei 2FA per E-Mail: den Code aus der VRChat-Mail bestätigen.</li>
+        <li className={cn(step === "login" && "font-medium text-fg")}>1. Nutzername und Passwort eines VRChat-Kontos eingeben, das in der Gruppe ist (am besten ein eigenes Bot-Konto mit Gruppen-Rechten). Der Discord-Bot auf dem PC meldet sich damit an.</li>
+        <li className={cn(step === "2fa" && "font-medium text-fg")}>2. Den 2FA-Code eingeben, sobald FurrBox danach fragt (Authenticator-App oder E-Mail).</li>
         <li className={cn(step === "group" && "font-medium text-fg")}>3. Das Gruppen-Kürzel eintragen (z. B. FLS.0227).</li>
       </ol>
-      <p className="text-[11px] text-subtle">FurrBox speichert das Passwort nicht – nur die Anmeldung von VRChat.</p>
+      <p className="text-[11px] text-subtle">Das Passwort wird nur an den Bot weitergereicht und nirgends gespeichert.</p>
       {step === "login" && (
         <form
           className="grid gap-3"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
-            void run(() => vrchatLogin({ data: { username, password, code } }));
+            void run(async () => {
+              const result = await runJob<{ needs?: string }>(vrchatLogin({ data: { username, password } }));
+              if (result?.needs) setNeeds(result.needs);
+            });
           }}
         >
           <Field label="VRChat-Nutzername oder E-Mail">
@@ -114,11 +141,8 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           <Field label="VRChat-Passwort">
             <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" className="h-10" />
           </Field>
-          <Field label="2FA-Code aus der Authenticator-App" hint="Erst ganz zum Schluss eintragen – der Code gilt nur 30 Sekunden. Bei 2FA per E-Mail leer lassen.">
-            <TextInput value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="h-10 font-mono tracking-widest" />
-          </Field>
           <Btn type="submit" variant="primary" className="h-10" disabled={busy || !username || !password}>
-            {busy ? "Melde an…" : "Bei VRChat anmelden"}
+            {busy ? "Warte auf den Discord-Bot…" : "Bei VRChat anmelden"}
           </Btn>
         </form>
       )}
@@ -127,21 +151,24 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           className="grid gap-3"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
-            void run(() => vrchatVerify2fa({ data: code }));
+            void run(async () => {
+              await runJob(vrchatVerify2fa({ data: code }));
+              setEmailPending(false);
+            });
           }}
         >
-          <Field label={pending?.includes("emailOtp") ? "Code aus der VRChat-E-Mail" : "Code aus deiner Authenticator-App"}>
+          <Field label={needs === "emailOtp" ? "Code aus der VRChat-E-Mail" : "Code aus deiner Authenticator-App (jetzt eintragen)"}>
             <TextInput value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-10 font-mono tracking-widest" autoFocus />
           </Field>
           <Btn type="submit" variant="primary" className="h-10" disabled={busy || code.length < 6}>
-            {busy ? "Prüfe…" : "Code bestätigen"}
+            {busy ? "Bot prüft den Code…" : "Code bestätigen"}
           </Btn>
           <button
             type="button"
             className="justify-self-start text-[12px] text-accent hover:underline"
-            onClick={() => void run(() => disconnectVrchat())}
+            onClick={() => setEmailPending(false)}
           >
-            Zurück – neu mit Nutzername, Passwort und Code anmelden
+            Zurück – neu anmelden
           </button>
         </form>
       )}
@@ -150,7 +177,7 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
           className="grid gap-3"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
-            void run(() => setVrchatGroup({ data: group }));
+            void run(() => runJob(setVrchatGroup({ data: group })));
           }}
         >
           <p className="text-[12px] text-muted">Angemeldet als <span className="font-medium text-fg">{accountName}</span>.</p>
@@ -158,7 +185,7 @@ export function ConnectCard({ pending, connected, accountName }: { pending: stri
             <TextInput value={group} onChange={(e) => setGroup(e.target.value)} placeholder="FLS.0227" className="h-10 font-mono" />
           </Field>
           <Btn type="submit" variant="primary" className="h-10" disabled={busy || !group}>
-            {busy ? "Prüfe Gruppe…" : "Gruppe verbinden"}
+            {busy ? "Bot sucht die Gruppe…" : "Gruppe verbinden"}
           </Btn>
         </form>
       )}
@@ -209,7 +236,7 @@ export function GroupHeader({ status, canManage }: { status: VrchatStatus; canMa
               type="button"
               className="flex items-center gap-1 hover:text-fg"
               onClick={async () => {
-                await disconnectVrchat();
+                await runJob(disconnectVrchat()).catch(() => undefined);
                 await queryClient.invalidateQueries({ queryKey: ["furr", "vrchat"] });
               }}
             >
@@ -326,7 +353,7 @@ function Moderation() {
     setError("");
     setBusy(true);
     try {
-      setResults(await searchVrchatUsers({ data: query }));
+      setResults(await runJob<{ id: string; displayName: string; image: string | null }[]>(searchVrchatUsers({ data: query })));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -339,7 +366,7 @@ function Moderation() {
     setError("");
     setBusy(true);
     try {
-      await vrchatModerate({ data: { action, userId: target.id, userName: target.displayName, reason } });
+      await runJob(vrchatModerate({ data: { action, userId: target.id, userName: target.displayName, reason } }));
       useNotifications.getState().notify({
         version: "FurrVRChat",
         title: action === "ban" ? "Gebannt" : action === "unban" ? "Entbannt" : "Gekickt",

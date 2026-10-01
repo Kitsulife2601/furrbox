@@ -19,3 +19,6 @@ desktop/release/
 
 desktop/build/discord.json
 bot.log
+bot/vrchat-session.json
+bot/.env
+bot/bot.log

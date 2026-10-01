@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-01",
+    "title": "VRChat läuft jetzt über den Discord-Bot",
+    "items": [
+      "VRChat erlaubt eine Anmeldung nur von einer festen Adresse – deshalb meldet sich jetzt der Discord-Bot auf dem PC bei VRChat an.",
+      "Die Anmeldung bleibt dauerhaft bestehen, auch nach Neustarts des Bots.",
+      "Der Bot prüft jede Minute die offenen Gruppen-Instanzen und meldet neue Instanzen ans Team.",
+      "Kick, Bann und Suche in VRChat führt ebenfalls der Bot aus."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat-Verbindung stabiler",
     "items": [
       "FurrBox übernimmt nach dem 2FA-Code die neue Anmeldung von VRChat, damit die Verbindung bestehen bleibt.",
