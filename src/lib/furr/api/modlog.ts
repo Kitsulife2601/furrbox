@@ -118,9 +118,8 @@ export const listModerationLog = createServerFn({ method: "GET" })
         });
       }
 
-      // VRChat's own audit log. Actions the bot did for FurrBox are already listed above (with reason).
-      const conn = await sql<{ account_id: string | null }>`select account_id from vrchat_connection where id = 1`;
-      const botAccount = conn[0]?.account_id ?? "";
+      // VRChat's own audit log. Kicks/bans FurrBox triggered through the bot are already listed above
+      // (with reason), so their audit twins (same target, within 3 minutes) are skipped.
       const audit = await sql.query<{
         id: string;
         created_at: unknown;
@@ -132,10 +131,14 @@ export const listModerationLog = createServerFn({ method: "GET" })
         data_json: string | null;
       }>(
         `select id, created_at, actor_id, actor_name, target_id, event_type, description, data_json
-         from vrchat_audit
-         where created_at > now() - ($1::int * interval '1 day') and coalesce(actor_id, '') <> $2
-         order by created_at desc limit 1000`,
-        [data.days, botAccount],
+         from vrchat_audit a
+         where a.created_at > now() - ($1::int * interval '1 day')
+           and not exists (
+             select 1 from vrchat_moderation m
+             where m.target_user_id = a.target_id
+               and abs(extract(epoch from (m.created_at - a.created_at))) < 180)
+         order by a.created_at desc limit 1000`,
+        [data.days],
       );
       for (const r of audit) {
         const kind = vrchatAuditKind(r.event_type);
@@ -168,6 +171,7 @@ export const listModerationLog = createServerFn({ method: "GET" })
 function targetFromDescription(description: string | null) {
   if (!description) return null;
   const m =
+    /\b(?:warn|kick|ban|mute)\w*\s+for\s+(.+?)\.?$/i.exec(description) ??
     /^User\s+(.+?)\s+(?:was|has been)\b/i.exec(description) ??
     /(?:warned|kicked|banned|unbanned|muted|removed)\s+(.+?)(?:\s+from\b|\s+in\b|\.|$)/i.exec(description);
   return m?.[1]?.trim() || null;

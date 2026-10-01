@@ -253,8 +253,6 @@ async function handle(request: Request, action: string) {
     };
     const entries = Array.isArray(body.entries) ? (body.entries as Entry[]) : [];
     const silent = Boolean(body.initial); // first import: no notification storm
-    const conns = await sql<{ account_id: string | null }>`select account_id from vrchat_connection where id = 1`;
-    const botAccount = conns[0]?.account_id ?? null;
     let added = 0;
     for (const e of entries) {
       if (!e?.id || !e.eventType) continue;
@@ -267,8 +265,13 @@ async function handle(request: Request, action: string) {
       if (!rows.length) continue;
       added += 1;
       const action = vrchatAuditAction(String(e.eventType));
-      // Actions FurrBox itself triggered through the bot are announced already.
-      if (!silent && action && e.actorId !== botAccount) {
+      // Kicks/bans FurrBox itself triggered through the bot are announced already.
+      const viaFurrBox = e.targetId
+        ? await sql`
+            select 1 from vrchat_moderation
+            where target_user_id = ${e.targetId} and created_at > now() - interval '3 minutes'`
+        : [];
+      if (!silent && action && !viaFurrBox.length) {
         await notify(`VRChat: ${action}`, e.description || `${e.actorDisplayName ?? "Jemand"} – ${e.eventType}`);
       }
     }

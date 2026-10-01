@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-01",
+    "title": "VRChat-Verwarnungen im Moderationslog",
+    "items": [
+      "Verwarnungen, Kicks und Banns aus VRChat erscheinen jetzt im Moderationslog – auch wenn sie vom selben Konto kommen, mit dem der Bot angemeldet ist.",
+      "Die verwarnte Person wird aus der VRChat-Meldung erkannt und als Ziel angezeigt."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat-Moderation fast sofort im Log",
     "items": [
       "Was in VRChat moderiert wird, erscheint jetzt nach wenigen Sekunden im Moderationslog statt nach bis zu 2 Minuten.",
