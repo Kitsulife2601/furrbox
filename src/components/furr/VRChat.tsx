@@ -1,17 +1,16 @@
 // FurrEvidence → VRChat: group link (owner), open group instances, group moderation.
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, ExternalLink, Gavel, Globe2, Link2, LogOut, RefreshCw, Search, ShieldCheck, UserMinus, Users, X } from "lucide-react";
+import { Ban, ExternalLink, Gavel, Globe2, KeyRound, Link2, LogOut, RefreshCw, Search, ShieldCheck, UserMinus, Users, X } from "lucide-react";
 import {
   disconnectVrchat,
   getVrchatJob,
   getVrchatStatus,
   listVrchatInstances,
   listVrchatModeration,
-  searchVrchatUsers,
+  logVrchatModeration,
   setVrchatGroup,
   vrchatLogin,
-  vrchatModerate,
   vrchatVerify2fa,
   type VrchatInstance,
   type VrchatStatus,
@@ -22,6 +21,43 @@ import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 
 const STATUS_KEY = ["furr", "vrchat", "status"];
+const MY_KEY = ["furr", "vrchat", "mine"];
+
+// ---------- Personal VRChat login (desktop app only, runs on this PC) ----------
+
+type MyStatus = { loggedIn: boolean; displayName: string | null; userId: string | null; needs: "totp" | "emailOtp" | null };
+type VrcUser = { id: string; displayName: string; image: string | null };
+type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+type DesktopVrchat = {
+  status(): Promise<Result<MyStatus>>;
+  login(username: string, password: string): Promise<Result<MyStatus>>;
+  verify(code: string): Promise<Result<MyStatus>>;
+  cancel(): Promise<Result<MyStatus>>;
+  logout(): Promise<Result<MyStatus>>;
+  search(query: string): Promise<Result<VrcUser[]>>;
+  moderate(action: string, groupId: string, userId: string): Promise<Result<{ ok: boolean }>>;
+};
+
+function desktopVrchat(): DesktopVrchat | null {
+  if (typeof window === "undefined") return null;
+  return (window as { furrbox?: { vrchat?: DesktopVrchat } }).furrbox?.vrchat ?? null;
+}
+
+async function unwrap<T>(p: Promise<Result<T>> | undefined): Promise<T> {
+  if (!p) throw new Error("Die eigene VRChat-Anmeldung gibt es nur in der FurrBox-Desktop-App.");
+  const r = await p;
+  if (!r.ok) throw new Error(r.error);
+  return r.value;
+}
+
+function useMyVrchat() {
+  return useQuery({
+    queryKey: MY_KEY,
+    queryFn: () => unwrap(desktopVrchat()?.status()),
+    enabled: Boolean(desktopVrchat()),
+    staleTime: 30_000,
+  });
+}
 
 /** VRChat runs through the Discord bot: start a job, then wait for the bot's answer. */
 async function runJob<T>(start: Promise<{ jobId: string }>): Promise<T> {
@@ -67,8 +103,8 @@ export function VRChatPanel() {
         </ErrorText>
       )}
       {(!s.connected || !s.groupId) && (canManage ? <ConnectCard connected={s.connected} accountName={s.accountName} /> : (
-        <Card title="VRChat ist noch nicht verbunden" icon={<Link2 className="size-4" />}>
-          <p className="text-[13px] text-muted">Der Owner muss FurrBox einmalig mit der VRChat-Gruppe verbinden.</p>
+        <Card title="VRChat-Gruppe ist noch nicht verbunden" icon={<Link2 className="size-4" />}>
+          <p className="text-[13px] text-muted">Der Owner muss die Gruppen-Überwachung einmalig über den Discord-Bot einrichten.</p>
         </Card>
       ))}
       {s.lastError && <ErrorText>{s.lastError}</ErrorText>}
@@ -78,7 +114,10 @@ export function VRChatPanel() {
           <GroupHeader status={s} canManage={canManage} />
           <div className="grid gap-4 @3xl:grid-cols-[1.4fr_1fr]">
             <Instances />
-            <Moderation />
+            <div className="grid content-start gap-4">
+              <MyAccount />
+              <Moderation groupId={s.groupId} />
+            </div>
           </div>
         </>
       )}
@@ -117,7 +156,11 @@ export function ConnectCard({ connected, accountName }: { connected: boolean; ac
 
   const step = !connected ? (emailPending ? "2fa" : "login") : "group";
   return (
-    <Card title="VRChat-Gruppe verbinden" icon={<Link2 className="size-4" />}>
+    <Card title="Gruppen-Überwachung einrichten (Discord-Bot)" icon={<Link2 className="size-4" />}>
+      <p className="text-[12px] text-muted">
+        Der Discord-Bot beobachtet damit die offenen Instanzen und das Gruppen-Protokoll. Moderiert wird später mit dem eigenen
+        VRChat-Konto jedes Teammitglieds.
+      </p>
       <ol className="grid gap-1 text-[12px] text-muted">
         <li className={cn(step === "login" && "font-medium text-fg")}>1. Nutzername und Passwort eines VRChat-Kontos eingeben, das in der Gruppe ist (am besten ein eigenes Bot-Konto mit Gruppen-Rechten). Der Discord-Bot auf dem PC meldet sich damit an.</li>
         <li className={cn(step === "2fa" && "font-medium text-fg")}>2. Den 2FA-Code eingeben, sobald FurrBox danach fragt (Authenticator-App oder E-Mail).</li>
@@ -336,8 +379,9 @@ export function InstanceRow({ instance: i }: { instance: VrchatInstance }) {
   );
 }
 
-function Moderation() {
+function Moderation({ groupId }: { groupId: string }) {
   const me = useMe();
+  const mine = useMyVrchat();
   const queryClient = useQueryClient();
   const canModerate = Boolean(me.data?.permissions.canModerateVrchat);
   const log = useQuery({ queryKey: ["furr", "vrchat", "moderation"], queryFn: () => listVrchatModeration(), refetchInterval: 20_000 });
@@ -353,7 +397,7 @@ function Moderation() {
     setError("");
     setBusy(true);
     try {
-      setResults(await runJob<{ id: string; displayName: string; image: string | null }[]>(searchVrchatUsers({ data: query })));
+      setResults(await unwrap(desktopVrchat()?.search(query)));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -366,7 +410,24 @@ function Moderation() {
     setError("");
     setBusy(true);
     try {
-      await runJob(vrchatModerate({ data: { action, userId: target.id, userName: target.displayName, reason } }));
+      let failure: string | null = null;
+      try {
+        await unwrap(desktopVrchat()?.moderate(action, groupId, target.id));
+      } catch (err) {
+        failure = errorMessage(err);
+      }
+      await logVrchatModeration({
+        data: {
+          action,
+          userId: target.id,
+          userName: target.displayName,
+          reason,
+          vrchatName: mine.data?.displayName ?? undefined,
+          ok: !failure,
+          error: failure ?? undefined,
+        },
+      });
+      if (failure) throw new Error(failure);
       useNotifications.getState().notify({
         version: "FurrVRChat",
         title: action === "ban" ? "Gebannt" : action === "unban" ? "Entbannt" : "Gekickt",
@@ -386,6 +447,10 @@ function Moderation() {
     <Card title="Gruppen-Moderation" icon={<Gavel className="size-4" />}>
       {!canModerate ? (
         <p className="text-[12px] text-muted">Kick und Bann in der VRChat-Gruppe dürfen Moderatoren, Owner und Dev.</p>
+      ) : !desktopVrchat() ? (
+        <p className="text-[12px] text-muted">Moderieren geht nur in der FurrBox-Desktop-App mit deinem eigenen VRChat-Konto.</p>
+      ) : !mine.data?.loggedIn ? (
+        <p className="text-[12px] text-muted">Melde dich oben unter „Dein VRChat-Konto“ an – dann läuft Kick und Bann unter deinem Namen.</p>
       ) : target ? (
         <div className="grid gap-3">
           <div className="flex items-center gap-3 rounded-lg border border-accent/40 bg-accent/10 p-2.5">
@@ -463,6 +528,94 @@ function Moderation() {
           ))
         )}
       </div>
+    </Card>
+  );
+}
+
+/** Each team member's own VRChat login – stored only on this PC, kept across updates. */
+function MyAccount() {
+  const queryClient = useQueryClient();
+  const bridge = desktopVrchat();
+  const mine = useMyVrchat();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run(task: () => Promise<MyStatus>) {
+    setBusy(true);
+    setError("");
+    try {
+      queryClient.setQueryData(MY_KEY, await task());
+      setPassword("");
+      setCode("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const st = mine.data;
+  return (
+    <Card title="Dein VRChat-Konto" icon={<KeyRound className="size-4" />}>
+      {!bridge ? (
+        <p className="text-[12px] text-muted">
+          Die eigene VRChat-Anmeldung gibt es nur in der FurrBox-Desktop-App – VRChat erlaubt sie nur vom eigenen PC.
+        </p>
+      ) : !st ? (
+        <p className="text-[12px] text-muted">Lade…</p>
+      ) : st.loggedIn ? (
+        <div className="flex items-center gap-3">
+          <VrcAvatar user={{ displayName: st.displayName ?? "?", image: null }} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-semibold">{st.displayName}</p>
+            <p className="text-[11px] text-muted">angemeldet auf diesem PC</p>
+          </div>
+          <Btn variant="ghost" disabled={busy} onClick={() => void run(() => unwrap(bridge.logout()))}>
+            <LogOut className="size-3.5" /> Abmelden
+          </Btn>
+        </div>
+      ) : st.needs ? (
+        <form
+          className="grid gap-2"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            void run(() => unwrap(bridge.verify(code)));
+          }}
+        >
+          <Field label={st.needs === "emailOtp" ? "Code aus der VRChat-E-Mail" : "Code aus deiner Authenticator-App"}>
+            <TextInput value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-9 font-mono tracking-widest" autoFocus />
+          </Field>
+          <div className="flex gap-2">
+            <Btn type="submit" variant="primary" className="flex-1" disabled={busy || code.trim().length < 6}>
+              {busy ? "Prüfe…" : "Bestätigen"}
+            </Btn>
+            <Btn variant="ghost" disabled={busy} onClick={() => void run(() => unwrap(bridge.cancel()))}>
+              Abbrechen
+            </Btn>
+          </div>
+        </form>
+      ) : (
+        <form
+          className="grid gap-2"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            void run(() => unwrap(bridge.login(username, password)));
+          }}
+        >
+          <p className="text-[12px] text-muted">
+            Melde dich mit deinem eigenen VRChat-Konto an. Die Anmeldung bleibt auf diesem PC gespeichert, das Passwort nicht.
+          </p>
+          <TextInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="VRChat-Nutzername oder E-Mail" autoComplete="off" className="h-9" />
+          <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Passwort" autoComplete="off" className="h-9" />
+          <Btn type="submit" variant="primary" disabled={busy || !username || !password}>
+            {busy ? "Melde an…" : "Bei VRChat anmelden"}
+          </Btn>
+        </form>
+      )}
+      <ErrorText>{error}</ErrorText>
     </Card>
   );
 }

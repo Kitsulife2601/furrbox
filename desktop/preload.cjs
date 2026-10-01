@@ -14,5 +14,15 @@ contextBridge.exposeInMainWorld("furrbox", {
       return () => ipcRenderer.removeListener("furrbox:update", listener);
     },
   },
+  // Personal VRChat login – every call resolves to { ok, value } or { ok: false, error }.
+  vrchat: {
+    status: () => ipcRenderer.invoke("furrbox:vrchat-status"),
+    login: (username, password) => ipcRenderer.invoke("furrbox:vrchat-login", username, password),
+    verify: (code) => ipcRenderer.invoke("furrbox:vrchat-verify", code),
+    cancel: () => ipcRenderer.invoke("furrbox:vrchat-cancel"),
+    logout: () => ipcRenderer.invoke("furrbox:vrchat-logout"),
+    search: (query) => ipcRenderer.invoke("furrbox:vrchat-search", query),
+    moderate: (action, groupId, userId) => ipcRenderer.invoke("furrbox:vrchat-moderate", action, groupId, userId),
+  },
   onStatus: (callback) => ipcRenderer.on("furrbox:status", (_event, text, isError) => callback(text, isError)),
 });

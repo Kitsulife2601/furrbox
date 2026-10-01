@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-01",
+    "version": "2.0.7",
+    "title": "Eigenes VRChat-Konto für jeden",
+    "items": [
+      "Jeder aus dem Team meldet sich in seiner FurrBox-App mit seinem eigenen VRChat-Konto an (FurrEvidence → VRChat → „Dein VRChat-Konto“).",
+      "Kick, Bann und Entbannen laufen dann unter deinem eigenen Namen – genau so steht es auch im VRChat-Protokoll.",
+      "Die Anmeldung bleibt auf deinem PC gespeichert, auch nach Updates, und funktioniert auf jedem PC gleich.",
+      "Der Discord-Bot kümmert sich weiter nur um die Gruppen-Überwachung (offene Instanzen und Gruppen-Protokoll)."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat-Verwarnungen im Moderationslog",
     "items": [
       "Verwarnungen, Kicks und Banns aus VRChat erscheinen jetzt im Moderationslog – auch wenn sie vom selben Konto kommen, mit dem der Bot angemeldet ist.",

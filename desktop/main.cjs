@@ -10,6 +10,7 @@ const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
+const { createVrchat } = require("./vrchat.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -213,6 +214,29 @@ ipcMain.handle("furrbox:update-install", () => {
   autoUpdater.quitAndInstall(false, true);
   return true;
 });
+
+// Personal VRChat login (see vrchat.cjs). Only the FurrBox page itself may use it – not pages
+// opened in the FurrBrowser <webview> (they run in their own webContents).
+const vrchat = createVrchat(userData);
+function vrchatHandler(name, fn) {
+  ipcMain.handle(`furrbox:vrchat-${name}`, async (event, ...args) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      return { ok: false, error: "Nicht erlaubt." };
+    }
+    try {
+      return { ok: true, value: await fn(...args) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+}
+vrchatHandler("status", () => vrchat.status());
+vrchatHandler("login", (username, password) => vrchat.login(String(username ?? ""), String(password ?? "")));
+vrchatHandler("verify", (code) => vrchat.verify(String(code ?? "")));
+vrchatHandler("cancel", () => vrchat.cancelLogin());
+vrchatHandler("logout", () => vrchat.logout());
+vrchatHandler("search", (query) => vrchat.search(String(query ?? "")));
+vrchatHandler("moderate", (action, groupId, userId) => vrchat.moderate(String(action), String(groupId), String(userId)));
 
 function setStatus(text, isError = false) {
   mainWindow?.webContents.send("furrbox:status", text, isError);

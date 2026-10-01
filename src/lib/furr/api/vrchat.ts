@@ -8,7 +8,8 @@
 // except the password in a login job, which is removed the moment the bot picks the job up.
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
-import { bridgeStatus, getSql, iso, newId, requirePermission } from "../core";
+import { appendTextFile, bridgeStatus, getSql, iso, newId, notify, requirePermission } from "../core";
+import { AUDIT_LOG_NAME, VRCHAT_LOGS } from "../paths";
 import { VRC_ACCESS, VRC_REGION } from "../vrchat-location";
 
 export type VrchatGroupInfo = {
@@ -275,4 +276,62 @@ export const listVrchatModeration = createServerFn({ method: "GET" })
       error: r.error,
       createdAt: iso(r.created_at) ?? "",
     }));
+  });
+
+/**
+ * Records a kick / ban / unban a team member did with their own VRChat login in the desktop app
+ * (the action itself runs on their PC – VRChat only accepts logins from the user's own address).
+ */
+export const logVrchatModeration = createServerFn({ method: "POST" })
+  .validator(
+    (input: {
+      action: "kick" | "ban" | "unban";
+      userId: string;
+      userName?: string;
+      reason: string;
+      vrchatName?: string;
+      ok: boolean;
+      error?: string;
+    }) => ({
+      action: (["kick", "ban", "unban"].includes(input.action) ? input.action : "kick") as "kick" | "ban" | "unban",
+      userId: String(input.userId ?? "").trim(),
+      userName: String(input.userName ?? "").trim().slice(0, 100),
+      reason: String(input.reason ?? "").trim().slice(0, 1000),
+      vrchatName: String(input.vrchatName ?? "").trim().slice(0, 100),
+      ok: Boolean(input.ok),
+      error: input.error ? String(input.error).slice(0, 500) : null,
+    }),
+  )
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data }) => {
+    const me = await requirePermission(context.userId, "canModerateVrchat");
+    if (!USER_ID.test(data.userId)) throw new Error("Ungültige VRChat-Person.");
+    const sql = await getSql();
+    await sql`
+      insert into vrchat_moderation (id, action, target_user_id, target_name, reason, moderator_user_id, status, error)
+      values (${newId()}, ${data.action}, ${data.userId}, ${data.userName || null}, ${data.reason}, ${context.userId},
+              ${data.ok ? "success" : "failed"}, ${data.error})`;
+    const label: Record<string, string> = { kick: "Kick", ban: "Bann", unban: "Entbannung" };
+    const block = [
+      "------------------------------------------------------------",
+      `Datum: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+      "Plattform: VRChat (Gruppe)",
+      `Status: ${data.ok ? "ERFOLGREICH" : "FEHLGESCHLAGEN"}`,
+      `Aktion: ${label[data.action]}`,
+      `Moderator: ${me.displayName} (${me.roleLabel})${data.vrchatName ? ` – VRChat-Konto ${data.vrchatName}` : ""}`,
+      `Ziel: ${data.userName || data.userId} (${data.userId})`,
+      "Grund:",
+      data.reason,
+      data.error ? `Fehler: ${data.error}` : "",
+      "------------------------------------------------------------",
+      "",
+    ]
+      .filter(Boolean)
+      .join("\r\n");
+    await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, context.userId);
+    await notify(
+      `VRChat: ${label[data.action]} ${data.ok ? "ausgeführt" : "fehlgeschlagen"}`,
+      `${data.userName || data.userId} – von ${me.displayName}${data.error ? ` (${data.error})` : ""}`,
+    );
+    return { ok: true };
   });

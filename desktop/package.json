@@ -1,7 +1,7 @@
 {
   "name": "furrbox-desktop",
   "productName": "FurrBox",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "private": true,
   "description": "FurrBox Desktop – Electron-App mit eingebautem FurrBox-Server.",
   "main": "main.cjs",
@@ -22,6 +22,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "vrchat.cjs",
       "splash.html",
       "package.json"
     ],
