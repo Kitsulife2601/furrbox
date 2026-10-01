@@ -7,10 +7,11 @@
 //   POST /api/bridge/inspect-result     -> { requestId, found, content, authorName?, channelName?, ... }
 //   POST /api/bridge/vrchat-result      -> { jobId, ok, result?, error? }  (VRChat jobs from the queue)
 //   POST /api/bridge/vrchat-state       -> { account, groupId, group, instances, error }
+//   POST /api/bridge/vrchat-audit       -> { entries: VRChat group audit log entries }
 import { createFileRoute } from "@tanstack/react-router";
 import { appendTextFile, discordName, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
 import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
-import { VRC_ACCESS, VRC_REGION, parseLocation } from "@/lib/furr/vrchat-location";
+import { VRC_ACCESS, VRC_REGION, parseLocation, vrchatAuditAction } from "@/lib/furr/vrchat-location";
 import { isRole } from "@/lib/furr/roles";
 
 function json(body: unknown, status = 200) {
@@ -237,6 +238,41 @@ async function handle(request: Request, action: string) {
       );
     }
     return json({ ok: true });
+  }
+
+  if (action === "vrchat-audit") {
+    type Entry = {
+      id: string;
+      created_at: string;
+      actorId?: string;
+      actorDisplayName?: string;
+      targetId?: string;
+      eventType: string;
+      description?: string;
+      data?: unknown;
+    };
+    const entries = Array.isArray(body.entries) ? (body.entries as Entry[]) : [];
+    const silent = Boolean(body.initial); // first import: no notification storm
+    const conns = await sql<{ account_id: string | null }>`select account_id from vrchat_connection where id = 1`;
+    const botAccount = conns[0]?.account_id ?? null;
+    let added = 0;
+    for (const e of entries) {
+      if (!e?.id || !e.eventType) continue;
+      const rows = await sql<{ id: string }>`
+        insert into vrchat_audit (id, created_at, actor_id, actor_name, target_id, event_type, description, data_json)
+        values (${String(e.id)}, ${iso(e.created_at) ?? new Date().toISOString()}, ${e.actorId ?? null}, ${e.actorDisplayName ?? null},
+                ${e.targetId ?? null}, ${String(e.eventType)}, ${e.description ?? null}, ${e.data ? JSON.stringify(e.data) : null})
+        on conflict (id) do nothing
+        returning id`;
+      if (!rows.length) continue;
+      added += 1;
+      const action = vrchatAuditAction(String(e.eventType));
+      // Actions FurrBox itself triggered through the bot are announced already.
+      if (!silent && action && e.actorId !== botAccount) {
+        await notify(`VRChat: ${action}`, e.description || `${e.actorDisplayName ?? "Jemand"} – ${e.eventType}`);
+      }
+    }
+    return json({ ok: true, added });
   }
 
   if (action === "vrchat-state") {

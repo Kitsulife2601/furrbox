@@ -9,3 +9,31 @@ export function parseLocation(location: string) {
   const [worldId, rest = ""] = location.split(":");
   return { worldId, instanceName: rest.split("~")[0] ?? "", region, access };
 }
+
+export const MOD_ACTION_LABEL: Record<string, string> = {
+  warn: "Verwarnung",
+  mute: "Stummschaltung",
+  timeout: "Timeout",
+  kick: "Kick",
+  remove: "Aus Gruppe entfernt",
+  ban: "Bann",
+  unban: "Entbannung",
+};
+
+/** Moderation kind of a VRChat group audit event ("group.instance.warn" -> "warn"), or null. */
+export function vrchatAuditKind(eventType: string): string | null {
+  const t = eventType.toLowerCase();
+  if (t.includes("unban")) return "unban";
+  if (t.includes("ban")) return "ban";
+  if (t.includes("warn")) return "warn";
+  if (t.includes("mute")) return "mute";
+  if (t.includes("kick")) return "kick";
+  if (t === "group.member.remove") return "remove";
+  return null;
+}
+
+/** German label for moderation audit events, null for everything else (joins, role changes, …). */
+export function vrchatAuditAction(eventType: string): string | null {
+  const kind = vrchatAuditKind(eventType);
+  return kind ? MOD_ACTION_LABEL[kind] : null;
+}

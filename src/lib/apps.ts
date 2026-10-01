@@ -6,6 +6,7 @@ import {
   Globe,
   Monitor,
   Radio,
+  ScrollText,
   Settings,
   Shield,
   ShieldCheck,
@@ -25,6 +26,7 @@ export type AppId =
   | "presence"
   | "accounts"
   | "whitelist"
+  | "modlog"
   | "notepad"
   | "viewer"
   | "taskmgr";
@@ -118,6 +120,17 @@ export const APPS: AppDef[] = [
     desktop: false,
     requires: "canManageAccounts",
     defaultSize: { w: 940, h: 620 },
+    minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "modlog",
+    name: "Moderationslog",
+    subtitle: "Alle Moderationen aus Discord und VRChat",
+    icon: ScrollText,
+    pinned: true,
+    desktop: true,
+    requires: "canUseEvidence",
+    defaultSize: { w: 1000, h: 640 },
     minSize: { w: 520, h: 400 },
   },
   {

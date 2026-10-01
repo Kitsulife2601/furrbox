@@ -16,6 +16,7 @@ const SESSION_FILE = join(dirname(fileURLToPath(import.meta.url)), "vrchat-sessi
 const WATCH_MS = 60_000;
 const GROUP_REFRESH_MS = 5 * 60_000;
 const STATE_HEARTBEAT_MS = 10 * 60_000;
+const AUDIT_MS = 2 * 60_000;
 
 class VrcError extends Error {
   constructor(message, status) {
@@ -32,6 +33,8 @@ let lastSignature = "";
 let lastPushAt = 0;
 let lastError = null;
 let bridge = null;
+let auditAt = 0;
+let auditError = null;
 let log = console.log;
 
 function loadSession() {
@@ -189,13 +192,48 @@ async function refresh(force = false) {
       groupFetchedAt = Date.now();
     }
     const instances = await fetchInstances();
-    lastError = null;
+    lastError = auditError;
     await pushState(force, instances);
+    if (force || Date.now() - auditAt > AUDIT_MS) await syncAudit();
   } catch (err) {
     if (!(err instanceof VrcError && err.status === 401)) {
       lastError = `VRChat: ${err instanceof Error ? err.message : String(err)}`;
       await pushState(force).catch(() => undefined);
     }
+  }
+}
+
+/**
+ * Reads new entries of the group's audit log (warnings, kicks, bans … done in VRChat itself)
+ * and hands them to FurrBox for the moderation log.
+ */
+async function syncAudit() {
+  auditAt = Date.now();
+  const since = session.auditSince ?? null;
+  const params = new URLSearchParams({ n: "100" });
+  if (since) params.set("startDate", since);
+  let json;
+  try {
+    ({ json } = await authed(`/groups/${encodeURIComponent(session.groupId)}/auditLogs?${params}`));
+  } catch (err) {
+    if (err instanceof VrcError && err.status === 403) {
+      auditError = "Das VRChat-Konto des Bots darf das Gruppen-Protokoll nicht sehen – gib seiner Gruppen-Rolle das Recht „Audit-Log anzeigen“.";
+      return;
+    }
+    throw err;
+  }
+  auditError = null;
+  const entries = (json?.results ?? []).filter((e) => e?.id);
+  if (entries.length) {
+    await bridge("vrchat-audit", { entries, initial: !since });
+    const newest = entries.map((e) => e.created_at).filter(Boolean).sort().pop();
+    if (newest) {
+      session.auditSince = newest;
+      saveSession();
+    }
+  } else if (!since) {
+    session.auditSince = new Date().toISOString();
+    saveSession();
   }
 }
 
@@ -237,6 +275,7 @@ const JOBS = {
     const groupId = await findGroupId(input);
     const { json } = await authed(`/groups/${encodeURIComponent(groupId)}`);
     session.groupId = groupId;
+    session.auditSince = null;
     saveSession();
     group = mapGroup(json);
     groupFetchedAt = Date.now();

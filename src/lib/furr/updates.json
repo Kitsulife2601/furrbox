@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-01",
+    "title": "Neue App: Moderationslog",
+    "items": [
+      "Alle Moderationen aus Discord und VRChat in einer Liste – mit Datum und Uhrzeit auf die Sekunde.",
+      "Auch was direkt in VRChat moderiert wird (Verwarnen, Kicken, Bannen …) landet automatisch im Log; der Bot liest dafür alle 2 Minuten das Gruppen-Protokoll.",
+      "Filtern nach Plattform, Zeitraum und Aktion, Suche nach Namen, IDs und Gründen.",
+      "Klick auf einen Eintrag zeigt alle Details, „Export“ speichert das Log als Textdatei.",
+      "Das Team bekommt eine Meldung, wenn in VRChat jemand verwarnt, gekickt oder gebannt wird."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "VRChat läuft jetzt über den Discord-Bot",
     "items": [
       "VRChat erlaubt eine Anmeldung nur von einer festen Adresse – deshalb meldet sich jetzt der Discord-Bot auf dem PC bei VRChat an.",
