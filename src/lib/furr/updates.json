@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-01",
+    "title": "Jeder meldet sich selbst an",
+    "items": [
+      "Beim Discord-Login fragt Discord jetzt jedes Mal nach – mit „Nicht du?“ kann man ein anderes Discord-Konto wählen, statt automatisch im zuletzt benutzten Konto zu landen.",
+      "Nach der eigenen VRChat-Anmeldung prüft der Bot, ob dein VRChat-Konto in der Gruppe ist – falls nicht, bekommst du einen Hinweis mit Link zur Gruppe.",
+      "Ohne Gruppen-Mitgliedschaft ist die Moderation gesperrt.",
+      "Oben im VRChat-Bereich steht jetzt „Bot-Konto“ statt „verbunden als“, damit klar ist: Das ist nur das Konto für die Gruppen-Überwachung."
+    ]
+  },
+  {
+    "date": "2026-10-01",
     "title": "Herunterfahren wie bei Windows",
     "items": [
       "Im Startmenü gibt es jetzt unten rechts einen Ein/Aus-Knopf mit Sperren, Abmelden, Neu starten und Herunterfahren.",

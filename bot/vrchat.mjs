@@ -305,6 +305,19 @@ const JOBS = {
     const { json } = await authed(`/users?search=${encodeURIComponent(query)}&n=10`);
     return (json ?? []).map((u) => ({ id: u.id, displayName: u.displayName ?? "", image: u.userIcon || u.currentAvatarThumbnailImageUrl || null }));
   },
+  /** Is this VRChat account a member of the connected group? (personal logins in FurrBox) */
+  async "member-check"({ userId }) {
+    if (!session.groupId) throw new Error("Es ist keine VRChat-Gruppe verbunden.");
+    if (!/^usr_[0-9a-f-]{36}$/i.test(String(userId))) throw new Error("Ungültige VRChat-ID.");
+    try {
+      const { json } = await authed(`/groups/${encodeURIComponent(session.groupId)}/members/${encodeURIComponent(userId)}`);
+      const status = json?.membershipStatus ?? "member";
+      return { member: status === "member", status, groupName: group?.name ?? null };
+    } catch (err) {
+      if (err instanceof VrcError && err.status === 404) return { member: false, status: "none", groupName: group?.name ?? null };
+      throw err;
+    }
+  },
   async moderate({ action, userId }) {
     if (!session.groupId) throw new Error("Es ist keine VRChat-Gruppe verbunden.");
     const g = encodeURIComponent(session.groupId);

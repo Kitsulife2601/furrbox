@@ -141,6 +141,9 @@ const socialProviders = discordLoginConfigured
         clientSecret: discordClientSecret as string,
         disableDefaultScope: true,
         scope: ["identify", "guilds.members.read"],
+        // Always show Discord's authorize page (with "Not you?" to switch accounts). The default
+        // "none" silently reuses whoever is already logged in to Discord on that PC.
+        prompt: "consent" as const,
         mapProfileToUser: (profile: { id: string; username: string; global_name?: string | null }) => ({
           email: `${profile.id}@discord.furrbox.invalid`,
           emailVerified: false,

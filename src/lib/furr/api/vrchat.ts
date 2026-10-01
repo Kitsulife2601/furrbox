@@ -230,6 +230,19 @@ export const searchVrchatUsers = createServerFn({ method: "POST" })
     return enqueue("search", { query }, context.userId);
   });
 
+/** Asks the bot whether a (personally logged-in) VRChat account is a member of the group. */
+export const checkVrchatMembership = createServerFn({ method: "POST" })
+  .validator((userId: string) => {
+    const id = String(userId ?? "").trim();
+    if (!USER_ID.test(id)) throw new Error("Ungültige VRChat-ID.");
+    return id;
+  })
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data: userId }) => {
+    await requirePermission(context.userId, "canUseEvidence");
+    return enqueue("member-check", { userId }, context.userId);
+  });
+
 /** Moderator+: kick / ban / unban someone in the VRChat group (logged when the bot reports back). */
 export const vrchatModerate = createServerFn({ method: "POST" })
   .validator((input: { action: "kick" | "ban" | "unban"; userId: string; userName?: string; reason: string }) => ({
