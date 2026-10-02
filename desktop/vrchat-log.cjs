@@ -5,7 +5,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const LOG_DIR = path.join(os.homedir(), "AppData", "LocalLow", "VRChat", "VRChat");
+const LOG_DIR = process.env.FURRBOX_VRCHAT_LOG_DIR || path.join(os.homedir(), "AppData", "LocalLow", "VRChat", "VRChat");
+// Worlds with the FurrBox map script (vrchat-world/FurrBoxMap.cs) log player positions:
+//   [FurrBoxMap] b|minX|minZ|maxX|maxZ   map area in decimetres   [FurrBoxMap] i|<url>   top-down picture
+//   [FurrBoxMap] n|<playerId>|<name>     player name              [FurrBoxMap] t|<id>:<x>:<z>:<rotY>|…
+const MAP_TAG = "[FurrBoxMap] ";
 const LINE = /^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2}) \w+\s+-\s+(.*)$/;
 const PLAYER = /^(.+?)(?: \((usr_[0-9a-f-]{36})\))?$/i;
 const MAX_EVENTS = 300;
@@ -17,7 +21,16 @@ function createLogWatcher() {
   let state = fresh();
 
   function fresh() {
-    return { location: null, worldName: null, joinedAt: null, inRoom: false, players: new Map(), left: [], events: [] };
+    return {
+      location: null,
+      worldName: null,
+      joinedAt: null,
+      inRoom: false,
+      players: new Map(),
+      left: [],
+      events: [],
+      map: { bounds: null, image: null, names: new Map(), positions: new Map(), at: null },
+    };
   }
 
   function newestLog() {
@@ -41,6 +54,8 @@ function createLogWatcher() {
       state.closed = true;
       return;
     }
+    const tag = m[7].indexOf(MAP_TAG);
+    if (tag >= 0) return handleMap(m[7].slice(tag + MAP_TAG.length).trim(), at);
     if (!m[7].startsWith("[Behaviour] ")) return;
     const msg = m[7].slice(12);
     if (msg.startsWith("Entering Room: ")) {
@@ -74,6 +89,29 @@ function createLogWatcher() {
     if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
   }
 
+  function handleMap(msg, at) {
+    const map = state.map;
+    const parts = msg.split("|");
+    if (parts[0] === "b" && parts.length >= 5) {
+      const [minX, minZ, maxX, maxZ] = parts.slice(1, 5).map(Number);
+      if ([minX, minZ, maxX, maxZ].every(Number.isFinite) && maxX > minX && maxZ > minZ) map.bounds = { minX: minX / 10, minZ: minZ / 10, maxX: maxX / 10, maxZ: maxZ / 10 };
+    } else if (parts[0] === "i" && /^https:\/\/\S+$/.test(parts[1] ?? "")) {
+      map.image = parts[1];
+    } else if (parts[0] === "n" && parts.length >= 3) {
+      map.names.set(parts[1], parts.slice(2).join("|"));
+    } else if (parts[0] === "t") {
+      map.at = at;
+      const seen = new Set();
+      for (const entry of parts.slice(1)) {
+        const [id, x, z, r] = entry.split(":");
+        if (!id || !Number.isFinite(+x) || !Number.isFinite(+z)) continue;
+        seen.add(id);
+        map.positions.set(id, { x: +x / 10, z: +z / 10, r: +r || 0 });
+      }
+      for (const id of [...map.positions.keys()]) if (!seen.has(id)) map.positions.delete(id);
+    }
+  }
+
   function readNew() {
     const name = newestLog();
     if (!name) return false;
@@ -101,7 +139,7 @@ function createLogWatcher() {
         const text = rest + chunk.toString("utf8", 0, n);
         const lines = text.split(/\r?\n/);
         rest = lines.pop() ?? "";
-        for (const line of lines) if (line.includes("[Behaviour]") || line.includes("HandleApplicationQuit")) handle(line);
+        for (const line of lines) if (line.includes("[Behaviour]") || line.includes(MAP_TAG) || line.includes("HandleApplicationQuit")) handle(line);
       }
     } finally {
       fs.closeSync(fd);
@@ -129,6 +167,14 @@ function createLogWatcher() {
         players: [...state.players.values()],
         left: state.left,
         events: state.events.slice(-100).reverse(),
+        map: state.map.at
+          ? {
+              bounds: state.map.bounds,
+              image: state.map.image,
+              at: state.map.at,
+              players: [...state.map.positions.entries()].map(([id, p]) => ({ playerId: id, name: state.map.names.get(id) ?? null, ...p })),
+            }
+          : null,
       };
     },
   };

@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-02",
+    "version": "2.0.10",
+    "title": "Live-Karte im Instanz-Tracker",
+    "items": [
+      "Der Instanz-Tracker zeigt jetzt eine Live-Karte der Welt von oben: Jede Person erscheint mit ihrem Profilbild an ihrer Position, ein kleiner Pfeil zeigt die Blickrichtung.",
+      "Fährst du mit der Maus über ein Bild, siehst du den Namen. Du bist gelb umrandet, Freunde grün.",
+      "Die Karte aktualisiert sich alle 2 Sekunden, die Leute gleiten flüssig zur neuen Position.",
+      "Die Karte gibt es in Welten, die das FurrBox-Kartenskript eingebaut haben – VRChat verrät Positionen sonst nicht. Die Anleitung zum Einbauen ist im Tracker verlinkt.",
+      "In anderen Welten steht ein Hinweis, die Liste wer da ist funktioniert dort wie bisher."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "version": "2.0.9",
     "title": "Instanz-Tracker statt Weltenkarte",
     "items": [

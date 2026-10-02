@@ -61,6 +61,13 @@ export type VrcInstanceState = {
   players: VrcLogPlayer[];
   left: (VrcLogPlayer & { leftAt: string })[];
   events: { kind: "join" | "leave"; name: string; id: string | null; at: string }[];
+  /** Only in worlds with the FurrBox map script (vrchat-world/FurrBoxMap.cs). */
+  map?: {
+    bounds: { minX: number; minZ: number; maxX: number; maxZ: number } | null;
+    image: string | null;
+    at: string;
+    players: { playerId: string; name: string | null; x: number; z: number; r: number }[];
+  } | null;
 };
 export type VrcPersonInfo = { image: string | null; friend: boolean; location: string | null; status: string | null; worldName: string | null };
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };

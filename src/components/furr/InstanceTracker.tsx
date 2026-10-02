@@ -3,13 +3,13 @@
 // for your friends – where people went after leaving. VRChat does not reveal positions inside a world.
 import { useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Clock, Copy, ExternalLink, Globe2, LogIn, LogOut, Radar, Search, Users } from "lucide-react";
+import { Clock, Copy, ExternalLink, Globe2, LogIn, LogOut, Map as MapIcon, Radar, Search, Users } from "lucide-react";
 import { getVrchatStatus } from "@/lib/furr/api/vrchat";
 import { errorMessage } from "@/lib/furr/client";
 import { VRC_REGION, VRC_SPECIAL_LOCATION, instanceType, joinUrl, parseLocation } from "@/lib/furr/vrchat-location";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/store/notifications";
-import { DesktopHint, VrcAvatar, desktopVrchat, unwrap, useMyVrchat, type VrcLogPlayer, type VrcPersonInfo } from "./VRChat";
+import { DesktopHint, VrcAvatar, desktopVrchat, unwrap, useMyVrchat, type VrcInstanceState, type VrcLogPlayer, type VrcPersonInfo } from "./VRChat";
 import { Badge, ErrorText, TextInput } from "./ui";
 
 function clock(at: string | null) {
@@ -34,7 +34,8 @@ export function InstanceTracker() {
     queryKey: ["furr", "tracker", "instance"],
     queryFn: () => unwrap(desktopVrchat()!.instance!()),
     enabled: Boolean(bridge?.instance),
-    refetchInterval: 4_000,
+    // Faster while the world sends live positions.
+    refetchInterval: (query) => (query.state.data?.map ? 2_000 : 4_000),
   });
   const s = inst.data;
   const worldId = s?.location ? parseLocation(s.location).worldId : null;
@@ -163,6 +164,25 @@ export function InstanceTracker() {
 
       <div className="grid min-h-0 flex-1 @3xl:grid-cols-[1fr_300px]">
         <section className="min-h-0 overflow-auto p-4">
+          {s.map ? (
+            <LiveMap state={s} info={info} myId={mine.data?.userId ?? null} />
+          ) : (
+            <p className="mb-4 flex items-start gap-2 rounded-lg border border-dashed border-border p-2.5 text-[12px] text-muted">
+              <MapIcon className="mt-0.5 size-4 shrink-0 text-subtle" />
+              <span>
+                Diese Welt hat keine FurrBox-Karte. VRChat verrät die Positionen von Spielern nur, wenn die Welt sie selbst meldet –{" "}
+                <a
+                  href="https://github.com/Kitsulife2601/furrbox/blob/main/vrchat-world/ANLEITUNG.md"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent hover:underline"
+                >
+                  so baut man die Karte in eine Welt ein
+                </a>
+                .
+              </span>
+            </p>
+          )}
           <h3 className="mb-2 text-[12px] font-semibold text-muted">Jetzt in der Instanz · {players.length}</h3>
           {players.length === 0 ? (
             <p className="text-[12px] text-subtle">{q ? "Niemand gefunden." : "Noch niemand erfasst."}</p>
@@ -291,6 +311,89 @@ function LeftRow({ player: p, info, loggedIn }: { player: VrcLogPlayer & { leftA
         )}
       </div>
       {p.id && <PersonActions id={p.id} />}
+    </div>
+  );
+}
+
+type MapState = NonNullable<VrcInstanceState["map"]>;
+
+/** Map area: the corners set in the world, otherwise everyone seen so far plus some margin. */
+function mapBounds(map: MapState) {
+  if (map.bounds) return map.bounds;
+  const xs = map.players.map((p) => p.x);
+  const zs = map.players.map((p) => p.z);
+  const pad = (lo: number, hi: number) => {
+    const mid = (lo + hi) / 2;
+    const half = Math.max(10, (hi - lo) / 2 + 5);
+    return [mid - half, mid + half];
+  };
+  const [minX, maxX] = pad(Math.min(...xs, 0), Math.max(...xs, 0));
+  const [minZ, maxZ] = pad(Math.min(...zs, 0), Math.max(...zs, 0));
+  return { minX, minZ, maxX, maxZ };
+}
+
+function LiveMap({ state: s, info, myId }: { state: VrcInstanceState; info: Record<string, VrcPersonInfo>; myId: string | null }) {
+  const map = s.map!;
+  const b = mapBounds(map);
+  const w = b.maxX - b.minX;
+  const h = b.maxZ - b.minZ;
+  const stale = Date.now() - new Date(map.at).getTime() > 15_000;
+  const byName = new Map(s.players.map((p) => [p.name, p]));
+  return (
+    <div className="mb-5">
+      <h3 className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted">
+        <MapIcon className="size-3.5" /> Live-Karte · {map.players.length}
+        {stale ? (
+          <span className="font-normal text-amber-300">wartet auf neue Positionen…</span>
+        ) : (
+          <span className="flex items-center gap-1 font-normal text-subtle">
+            <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" /> alle 2 Sek.
+          </span>
+        )}
+      </h3>
+      <div
+        className="relative mx-auto w-full overflow-hidden rounded-xl border border-border bg-bg/70"
+        style={{ aspectRatio: `${w} / ${h}`, maxWidth: `${Math.round((440 * w) / h)}px` }}
+      >
+        {map.image ? (
+          <img src={map.image} alt="" className="absolute inset-0 size-full object-fill" referrerPolicy="no-referrer" />
+        ) : (
+          <div
+            className="absolute inset-0 opacity-60"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px), linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)",
+              backgroundSize: `${(500 / w).toFixed(3)}% ${(500 / h).toFixed(3)}%`,
+            }}
+          />
+        )}
+        {map.players.map((p) => {
+          const player = p.name ? byName.get(p.name) : undefined;
+          const id = player?.id ?? null;
+          const name = p.name ?? player?.name ?? `Spieler ${p.playerId}`;
+          const isMe = Boolean(id && id === myId);
+          const left = Math.min(100, Math.max(0, ((p.x - b.minX) / w) * 100));
+          const top = Math.min(100, Math.max(0, ((b.maxZ - p.z) / h) * 100));
+          return (
+            <div
+              key={p.playerId}
+              className="group absolute z-10 -translate-x-1/2 -translate-y-1/2 transition-[left,top] duration-[1900ms] ease-linear hover:z-20"
+              style={{ left: `${left}%`, top: `${top}%` }}
+            >
+              <span className="absolute inset-0 -m-2 transition-transform duration-500" style={{ transform: `rotate(${p.r}deg)` }}>
+                <span className={cn("absolute left-1/2 top-0 -translate-x-1/2 border-x-[5px] border-b-[7px] border-x-transparent", isMe ? "border-b-amber-300" : "border-b-accent")} />
+              </span>
+              <span className={cn("block rounded-full ring-2 ring-offset-1 ring-offset-black/40", isMe ? "ring-amber-300" : id && info[id]?.friend ? "ring-emerald-400" : "ring-accent")}>
+                <VrcAvatar user={{ displayName: name, image: id ? (info[id]?.image ?? null) : null }} small />
+              </span>
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-2.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block">
+                {name}
+                {isMe ? " (du)" : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
