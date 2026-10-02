@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-02",
+    "title": "Aufgeräumte Taskleiste",
+    "items": [
+      "FurrAccountManager, FurrTerminal, Moderationslog, FurrSettings und FurrWhitelist sind nicht mehr fest unten in der Taskleiste.",
+      "Sie liegen jetzt als Symbole auf dem Desktop – per Doppelklick öffnen.",
+      "Solange eine dieser Apps offen ist, erscheint sie wie gewohnt unten in der Taskleiste.",
+      "Über das Startmenü und die Suche findest du sie weiterhin."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "title": "Emojis, Sticker und Anhänge im Chat",
     "items": [
       "Im FurrChat gibt es jetzt einen Smiley-Knopf: Darüber wählst du aus vielen Emojis (Smileys, Tiere, Herzen, Essen, …). Zuletzt benutzte Emojis stehen ganz oben.",
