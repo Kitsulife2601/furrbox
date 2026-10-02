@@ -137,7 +137,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     let attachment: ChatAttachment | null = null;
     let content = data.content;
     if (data.stickerId) {
-      if (!STICKER_IDS.has(data.stickerId)) throw new Error("Unbekannter Sticker.");
+      const custom = /^custom:(.+)$/.exec(data.stickerId)?.[1];
+      const known = custom
+        ? (await sql`select 1 from chat_sticker where id = ${custom}`).length > 0
+        : STICKER_IDS.has(data.stickerId);
+      if (!known) throw new Error("Unbekannter Sticker.");
       kind = "sticker";
       attachment = { type: "sticker", stickerId: data.stickerId };
       content = "Sticker";

@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-02",
+    "title": "Eigene Sticker",
+    "items": [
+      "Sticker haben keinen farbigen Kasten mehr – im Chat erscheinen sie durchsichtig, nur das Bild mit Beschriftung.",
+      "Unter „Sticker“ gibt es jetzt ein „+“: Damit machst du aus einem eigenen Bild einen Sticker (PNG mit durchsichtigem Hintergrund sieht am besten aus, max. 1 MB).",
+      "Eigene Sticker kann das ganze Team benutzen. Deine eigenen kannst du mit dem Mülleimer-Symbol wieder löschen."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "title": "Aufgeräumte Taskleiste",
     "items": [
       "FurrAccountManager, FurrTerminal, Moderationslog, FurrSettings und FurrWhitelist sind nicht mehr fest unten in der Taskleiste.",

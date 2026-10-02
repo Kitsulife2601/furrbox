@@ -7,11 +7,10 @@ import { listChatMessages, readChatAttachment, sendChatMessage } from "@/lib/fur
 import { listPresence } from "@/lib/furr/api/presence";
 import { errorMessage, useMe } from "@/lib/furr/client";
 import { MAX_UPLOAD_BYTES } from "@/lib/furr/paths";
-import { getSticker } from "@/lib/furr/stickers";
 import type { ChatAttachment, ChatChannel, ChatMessage } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
-import { AttachMenu, EmojiStickerPicker, StickerView } from "./ChatPickers";
+import { AnySticker, AttachMenu, EmojiStickerPicker } from "./ChatPickers";
 import { useSync } from "./useFurrSync";
 import { Btn, Empty, ErrorText } from "./ui";
 
@@ -205,9 +204,9 @@ export function ChatPanel() {
         {popup === "emoji" && (
           <EmojiStickerPicker
             onEmoji={insertEmoji}
-            onSticker={(st) => {
+            onSticker={(stickerId) => {
               setPopup(null);
-              void post({ stickerId: st.id });
+              void post({ stickerId });
             }}
           />
         )}
@@ -323,8 +322,11 @@ function MessageBody({ message: m, mine }: { message: ChatMessage; mine: boolean
     mine ? "bg-accent text-accent-fg" : "bg-elevated",
   );
   if (a?.type === "sticker") {
-    const sticker = getSticker(a.stickerId);
-    return <div className="mt-1">{sticker ? <StickerView sticker={sticker} /> : <p className={bubble}>Sticker</p>}</div>;
+    return (
+      <div className="mt-1">
+        <AnySticker stickerId={a.stickerId} />
+      </div>
+    );
   }
   // Just a few emojis: show them big, like in other messengers.
   if (!a && EMOJI_ONLY.test(m.content) && [...m.content.replace(/\s/g, "")].length <= 8) {
