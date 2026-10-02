@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Lock, Moon, Search, Settings2, Sun, Volume2 } from "lucide-react";
-import { APPS, canLaunch } from "@/lib/apps";
+import { useState } from "react";
+import { APPS, canLaunch, desktopAppIds, type AppId } from "@/lib/apps";
+import { PopupMenu } from "@/components/furr/ui";
 import { recentFiles, searchFiles } from "@/lib/furr/api/files";
 import { timeAgo, useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
@@ -15,6 +17,35 @@ import { PowerButton } from "./Power";
 function useLaunchableApps() {
   const me = useMe();
   return APPS.filter((a) => !a.hidden && canLaunch(a, me.data?.permissions));
+}
+
+/** Right-click on an app in the start menu / search: open it, put it on or take it off the desktop. */
+function useAppMenu() {
+  const openApp = useDesktop((s) => s.openApp);
+  const saved = useDesktop((s) => s.desktopApps);
+  const setOnDesktop = useDesktop((s) => s.setOnDesktop);
+  const [menu, setMenu] = useState<{ x: number; y: number; app: AppId } | null>(null);
+  const onDesktop = (id: AppId) => desktopAppIds(saved).includes(id);
+  const open = (e: React.MouseEvent, app: AppId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, app });
+  };
+  const element = menu && (
+    <PopupMenu
+      x={menu.x}
+      y={menu.y}
+      onClose={() => setMenu(null)}
+      items={[
+        { label: "Öffnen", onClick: () => openApp(menu.app) },
+        "divider",
+        onDesktop(menu.app)
+          ? { label: "Vom Desktop entfernen", onClick: () => setOnDesktop(menu.app, false) }
+          : { label: "Zum Desktop hinzufügen", onClick: () => setOnDesktop(menu.app, true) },
+      ]}
+    />
+  );
+  return { open, element };
 }
 
 function Avatar({ name, className }: { name: string; className?: string }) {
@@ -34,6 +65,7 @@ export function StartMenu() {
   const apps = useLaunchableApps();
   const recent = useQuery({ queryKey: ["furr", "recent"], queryFn: () => recentFiles() });
   const shown = searchQuery ? apps.filter((a) => a.name.toLowerCase().includes(searchQuery.toLowerCase())) : apps;
+  const appMenu = useAppMenu();
 
   return (
     <div className="mica absolute bottom-14 left-1/2 z-[80] w-[min(640px,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl p-4">
@@ -46,6 +78,7 @@ export function StartMenu() {
           className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-subtle"
         />
       </div>
+      {appMenu.element}
       <p className="mt-4 text-[12px] font-medium text-muted">Apps</p>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
         {shown.map((app) => {
@@ -55,6 +88,8 @@ export function StartMenu() {
               key={app.id}
               type="button"
               onClick={() => openApp(app.id)}
+              onContextMenu={(e) => appMenu.open(e, app.id)}
+              title="Rechtsklick: zum Desktop hinzufügen"
               className="flex flex-col items-center gap-2 rounded-md px-2 py-3 hover:bg-fg/8"
             >
               <span className="grid size-10 place-items-center rounded-md bg-elevated">
@@ -109,6 +144,7 @@ export function SearchPanel() {
   const searchQuery = useDesktop((s) => s.searchQuery);
   const setSearchQuery = useDesktop((s) => s.setSearchQuery);
   const apps = useLaunchableApps().filter((a) => a.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const appMenu = useAppMenu();
   const files = useQuery({
     queryKey: ["furr", "search", searchQuery],
     queryFn: () => searchFiles({ data: searchQuery }),
@@ -127,13 +163,19 @@ export function SearchPanel() {
           className="min-w-0 flex-1 bg-transparent text-sm outline-none"
         />
       </div>
+      {appMenu.element}
       <p className="mt-3 text-[12px] font-medium text-muted">Apps</p>
       <ul className="mt-1 space-y-0.5">
         {apps.map((app) => {
           const Icon = app.icon;
           return (
             <li key={app.id}>
-              <button type="button" onClick={() => openApp(app.id)} className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-fg/8">
+              <button
+                type="button"
+                onClick={() => openApp(app.id)}
+                onContextMenu={(e) => appMenu.open(e, app.id)}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-fg/8"
+              >
                 <Icon className="size-4 text-accent" />
                 <span className="text-[13px]">{app.name}</span>
                 <span className="ml-auto text-[11px] text-subtle">{app.subtitle}</span>

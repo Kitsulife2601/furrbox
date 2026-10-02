@@ -39,6 +39,7 @@ export type AppDef = {
   subtitle: string;
   icon: LucideIcon;
   pinned: boolean;
+  /** On the desktop until the user changes it (right-click → Zum Desktop hinzufügen / Vom Desktop entfernen). */
   desktop: boolean;
   /** Hidden from start menu / search (opened by other apps only). */
   hidden?: boolean;
@@ -77,7 +78,7 @@ export const APPS: AppDef[] = [
     subtitle: "FurrShell für FurrFS",
     icon: TerminalSquare,
     pinned: false,
-    desktop: true,
+    desktop: false,
     defaultSize: { w: 720, h: 440 },
     minSize: { w: 420, h: 260 },
   },
@@ -87,7 +88,7 @@ export const APPS: AppDef[] = [
     subtitle: "Webseiten öffnen",
     icon: Globe,
     pinned: true,
-    desktop: true,
+    desktop: false,
     defaultSize: { w: 960, h: 620 },
     minSize: { w: 480, h: 340 },
   },
@@ -97,7 +98,7 @@ export const APPS: AppDef[] = [
     subtitle: "Beweise und Moderation",
     icon: Shield,
     pinned: true,
-    desktop: true,
+    desktop: false,
     requires: "canUseEvidence",
     defaultSize: { w: 900, h: 640 },
     minSize: { w: 520, h: 420 },
@@ -119,7 +120,7 @@ export const APPS: AppDef[] = [
     subtitle: "Accounts, Rollen, Discord-IDs",
     icon: UserCircle2,
     pinned: false,
-    desktop: true,
+    desktop: false,
     requires: "canManageAccounts",
     defaultSize: { w: 940, h: 620 },
     minSize: { w: 520, h: 400 },
@@ -130,7 +131,7 @@ export const APPS: AppDef[] = [
     subtitle: "Alle Moderationen aus Discord und VRChat",
     icon: ScrollText,
     pinned: false,
-    desktop: true,
+    desktop: false,
     requires: "canUseEvidence",
     defaultSize: { w: 1000, h: 640 },
     minSize: { w: 520, h: 400 },
@@ -141,7 +142,7 @@ export const APPS: AppDef[] = [
     subtitle: "Wer mit dir in der VRChat-Instanz ist",
     icon: Radar,
     pinned: true,
-    desktop: true,
+    desktop: false,
     requires: "canUseEvidence",
     defaultSize: { w: 1080, h: 680 },
     minSize: { w: 520, h: 420 },
@@ -152,7 +153,7 @@ export const APPS: AppDef[] = [
     subtitle: "Wer FurrBox nutzen darf",
     icon: ShieldCheck,
     pinned: false,
-    desktop: true,
+    desktop: false,
     requires: "canManageWhitelist",
     defaultSize: { w: 900, h: 600 },
     minSize: { w: 520, h: 400 },
@@ -163,7 +164,7 @@ export const APPS: AppDef[] = [
     subtitle: "System und Personalisierung",
     icon: Settings,
     pinned: false,
-    desktop: true,
+    desktop: false,
     defaultSize: { w: 780, h: 560 },
     minSize: { w: 420, h: 360 },
   },
@@ -204,6 +205,11 @@ export const APPS: AppDef[] = [
 
 export function getApp(id: AppId) {
   return APPS.find((a) => a.id === id)!;
+}
+
+/** Apps on the desktop: the user's own choice, otherwise the defaults. */
+export function desktopAppIds(saved: AppId[] | null) {
+  return saved ?? APPS.filter((a) => a.desktop).map((a) => a.id);
 }
 
 export function canLaunch(app: AppDef, permissions: Permissions | null | undefined) {

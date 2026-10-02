@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { APPS, canLaunch } from "@/lib/apps";
+import { APPS, canLaunch, desktopAppIds, type AppId } from "@/lib/apps";
 import { createFolder, deleteEntry, listFiles, renameEntry, saveTextFile } from "@/lib/furr/api/files";
 import type { FurrFile } from "@/lib/furr/types";
 import { useMe } from "@/lib/furr/client";
@@ -94,7 +94,9 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const openApp = useDesktop((s) => s.openApp);
   const closeMenus = useDesktop((s) => s.closeMenus);
   const [now, setNow] = useState(() => new Date());
-  const [menu, setMenu] = useState<{ x: number; y: number; file?: FurrFile } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; file?: FurrFile; app?: AppId } | null>(null);
+  const savedDesktopApps = useDesktop((s) => s.desktopApps);
+  const setOnDesktop = useDesktop((s) => s.setOnDesktop);
   const [dialog, setDialog] = useState<null | "folder" | "text">(null);
   const [renaming, setRenaming] = useState<FurrFile | null>(null);
   const [removing, setRemoving] = useState<FurrFile | null>(null);
@@ -124,7 +126,9 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
     refetchInterval: 10_000,
   });
   const refreshDesktop = () => queryClient.invalidateQueries({ queryKey: ["furr", "files"] });
-  const desktopApps = APPS.filter((a) => a.desktop && canLaunch(a, me.data?.permissions));
+  const desktopApps = desktopAppIds(savedDesktopApps)
+    .map((id) => APPS.find((a) => a.id === id))
+    .filter((a): a is (typeof APPS)[number] => Boolean(a && !a.hidden && canLaunch(a, me.data?.permissions)));
   const openDesktopFile = (f: FurrFile) =>
     f.isFolder ? openApp("explorer", { payload: { scope: "private", folder: f.path } }) : openFurrFile(f);
 
@@ -192,6 +196,12 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
               label: app.name,
               icon: <Icon className="size-8 drop-shadow-sm" strokeWidth={1.4} />,
               onOpen: () => openApp(app.id),
+              onContextMenu: (e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                selectIcon(app.id);
+                setMenu({ x: e.clientX, y: e.clientY, app: app.id });
+              },
             };
           }),
           ...(desktopFiles.data ?? []).map((f) => ({
@@ -230,7 +240,17 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
       <PowerOverlay />
 
       {menu && (
-        <PopupMenu x={menu.x} y={menu.y} items={menu.file ? fileMenuItems(menu.file) : menuItems} onClose={() => setMenu(null)} />
+        <PopupMenu x={menu.x} y={menu.y} items={
+            menu.file
+              ? fileMenuItems(menu.file)
+              : menu.app
+                ? [
+                    { label: "Öffnen", onClick: () => openApp(menu.app!) },
+                    "divider",
+                    { label: "Vom Desktop entfernen", onClick: () => setOnDesktop(menu.app!, false) },
+                  ]
+                : menuItems
+          } onClose={() => setMenu(null)} />
       )}
       {renaming && (
         <div onMouseDown={(e) => e.stopPropagation()}>

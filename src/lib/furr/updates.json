@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-02",
+    "title": "Aufgeräumter Desktop",
+    "items": [
+      "Auf dem Desktop liegen jetzt erstmal nur „Dieser PC“ und „FurrFS“.",
+      "Alle anderen Apps findest du über das Startmenü und die Suche.",
+      "Rechtsklick auf eine App im Startmenü oder in der Suche → „Zum Desktop hinzufügen“ legt sie auf deinen Desktop.",
+      "Rechtsklick auf ein App-Symbol auf dem Desktop → „Vom Desktop entfernen“ nimmt es wieder weg. Gelöscht wird dabei nichts.",
+      "Deine Auswahl bleibt gespeichert."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "title": "Eigene Sticker",
     "items": [
       "Sticker haben keinen farbigen Kasten mehr – im Chat erscheinen sie durchsichtig, nur das Bild mit Beschriftung.",

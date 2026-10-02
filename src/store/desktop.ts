@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppId } from "@/lib/apps";
-import { getApp } from "@/lib/apps";
+import { desktopAppIds, getApp } from "@/lib/apps";
 import type { Scope } from "@/lib/furr/types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -90,6 +90,8 @@ type DesktopState = {
   focusedId: string | null;
   selectedIcon: string | null;
   iconCells: Record<string, IconCell>;
+  /** Apps on the desktop, null = defaults (Dieser PC + FurrFS). */
+  desktopApps: AppId[] | null;
   startOpen: boolean;
   searchOpen: boolean;
   chatOpen: boolean;
@@ -117,6 +119,7 @@ type DesktopState = {
   setSearchQuery: (q: string) => void;
   selectIcon: (id: string | null) => void;
   setIconCell: (id: string, cell: IconCell) => void;
+  setOnDesktop: (appId: AppId, on: boolean) => void;
   openApp: (appId: AppId, opts?: OpenOptions) => string;
   focusWindow: (id: string) => void;
   closeWindow: (id: string) => void;
@@ -147,6 +150,7 @@ export const useDesktop = create<DesktopState>()(
       focusedId: null,
       selectedIcon: null,
       iconCells: {},
+      desktopApps: null,
       startOpen: false,
       searchOpen: false,
       chatOpen: false,
@@ -174,6 +178,11 @@ export const useDesktop = create<DesktopState>()(
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       selectIcon: (selectedIcon) => set({ selectedIcon }),
       setIconCell: (id, cell) => set((st) => ({ iconCells: { ...st.iconCells, [id]: cell } })),
+      setOnDesktop: (appId, on) =>
+        set((st) => {
+          const current = desktopAppIds(st.desktopApps).filter((id) => id !== appId);
+          return { desktopApps: on ? [...current, appId] : current };
+        }),
       openApp: (appId, opts) => {
         const app = getApp(appId);
         const existing = get().windows.find((w) =>
@@ -281,6 +290,7 @@ export const useDesktop = create<DesktopState>()(
         wallpaperUrl: s.wallpaperUrl,
         wallpaperLayout: s.wallpaperLayout,
         iconCells: s.iconCells,
+        desktopApps: s.desktopApps,
         accent: s.accent,
         bootSound: s.bootSound,
         volume: s.volume,
