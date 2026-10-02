@@ -93,6 +93,48 @@ function createVrchat(userDataDir) {
     };
   }
 
+  // World names/pictures for the Weltenkarte, cached for an hour.
+  const worldCache = new Map();
+  async function world(worldId) {
+    const hit = worldCache.get(worldId);
+    if (hit && Date.now() - hit.at < 60 * 60_000) return hit.value;
+    const { json } = await authed(`/worlds/${encodeURIComponent(worldId)}`);
+    const value = { name: json?.name ?? "Unbekannte Welt", image: json?.thumbnailImageUrl || json?.imageUrl || null, capacity: Number(json?.capacity ?? 0) };
+    worldCache.set(worldId, { at: Date.now(), value });
+    return value;
+  }
+  async function worlds(locations) {
+    const ids = [...new Set(locations.map((l) => /^wrld_[0-9a-f-]{36}/i.exec(l ?? "")?.[0]).filter(Boolean))].slice(0, 60);
+    const out = {};
+    for (let i = 0; i < ids.length; i += 6) {
+      await Promise.all(
+        ids.slice(i, i + 6).map(async (id) => {
+          out[id] = await world(id).catch(() => ({ name: "Unbekannte Welt", image: null, capacity: 0 }));
+        }),
+      );
+    }
+    return out;
+  }
+  const image = (u) => u?.userIcon || u?.profilePicOverrideThumbnail || u?.currentAvatarThumbnailImageUrl || null;
+
+  /** Where the logged-in account itself is right now. */
+  async function whereAmI() {
+    const { json } = await authed("/auth/user");
+    const w = json?.presence?.world ?? "";
+    const inst = json?.presence?.instance ?? "";
+    const location =
+      json?.state === "offline" ? "offline" : /^wrld_/.test(w) && inst ? `${w}:${inst}` : /^wrld_/.test(w) ? w : inst || "offline";
+    const info = /^wrld_/.test(location) ? (await worlds([location]))[location.split(":")[0]] : null;
+    return {
+      id: json.id,
+      displayName: json.displayName ?? "",
+      image: image(json),
+      location,
+      worldName: info?.name ?? null,
+      worldImage: info?.image ?? null,
+    };
+  }
+
   return {
     status,
     async login(username, password) {
@@ -149,6 +191,21 @@ function createVrchat(userDataDir) {
       else if (action === "kick") await authed(`/groups/${g}/members/${u}`, { method: "DELETE" });
       else throw new Error("Unbekannte Aktion.");
       return { ok: true };
+    },
+    whereAmI,
+    /** Own location + online friends (VRChat only shows friends their locations) – stays on this PC. */
+    async locations() {
+      const me = await whereAmI();
+      const friends = [];
+      for (let offset = 0; offset < 300; offset += 100) {
+        const { json } = await authed(`/auth/user/friends?offline=false&n=100&offset=${offset}`);
+        const page = Array.isArray(json) ? json : [];
+        friends.push(
+          ...page.map((f) => ({ id: f.id, displayName: f.displayName ?? "", image: image(f), status: f.status ?? "", location: f.location || "offline" })),
+        );
+        if (page.length < 100) break;
+      }
+      return { me, friends, worlds: await worlds([me.location, ...friends.map((f) => f.location)]) };
     },
   };
 }

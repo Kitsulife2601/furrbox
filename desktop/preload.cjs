@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("furrbox", {
     cancel: () => ipcRenderer.invoke("furrbox:vrchat-cancel"),
     logout: () => ipcRenderer.invoke("furrbox:vrchat-logout"),
     search: (query) => ipcRenderer.invoke("furrbox:vrchat-search", query),
+    where: () => ipcRenderer.invoke("furrbox:vrchat-where"),
+    locations: () => ipcRenderer.invoke("furrbox:vrchat-locations"),
     moderate: (action, groupId, userId) => ipcRenderer.invoke("furrbox:vrchat-moderate", action, groupId, userId),
   },
   onStatus: (callback) => ipcRenderer.on("furrbox:status", (_event, text, isError) => callback(text, isError)),

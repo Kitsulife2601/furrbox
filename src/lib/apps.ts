@@ -4,6 +4,7 @@ import {
   FileText,
   Folder,
   Globe,
+  MapIcon,
   Monitor,
   Radio,
   ScrollText,
@@ -27,6 +28,7 @@ export type AppId =
   | "accounts"
   | "whitelist"
   | "modlog"
+  | "worldmap"
   | "notepad"
   | "viewer"
   | "taskmgr";
@@ -132,6 +134,17 @@ export const APPS: AppDef[] = [
     requires: "canUseEvidence",
     defaultSize: { w: 1000, h: 640 },
     minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "worldmap",
+    name: "Weltenkarte",
+    subtitle: "Wer ist in welcher VRChat-Welt",
+    icon: MapIcon,
+    pinned: true,
+    desktop: true,
+    requires: "canUseEvidence",
+    defaultSize: { w: 1080, h: 680 },
+    minSize: { w: 520, h: 420 },
   },
   {
     id: "whitelist",

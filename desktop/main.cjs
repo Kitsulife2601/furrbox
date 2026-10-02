@@ -236,6 +236,8 @@ vrchatHandler("verify", (code) => vrchat.verify(String(code ?? "")));
 vrchatHandler("cancel", () => vrchat.cancelLogin());
 vrchatHandler("logout", () => vrchat.logout());
 vrchatHandler("search", (query) => vrchat.search(String(query ?? "")));
+vrchatHandler("where", () => vrchat.whereAmI());
+vrchatHandler("locations", () => vrchat.locations());
 vrchatHandler("moderate", (action, groupId, userId) => vrchat.moderate(String(action), String(groupId), String(userId)));
 
 function setStatus(text, isError = false) {

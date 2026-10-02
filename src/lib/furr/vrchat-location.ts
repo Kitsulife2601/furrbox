@@ -37,3 +37,31 @@ export function vrchatAuditAction(eventType: string): string | null {
   const kind = vrchatAuditKind(eventType);
   return kind ? MOD_ACTION_LABEL[kind] : null;
 }
+
+/** "Private Welt", "Unterwegs", … for VRChat locations that are not a world instance. */
+export const VRC_SPECIAL_LOCATION: Record<string, string> = {
+  private: "Private Welt",
+  traveling: "Unterwegs (lädt eine Welt)",
+  offline: "Online auf der Website / App",
+};
+
+/** Instance type of a VRChat location ("wrld_…:123~friends(usr_…)~region(eu)"). */
+export function instanceType(location: string): { key: string; label: string; joinable: boolean } {
+  if (/~group\(/.test(location)) {
+    const access = /~groupAccessType\(([^)]+)\)/.exec(location)?.[1] ?? "members";
+    return { key: "group", label: VRC_ACCESS[access] ?? "Gruppe", joinable: true };
+  }
+  if (/~hidden\(/.test(location)) return { key: "friends+", label: "Freunde+", joinable: false };
+  if (/~friends\(/.test(location)) return { key: "friends", label: "Freunde", joinable: false };
+  if (/~private\(/.test(location)) {
+    return /~canRequestInvite/.test(location)
+      ? { key: "invite+", label: "Einladung+", joinable: false }
+      : { key: "invite", label: "Nur Einladung", joinable: false };
+  }
+  return { key: "public", label: "Öffentlich", joinable: true };
+}
+
+export function joinUrl(location: string) {
+  const [worldId, instanceId = ""] = location.split(":");
+  return `https://vrchat.com/home/launch?worldId=${encodeURIComponent(worldId)}&instanceId=${encodeURIComponent(instanceId)}`;
+}

@@ -48,6 +48,9 @@ type MyStatus = {
   needs: "totp" | "emailOtp" | null;
 };
 type VrcUser = { id: string; displayName: string; image: string | null };
+export type VrcMe = VrcUser & { location: string; worldName: string | null; worldImage: string | null };
+export type VrcFriend = VrcUser & { status: string; location: string };
+export type VrcWorld = { name: string; image: string | null; capacity: number };
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 type DesktopVrchat = {
   status(): Promise<Result<MyStatus>>;
@@ -57,9 +60,12 @@ type DesktopVrchat = {
   logout(): Promise<Result<MyStatus>>;
   search(query: string): Promise<Result<VrcUser[]>>;
   moderate(action: string, groupId: string, userId: string): Promise<Result<{ ok: boolean }>>;
+  /** Desktop 2.0.9+ (Weltenkarte). */
+  where?(): Promise<Result<VrcMe>>;
+  locations?(): Promise<Result<{ me: VrcMe; friends: VrcFriend[]; worlds: Record<string, VrcWorld> }>>;
 };
 
-function desktopVrchat(): DesktopVrchat | null {
+export function desktopVrchat(): DesktopVrchat | null {
   if (typeof window === "undefined") return null;
   return (window as { furrbox?: { vrchat?: DesktopVrchat } }).furrbox?.vrchat ?? null;
 }
@@ -70,7 +76,7 @@ function inDesktopApp() {
 }
 
 /** Shown when the desktop app is too old for the personal VRChat login. */
-function DesktopHint({ what }: { what: string }) {
+export function DesktopHint({ what, version = "2.0.8" }: { what: string; version?: string }) {
   const [state, setState] = useState<"idle" | "checking" | "done">("idle");
   if (!inDesktopApp()) {
     return <p className="text-[12px] text-muted">{what} gibt es nur in der FurrBox-Desktop-App – VRChat erlaubt das nur vom eigenen PC.</p>;
@@ -79,7 +85,7 @@ function DesktopHint({ what }: { what: string }) {
     <div className="grid gap-2 rounded-lg border border-accent/40 bg-accent/10 p-3 text-[12px]">
       <p className="font-medium">FurrBox-Update nötig</p>
       <p className="text-muted">
-        {what} braucht die Desktop-Version 2.0.8 oder neuer. Lade das Update – danach unten rechts auf das Update-Symbol klicken.
+        {what} braucht die Desktop-Version {version} oder neuer. Lade das Update – danach unten rechts auf das Update-Symbol klicken.
       </p>
       <Btn
         variant="primary"
@@ -96,14 +102,14 @@ function DesktopHint({ what }: { what: string }) {
   );
 }
 
-async function unwrap<T>(p: Promise<Result<T>> | undefined): Promise<T> {
+export async function unwrap<T>(p: Promise<Result<T>> | undefined): Promise<T> {
   if (!p) throw new Error("Die eigene VRChat-Anmeldung gibt es nur in der FurrBox-Desktop-App.");
   const r = await p;
   if (!r.ok) throw new Error(r.error);
   return r.value;
 }
 
-function useMyVrchat() {
+export function useMyVrchat() {
   return useQuery({
     queryKey: MY_KEY,
     queryFn: () => unwrap(desktopVrchat()?.status()),
@@ -951,7 +957,7 @@ function MembershipHint({
   );
 }
 
-function VrcAvatar({
+export function VrcAvatar({
   user,
   small,
 }: {
