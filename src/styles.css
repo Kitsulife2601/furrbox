@@ -310,3 +310,8 @@
     animation-duration: 6s;
   }
 }
+
+/* FurrChat stickers pop in once. */
+.furr-sticker-pop { animation: furr-sticker-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes furr-sticker-pop { from { transform: scale(0.3) rotate(-12deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .furr-sticker-pop { animation: none; } }

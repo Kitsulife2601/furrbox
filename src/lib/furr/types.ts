@@ -76,7 +76,15 @@ export type ChatMessage = {
   recipientName: string | null;
   content: string;
   createdAt: string;
+  kind: ChatKind;
+  attachment: ChatAttachment | null;
 };
+
+export type ChatKind = "text" | "sticker" | "case" | "file";
+export type ChatAttachment =
+  | { type: "sticker"; stickerId: string }
+  | { type: "case"; path: string; caseId: string; platform: string }
+  | { type: "file"; id: string; name: string; mimeType: string; size: number };
 
 export type SystemNotification = {
   id: number;

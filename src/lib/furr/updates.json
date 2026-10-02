@@ -1,6 +1,19 @@
 [
   {
     "date": "2026-10-02",
+    "title": "Emojis, Sticker und Anhänge im Chat",
+    "items": [
+      "Im FurrChat gibt es jetzt einen Smiley-Knopf: Darüber wählst du aus vielen Emojis (Smileys, Tiere, Herzen, Essen, …). Zuletzt benutzte Emojis stehen ganz oben.",
+      "Im selben Fenster unter „Sticker“ kannst du Sticker verschicken, z. B. „Hallo!“, „Pfote drauf“, „Bann-Hammer“ oder „Gute Nacht“.",
+      "Nachrichten, die nur aus ein paar Emojis bestehen, werden groß angezeigt.",
+      "Mit der Büroklammer hängst du eine Fallakte aus FurrEvidence an – ein Klick darauf öffnet den Fall direkt in FurrFS.",
+      "Ebenfalls über die Büroklammer: Dateien vom PC anhängen (Bilder, Videos, Dokumente bis 3 MB). Bilder und Videos erscheinen direkt im Chat, alles andere kann man herunterladen.",
+      "Dateien kann man auch einfach in den Chat ziehen oder mit Strg+V einfügen.",
+      "Angehängte Dateien sehen nur die Leute im jeweiligen Chat und werden mit der Nachricht automatisch gelöscht."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "version": "2.0.10",
     "title": "Live-Karte im Instanz-Tracker",
     "items": [
