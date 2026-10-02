@@ -12,7 +12,7 @@ import { TaskManager } from "@/components/furr/TaskManager";
 import { Terminal } from "@/components/furr/Terminal";
 import { Whitelist } from "@/components/furr/Whitelist";
 import { ModLog } from "@/components/furr/ModLog";
-import { WorldMap } from "@/components/furr/WorldMap";
+import { InstanceTracker } from "@/components/furr/InstanceTracker";
 import { Empty } from "@/components/furr/ui";
 
 export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId: string; payload?: WindowPayload }) {
@@ -40,7 +40,7 @@ export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId:
     case "modlog":
       return <ModLog />;
     case "worldmap":
-      return <WorldMap />;
+      return <InstanceTracker />;
     case "settings":
       return <Settings />;
     case "notepad":

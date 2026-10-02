@@ -2,14 +2,15 @@
   {
     "date": "2026-10-02",
     "version": "2.0.9",
-    "title": "Neue App: Weltenkarte",
+    "title": "Instanz-Tracker statt Weltenkarte",
     "items": [
-      "Neue App „Weltenkarte“ auf dem Desktop: Sie zeigt, in welcher VRChat-Welt gerade wer ist – mit Weltbild, Region, Instanz-Art und Anzahl der Leute.",
-      "Deine VRChat-Freunde siehst du automatisch, sobald du in FurrBox mit deinem VRChat-Konto angemeldet bist. Diese Liste sieht nur du.",
-      "Mit „Meinen Standort mit dem Team teilen“ sieht das Team, wo du bist (jede Minute aktualisiert). Standardmäßig ist das aus.",
-      "Offene Gruppen-Instanzen erscheinen mit auf der Karte; per „Beitreten“ kommst du direkt zu öffentlichen und Gruppen-Instanzen.",
-      "Filter für Team, Freunde und Gruppe, Suche nach Namen und ein Klick auf eine Person springt zu ihrer Welt.",
-      "Freunde und eigener Standort brauchen die neue Desktop-Version – FurrBox sagt Bescheid, wenn ein Update nötig ist."
+      "Die Weltenkarte heißt jetzt „Instanz-Tracker“ und zeigt nur noch deine aktuelle VRChat-Instanz.",
+      "Sobald du in VRChat in einer Instanz bist, siehst du live, wer drin ist und seit wann – inklusive Welt, Region und Instanz-Art.",
+      "Wer kommt und geht, steht mit Uhrzeit im Verlauf; unter „Gegangen“ siehst du, wie lange jemand da war.",
+      "Bei deinen VRChat-Freunden steht zusätzlich, in welche Welt sie danach gegangen sind (VRChat zeigt das nur bei Freunden).",
+      "Pro Person: VRChat-ID kopieren oder Profil öffnen.",
+      "Das Teilen des eigenen Standorts mit dem Team ist wieder entfernt.",
+      "Braucht die neue Desktop-Version – FurrBox sagt Bescheid, wenn ein Update nötig ist."
     ]
   },
   {

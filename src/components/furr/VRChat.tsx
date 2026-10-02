@@ -48,9 +48,21 @@ type MyStatus = {
   needs: "totp" | "emailOtp" | null;
 };
 type VrcUser = { id: string; displayName: string; image: string | null };
-export type VrcMe = VrcUser & { location: string; worldName: string | null; worldImage: string | null };
-export type VrcFriend = VrcUser & { status: string; location: string };
 export type VrcWorld = { name: string; image: string | null; capacity: number };
+export type VrcLogPlayer = { id: string | null; name: string; joinedAt: string | null };
+export type VrcInstanceState = {
+  logFound: boolean;
+  vrchatClosed: boolean;
+  updatedAt: string | null;
+  inInstance: boolean;
+  location: string | null;
+  worldName: string | null;
+  joinedAt: string | null;
+  players: VrcLogPlayer[];
+  left: (VrcLogPlayer & { leftAt: string })[];
+  events: { kind: "join" | "leave"; name: string; id: string | null; at: string }[];
+};
+export type VrcPersonInfo = { image: string | null; friend: boolean; location: string | null; status: string | null; worldName: string | null };
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 type DesktopVrchat = {
   status(): Promise<Result<MyStatus>>;
@@ -60,9 +72,10 @@ type DesktopVrchat = {
   logout(): Promise<Result<MyStatus>>;
   search(query: string): Promise<Result<VrcUser[]>>;
   moderate(action: string, groupId: string, userId: string): Promise<Result<{ ok: boolean }>>;
-  /** Desktop 2.0.9+ (Weltenkarte). */
-  where?(): Promise<Result<VrcMe>>;
-  locations?(): Promise<Result<{ me: VrcMe; friends: VrcFriend[]; worlds: Record<string, VrcWorld> }>>;
+  /** Desktop 2.0.9+ (Instanz-Tracker). */
+  instance?(): Promise<Result<VrcInstanceState>>;
+  people?(ids: string[]): Promise<Result<Record<string, VrcPersonInfo>>>;
+  world?(worldId: string): Promise<Result<VrcWorld>>;
 };
 
 export function desktopVrchat(): DesktopVrchat | null {

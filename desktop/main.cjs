@@ -11,6 +11,7 @@ const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
 const { createVrchat } = require("./vrchat.cjs");
+const { createLogWatcher } = require("./vrchat-log.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -236,8 +237,10 @@ vrchatHandler("verify", (code) => vrchat.verify(String(code ?? "")));
 vrchatHandler("cancel", () => vrchat.cancelLogin());
 vrchatHandler("logout", () => vrchat.logout());
 vrchatHandler("search", (query) => vrchat.search(String(query ?? "")));
-vrchatHandler("where", () => vrchat.whereAmI());
-vrchatHandler("locations", () => vrchat.locations());
+const vrchatLog = createLogWatcher();
+vrchatHandler("instance", () => vrchatLog.poll());
+vrchatHandler("people", (ids) => vrchat.people(ids));
+vrchatHandler("world", (worldId) => vrchat.world(String(worldId ?? "")));
 vrchatHandler("moderate", (action, groupId, userId) => vrchat.moderate(String(action), String(groupId), String(userId)));
 
 function setStatus(text, isError = false) {

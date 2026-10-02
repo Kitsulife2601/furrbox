@@ -117,22 +117,28 @@ function createVrchat(userDataDir) {
   }
   const image = (u) => u?.userIcon || u?.profilePicOverrideThumbnail || u?.currentAvatarThumbnailImageUrl || null;
 
-  /** Where the logged-in account itself is right now. */
-  async function whereAmI() {
-    const { json } = await authed("/auth/user");
-    const w = json?.presence?.world ?? "";
-    const inst = json?.presence?.instance ?? "";
-    const location =
-      json?.state === "offline" ? "offline" : /^wrld_/.test(w) && inst ? `${w}:${inst}` : /^wrld_/.test(w) ? w : inst || "offline";
-    const info = /^wrld_/.test(location) ? (await worlds([location]))[location.split(":")[0]] : null;
-    return {
-      id: json.id,
-      displayName: json.displayName ?? "",
-      image: image(json),
-      location,
-      worldName: info?.name ?? null,
-      worldImage: info?.image ?? null,
-    };
+  // Online friends (with location), refreshed at most every 45 seconds.
+  let friendCache = { at: 0, map: new Map() };
+  async function friendList() {
+    if (Date.now() - friendCache.at < 45_000) return friendCache.map;
+    const map = new Map();
+    for (let offset = 0; offset < 300; offset += 100) {
+      const { json } = await authed(`/auth/user/friends?offline=false&n=100&offset=${offset}`);
+      const page = Array.isArray(json) ? json : [];
+      for (const f of page) map.set(f.id, { image: image(f), location: f.location || "offline", status: f.status ?? "" });
+      if (page.length < 100) break;
+    }
+    friendCache = { at: Date.now(), map };
+    return map;
+  }
+  const imageCache = new Map();
+  async function userImage(id) {
+    const hit = imageCache.get(id);
+    if (hit && Date.now() - hit.at < 60 * 60_000) return hit.value;
+    const { json } = await authed(`/users/${encodeURIComponent(id)}`);
+    const value = image(json);
+    imageCache.set(id, { at: Date.now(), value });
+    return value;
   }
 
   return {
@@ -192,21 +198,36 @@ function createVrchat(userDataDir) {
       else throw new Error("Unbekannte Aktion.");
       return { ok: true };
     },
-    whereAmI,
-    /** Own location + online friends (VRChat only shows friends their locations) – stays on this PC. */
-    async locations() {
-      const me = await whereAmI();
-      const friends = [];
-      for (let offset = 0; offset < 300; offset += 100) {
-        const { json } = await authed(`/auth/user/friends?offline=false&n=100&offset=${offset}`);
-        const page = Array.isArray(json) ? json : [];
-        friends.push(
-          ...page.map((f) => ({ id: f.id, displayName: f.displayName ?? "", image: image(f), status: f.status ?? "", location: f.location || "offline" })),
-        );
-        if (page.length < 100) break;
+    /**
+     * Pictures and – for friends – where they are now, for the people in / from your instance.
+     * VRChat only shows the location of your own friends.
+     */
+    async people(ids) {
+      const wanted = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => /^usr_[0-9a-f-]{36}$/i.test(String(id))))].slice(0, 120);
+      const friends = await friendList();
+      const out = {};
+      const lookups = [];
+      for (const id of wanted) {
+        const f = friends.get(id);
+        if (f) out[id] = { image: f.image, friend: true, location: f.location, status: f.status };
+        else lookups.push(id);
       }
-      return { me, friends, worlds: await worlds([me.location, ...friends.map((f) => f.location)]) };
+      for (let i = 0; i < Math.min(lookups.length, 40); i += 5) {
+        await Promise.all(
+          lookups.slice(i, i + 5).map(async (id) => {
+            out[id] = { image: await userImage(id).catch(() => null), friend: false, location: null, status: null };
+          }),
+        );
+      }
+      const w = await worlds(Object.values(out).map((v) => v.location));
+      for (const v of Object.values(out)) {
+        const worldId = /^wrld_[0-9a-f-]{36}/i.exec(v.location ?? "")?.[0];
+        v.worldName = worldId ? (w[worldId]?.name ?? null) : null;
+      }
+      return out;
     },
+    /** Name, picture and capacity of a world. */
+    world: (worldId) => world(String(worldId)),
   };
 }
 

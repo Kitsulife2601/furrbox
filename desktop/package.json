@@ -23,6 +23,7 @@
       "main.cjs",
       "preload.cjs",
       "vrchat.cjs",
+      "vrchat-log.cjs",
       "splash.html",
       "package.json"
     ],

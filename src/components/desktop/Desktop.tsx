@@ -13,7 +13,6 @@ import { ChatPanel } from "@/components/furr/ChatPanel";
 import { filesKey, openFurrFile, uploadBrowserFiles } from "@/components/furr/FurrFS";
 import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
-import { useVrchatLocationShare } from "@/components/furr/WorldMap";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
 import { NoAccess } from "./NoAccess";
@@ -102,7 +101,6 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const uploadRef = useRef<HTMLInputElement>(null);
 
   useFurrSync(true);
-  useVrchatLocationShare();
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
