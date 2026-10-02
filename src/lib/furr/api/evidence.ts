@@ -2,7 +2,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
 import {
+  bridgeStatus,
   discordName,
+  ensureFolderPath,
   getSql,
   iso,
   loadMe,
@@ -37,6 +39,8 @@ type EvidenceInput = {
   violationCategory: string;
   notes: string;
   files: { name: string; mimeType: string; base64: string }[];
+  /** Big files: only described here, the content goes to the bot's PC afterwards (uploadBotChunk). */
+  bigFiles?: { name: string; mimeType: string; size: number }[];
 };
 
 function formatGermanDateTime(date: Date) {
@@ -98,6 +102,7 @@ function buildReport(meta: EvidenceInput & { caseId: string; createdAt: Date; mo
 export const saveEvidenceCase = createServerFn({ method: "POST" })
   .validator((input: EvidenceInput): EvidenceInput => {
     const files = Array.isArray(input.files) ? input.files.slice(0, 32) : [];
+    const bigFiles = Array.isArray(input.bigFiles) ? input.bigFiles.slice(0, 32) : [];
     const total = files.reduce((sum, f) => sum + Math.floor((String(f.base64 ?? "").length * 3) / 4), 0);
     if (total > MAX_UPLOAD_BYTES) throw new Error("Beweisdateien sind zusammen zu groß (max. 3 MB).");
     return {
@@ -115,13 +120,22 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
         mimeType: String(f.mimeType || "application/octet-stream").slice(0, 120),
         base64: String(f.base64 ?? ""),
       })),
+      bigFiles: bigFiles.map((f) => ({
+        name: sanitizeName(String(f.name ?? "")) || "Beweis",
+        mimeType: String(f.mimeType || "application/octet-stream").slice(0, 120),
+        size: Math.max(0, Math.trunc(Number(f.size) || 0)),
+      })),
     };
   })
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const me = await requirePermission(context.userId, "canUseEvidence");
     if (!data.targetPrimary) throw new Error("Zielperson muss angegeben werden.");
-    if (!data.files.length && !data.messageProof?.found && !data.notes) {
+    const bigFiles = data.bigFiles ?? [];
+    if (bigFiles.length && !(await bridgeStatus()).connected) {
+      throw new Error("Große Dateien werden auf dem PC des Discord-Bots gespeichert – der Bot ist gerade offline.");
+    }
+    if (!data.files.length && !bigFiles.length && !data.messageProof?.found && !data.notes) {
       throw new Error("Mindestens eine Beweisdatei, eine geladene Discord-Nachricht oder Notizen sind nötig.");
     }
 
@@ -144,13 +158,40 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
         createdBy: context.userId,
       });
     }
-    const report = buildReport({ ...data, targetDisplayName: targetName, caseId, createdAt, moderator: me, fileSizes });
+    // Big files: a FurrFS entry now, the content follows piece by piece to the bot's PC.
+    const uploads: { fileId: string; name: string }[] = [];
+    if (bigFiles.length) {
+      const sql = await getSql();
+      await ensureFolderPath("public", null, casePath, context.userId);
+      const taken = new Set(data.files.map((f) => f.name.toLowerCase()));
+      for (const f of bigFiles) {
+        let name = f.name;
+        for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = f.name.replace(/(\.[^.]+)?$/, ` (${n})$1`);
+        taken.add(name.toLowerCase());
+        const fileId = newId();
+        await sql`
+          insert into furr_file (id, scope, owner_id, created_by, folder, name, is_folder, mime_type, size, content_b64, on_bot, bot_state)
+          values (${fileId}, 'public', null, ${context.userId}, ${casePath}, ${name}, false, ${f.mimeType}, ${f.size}, null, true, 'uploading')`;
+        uploads.push({ fileId, name });
+      }
+    }
+    const allFiles = [...data.files, ...bigFiles.map((f, i) => ({ name: uploads[i].name, mimeType: f.mimeType, base64: "" }))];
+    const allSizes = [...fileSizes, ...bigFiles.map((f) => f.size)];
+    const report = buildReport({
+      ...data,
+      files: allFiles,
+      targetDisplayName: targetName,
+      caseId,
+      createdAt,
+      moderator: me,
+      fileSizes: allSizes,
+    });
     await writeTextFile("public", null, `${casePath}/Moderationsprotokoll.txt`, report, context.userId);
     if (data.platform === "Discord") {
       await writeTextFile("public", null, `${DISCORD_LOGS}/${sanitizeSegment(targetName)}_Report.txt`, report, context.userId);
     }
     await notify("Neuer Evidence-Fall", `${me.displayName} hat einen ${data.platform}-Fall zu ${targetName} (${data.violationCategory}) angelegt.`);
-    return { caseId, casePath };
+    return { caseId, casePath, uploads };
   });
 
 export const listEvidenceCases = createServerFn({ method: "GET" })

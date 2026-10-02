@@ -68,3 +68,9 @@ export function formatSize(size: number) {
 }
 
 export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+/** Evidence files above this size go to the Discord bot's PC (no size limit there). */
+export const BOT_FILE_THRESHOLD = 1024 * 1024;
+/** Piece size for files on the bot's PC – must match CHUNK in bot/files.mjs. */
+export const BOT_CHUNK_BYTES = 2 * 1024 * 1024;
+/** Longest video clip allowed as evidence. */
+export const MAX_CLIP_SECONDS = 4 * 60;

@@ -7,6 +7,7 @@
 //      DISCORD_MUTED_ROLE_ID / DISCORD_MUTED_ROLE_NAME (optional, for "mute").
 import { Client, EmbedBuilder, GatewayIntentBits, Partials, PermissionsBitField } from "discord.js";
 import { handleVrchatJobs, startVrchat } from "./vrchat.mjs";
+import { filesBusy, handleBotFiles } from "./files.mjs";
 
 const token = process.env.DISCORD_TOKEN;
 const bridgeToken = process.env.BOT_BRIDGE_TOKEN;
@@ -271,8 +272,9 @@ async function poll() {
       await bridge("inspect-result", result);
     }
     await handleVrchatJobs(queue.vrchatJobs);
+    handleBotFiles(bridge, log, queue.botFiles);
     if (active) await flush();
-    delay = active ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+    delay = filesBusy() ? 2_000 : active ? ACTIVE_POLL_MS : IDLE_POLL_MS;
   } catch (err) {
     log("Bridge-Fehler:", err instanceof Error ? err.message : err);
     delay = 30_000;

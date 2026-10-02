@@ -14,7 +14,8 @@ import {
 import { listDiscordMembers } from "@/lib/furr/api/presence";
 import { getBridgeStatus } from "@/lib/furr/api/session";
 import { errorMessage, fileToBase64, timeAgo, useMe } from "@/lib/furr/client";
-import { MAX_UPLOAD_BYTES, formatSize } from "@/lib/furr/paths";
+import { BOT_FILE_THRESHOLD, MAX_CLIP_SECONDS, formatSize } from "@/lib/furr/paths";
+import { checkClip, uploadToBot } from "@/lib/furr/botfile-client";
 import { ROLE_LABEL, isRole, type ModerationAction } from "@/lib/furr/roles";
 import type { DiscordMemberOption, MessageProof } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
@@ -106,6 +107,8 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  /** While big files travel to the bot's PC: bytes sent / total. */
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
   const [error, setError] = useState("");
   const [manual, setManual] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -136,11 +139,21 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
 
   async function submit() {
     setError("");
-    if (totalSize > MAX_UPLOAD_BYTES) return setError("Beweisdateien sind zusammen größer als 3 MB.");
     setSaving(true);
     try {
+      // Small files go straight into FurrFS (together at most ~2.5 MB per request), everything
+      // else is stored on the Discord bot's PC – there is no size limit.
+      const small: File[] = [];
+      const big: File[] = [];
+      let smallTotal = 0;
+      for (const f of files) {
+        if (f.size <= BOT_FILE_THRESHOLD && smallTotal + f.size <= 2.5 * 1024 * 1024) {
+          small.push(f);
+          smallTotal += f.size;
+        } else big.push(f);
+      }
       const payloadFiles = await Promise.all(
-        files.map(async (f) => ({ name: f.name, mimeType: f.type, base64: await fileToBase64(f) })),
+        small.map(async (f) => ({ name: f.name, mimeType: f.type, base64: await fileToBase64(f) })),
       );
       const member = members.data?.find((m) => m.discordId === targetDiscordId);
       const res = await saveEvidenceCase({
@@ -155,8 +168,18 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
           violationCategory: category,
           notes,
           files: payloadFiles,
+          bigFiles: big.map((f) => ({ name: f.name, mimeType: f.type || "application/octet-stream", size: f.size })),
         },
       });
+      if (big.length) {
+        const total = big.reduce((s, f) => s + f.size, 0);
+        let done = 0;
+        setProgress({ sent: 0, total });
+        for (const [i, f] of big.entries()) {
+          await uploadToBot(f, res.uploads[i].fileId, (sent) => setProgress({ sent: done + sent, total }));
+          done += f.size;
+        }
+      }
       useNotifications.getState().notify({ version: "FurrEvidence", title: "Fall gespeichert", description: res.casePath });
       await queryClient.invalidateQueries({ queryKey: ["furr"] });
       setFiles([]);
@@ -168,12 +191,12 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
       setError(errorMessage(e));
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
   const selected = members.data?.find((m) => m.discordId === targetDiscordId) ?? null;
   const ready = Boolean(targetPrimary || targetDiscordId);
-  const usage = Math.min(100, Math.round((totalSize / MAX_UPLOAD_BYTES) * 100));
 
   function pick(m: DiscordMemberOption) {
     setTargetDiscordId(m.discordId);
@@ -186,8 +209,17 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
     setTargetPrimary("");
   }
 
-  function addFiles(list: FileList | File[]) {
-    setFiles((f) => [...f, ...Array.from(list)].slice(0, 32));
+  async function addFiles(list: FileList | File[]) {
+    const incoming = Array.from(list);
+    const ok: File[] = [];
+    const problems: string[] = [];
+    for (const f of incoming) {
+      const problem = await checkClip(f);
+      if (problem) problems.push(problem);
+      else ok.push(f);
+    }
+    setError(problems.join(" "));
+    setFiles((f) => [...f, ...ok].slice(0, 32));
   }
 
   return (
@@ -354,7 +386,7 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
             </div>
           </Card>
 
-          <Card step={platform === "Discord" ? 4 : 3} title="Beweisdateien" subtitle="Screenshots, Videos oder Logs – zusammen max. 3 MB.">
+          <Card step={platform === "Discord" ? 4 : 3} title="Beweisdateien" subtitle={`Screenshots, Videos (Clips bis ${MAX_CLIP_SECONDS / 60} Min.) oder Logs – ohne Größenlimit.`}>
             <label
               onDragOver={(e) => {
                 e.preventDefault();
@@ -364,7 +396,7 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragging(false);
-                addFiles(e.dataTransfer.files);
+                void addFiles(e.dataTransfer.files);
               }}
               className={cn(
                 "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors",
@@ -379,17 +411,24 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
                 multiple
                 hidden
                 onChange={(e) => {
-                  if (e.target.files) addFiles(e.target.files);
+                  if (e.target.files) void addFiles(e.target.files);
                   e.target.value = "";
                 }}
               />
             </label>
             <div className="grid gap-1">
-              <div className="h-1.5 overflow-hidden rounded-full bg-bg/70">
-                <div className={cn("h-full rounded-full", usage >= 100 ? "bg-danger" : "bg-accent")} style={{ width: `${usage}%` }} />
-              </div>
+              {progress && (
+                <div className="h-1.5 overflow-hidden rounded-full bg-bg/70">
+                  <div
+                    className="h-full rounded-full bg-accent transition-[width]"
+                    style={{ width: `${Math.round((progress.sent / Math.max(1, progress.total)) * 100)}%` }}
+                  />
+                </div>
+              )}
               <span className="text-[11px] text-subtle">
-                {files.length} {files.length === 1 ? "Datei" : "Dateien"} · {formatSize(totalSize)} von 3 MB
+                {progress
+                  ? `Lade zum Discord-Bot hoch… ${formatSize(progress.sent)} von ${formatSize(progress.total)}`
+                  : `${files.length} ${files.length === 1 ? "Datei" : "Dateien"} · ${formatSize(totalSize)}${files.some((f) => f.size > BOT_FILE_THRESHOLD) ? " · große Dateien werden auf dem PC des Discord-Bots gespeichert" : ""}`}
               </span>
             </div>
             {files.length > 0 && (
@@ -426,7 +465,7 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
             {error && <p className="mt-1 text-red-300">{error}</p>}
           </div>
           <Btn variant="primary" className="h-10 px-5" disabled={saving || !ready} onClick={() => void submit()}>
-            <Save className="size-4" /> {saving ? "Wird gespeichert…" : "Fall speichern"}
+            <Save className="size-4" /> {progress ? `Hochladen ${Math.round((progress.sent / Math.max(1, progress.total)) * 100)} %` : saving ? "Wird gespeichert…" : "Fall speichern"}
           </Btn>
         </div>
       </div>

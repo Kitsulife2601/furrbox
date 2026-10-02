@@ -226,10 +226,12 @@ export type FileRow = {
   size: number;
   created_at: unknown;
   updated_at: unknown;
+  on_bot?: boolean;
+  bot_state?: string | null;
 };
 
 export const FILE_COLUMNS =
-  "id, scope, owner_id, folder, name, is_folder, mime_type, size, created_at, updated_at";
+  "id, scope, owner_id, folder, name, is_folder, mime_type, size, created_at, updated_at, on_bot, bot_state";
 
 export function toFileDto(row: FileRow): FurrFile {
   return {
@@ -244,6 +246,8 @@ export function toFileDto(row: FileRow): FurrFile {
     size: Number(row.size) || 0,
     createdAt: iso(row.created_at) ?? new Date().toISOString(),
     updatedAt: iso(row.updated_at) ?? new Date().toISOString(),
+    onBot: Boolean(row.on_bot),
+    botState: (row.bot_state ?? null) as FurrFile["botState"],
   };
 }
 

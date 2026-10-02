@@ -228,6 +228,7 @@ export const pasteEntry = createServerFn({ method: "POST" })
     const row = await findVisible(context.userId, data.id);
     if (!row) throw new Error("Element nicht gefunden.");
     if (row.is_folder) throw new Error("Ordner können nur einzeln per Datei kopiert werden.");
+    if ((row as { on_bot?: boolean }).on_bot) throw new Error("Diese Datei liegt beim Discord-Bot und kann nicht kopiert oder verschoben werden.");
     const file = await writeFile({
       scope: data.scope,
       ownerId: ownerFor(data.scope, context.userId),

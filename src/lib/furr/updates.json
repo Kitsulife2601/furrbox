@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-02",
+    "title": "Beweise ohne Größenlimit",
+    "items": [
+      "Beim neuen Fall in FurrEvidence gibt es keine 3-MB-Grenze mehr – Beweisdateien dürfen so groß sein, wie sie wollen.",
+      "Große Dateien werden auf dem PC des Discord-Bots gespeichert. Beim Speichern siehst du, wie weit das Hochladen ist.",
+      "Videos dürfen höchstens 4 Minuten lang sein – längere Clips werden mit einem Hinweis abgelehnt.",
+      "Große Beweise öffnest du wie gewohnt in FurrFS; die Datei wird dann vom Bot geholt (mit Fortschrittsanzeige) und kann angesehen oder heruntergeladen werden.",
+      "Für große Dateien muss der Discord-Bot laufen."
+    ]
+  },
+  {
+    "date": "2026-10-02",
     "title": "Aufgeräumter Desktop",
     "items": [
       "Auf dem Desktop liegen jetzt erstmal nur „Dieser PC“ und „FurrFS“.",

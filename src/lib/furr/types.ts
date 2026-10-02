@@ -31,6 +31,9 @@ export type FurrFile = {
   size: number;
   createdAt: string;
   updatedAt: string;
+  /** Big evidence file stored on the Discord bot's PC (content is fetched on demand). */
+  onBot?: boolean;
+  botState?: "uploading" | "stored" | "failed" | null;
 };
 
 export type Platform = "desktop" | "mobile";

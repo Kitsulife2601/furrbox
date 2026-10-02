@@ -23,3 +23,6 @@ bot/vrchat-session.json
 bot/.env
 bot/bot.log
 .tanstack/
+
+# Big evidence files stored on the bot PC
+bot/beweise/

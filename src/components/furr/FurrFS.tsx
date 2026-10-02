@@ -147,6 +147,8 @@ export function FurrFS({ payload, startAtPc }: { payload?: WindowPayload; startA
   }
 
   async function download(file: FurrFile) {
+    // Big files on the Discord bot's PC are fetched in the viewer (it has its own download button).
+    if (file.onBot) return openFurrFile(file);
     try {
       const res = await readFile({ data: file.id });
       downloadBase64(res.base64, file.name, file.mimeType);

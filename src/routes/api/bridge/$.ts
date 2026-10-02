@@ -8,6 +8,10 @@
 //   POST /api/bridge/vrchat-result      -> { jobId, ok, result?, error? }  (VRChat jobs from the queue)
 //   POST /api/bridge/vrchat-state       -> { account, groupId, group, instances, error }
 //   POST /api/bridge/vrchat-audit       -> { entries: VRChat group audit log entries }
+//   POST /api/bridge/file-take          -> { fileId, idx } -> next piece of an upload for the bot's PC
+//   POST /api/bridge/file-stored        -> { fileId, ok, error? }
+//   POST /api/bridge/file-down          -> { fileId, idx, data } (piece of a requested file) -> { pending }
+//   POST /api/bridge/file-down-done     -> { fileId, ok, totalChunks?, error? }
 import { createFileRoute } from "@tanstack/react-router";
 import { appendTextFile, discordName, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
 import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
@@ -76,6 +80,14 @@ async function handle(request: Request, action: string) {
         await sql`update vrchat_job set status = 'dispatched' where id = ${job.id}`;
       }
     }
+    // Big evidence files on the bot's PC: uploads in progress and files someone wants to see.
+    await sql`delete from bot_file_chunk where direction = 'down' and created_at < now() - interval '30 minutes'`;
+    const uploads = await sql<{ id: string; folder: string; name: string; bot_chunks: number | null }>`
+      select id, folder, name, bot_chunks from furr_file where on_bot and bot_state = 'uploading'`;
+    const downloads = await sql<{ id: string; folder: string; name: string }>`
+      update bot_file_request r set status = 'sending' from furr_file f
+      where f.id = r.file_id and r.status = 'queued'
+      returning f.id, f.folder, f.name`;
     // Lets the bot poll fast only while someone has FurrBox open (keeps the database asleep otherwise).
     const activeRows = await sql<{ n: number }>`
       select count(*)::int as n from furr_presence where last_heartbeat_at > now() - interval '3 minutes'`;
@@ -92,11 +104,60 @@ async function handle(request: Request, action: string) {
       })),
       inspections: inspections.map((i) => ({ requestId: i.id, messageId: i.message_id })),
       vrchatJobs: vrchatJobs.map((j) => ({ jobId: j.id, kind: j.kind, payload: j.payload_json ? JSON.parse(j.payload_json) : {} })),
+      botFiles: {
+        uploads: uploads.map((u) => ({ fileId: u.id, folder: u.folder, name: u.name, totalChunks: u.bot_chunks })),
+        downloads: downloads.map((d) => ({ fileId: d.id, folder: d.folder, name: d.name })),
+      },
     });
   }
 
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (action === "file-take") {
+    const fileId = String(body.fileId ?? "");
+    const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
+    const rows = await sql<{ data_b64: string }>`
+      delete from bot_file_chunk where file_id = ${fileId} and direction = 'up' and idx = ${idx} returning data_b64`;
+    const [f] = await sql<{ bot_chunks: number | null; bot_state: string | null }>`
+      select bot_chunks, bot_state from furr_file where id = ${fileId}`;
+    return json({ data: rows[0]?.data_b64 ?? null, totalChunks: f?.bot_chunks ?? null, active: f?.bot_state === "uploading" });
+  }
+
+  if (action === "file-stored") {
+    const fileId = String(body.fileId ?? "");
+    const ok = Boolean(body.ok);
+    await sql`
+      update furr_file set bot_state = ${ok ? "stored" : "failed"}, bot_error = ${ok ? null : String(body.error ?? "Fehler beim Speichern").slice(0, 300)}
+      where id = ${fileId}`;
+    await sql`delete from bot_file_chunk where file_id = ${fileId} and direction = 'up'`;
+    return json({ ok: true });
+  }
+
+  if (action === "file-down") {
+    const fileId = String(body.fileId ?? "");
+    const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
+    // Without data it is only a "how many pieces are still waiting?" check.
+    if (typeof body.data === "string") {
+      await sql`
+        insert into bot_file_chunk (file_id, direction, idx, data_b64) values (${fileId}, 'down', ${idx}, ${body.data})
+        on conflict (file_id, direction, idx) do update set data_b64 = excluded.data_b64, created_at = now()`;
+    }
+    const [{ n }] = await sql<{ n: number }>`
+      select count(*)::int as n from bot_file_chunk where file_id = ${fileId} and direction = 'down'`;
+    const [r] = await sql<{ status: string }>`select status from bot_file_request where file_id = ${fileId}`;
+    return json({ pending: n, cancelled: r?.status !== "sending" });
+  }
+
+  if (action === "file-down-done") {
+    const fileId = String(body.fileId ?? "");
+    const ok = Boolean(body.ok);
+    await sql`
+      update bot_file_request set status = ${ok ? "done" : "failed"}, total_chunks = ${ok ? Math.trunc(Number(body.totalChunks) || 0) : null},
+        error = ${ok ? null : String(body.error ?? "Fehler").slice(0, 300)}
+      where file_id = ${fileId}`;
+    return json({ ok: true });
+  }
 
   if (action === "members") {
     const members = Array.isArray(body.members) ? (body.members as MemberSnapshot[]) : [];
