@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.15",
+    "title": "Absturz beim erneuten Starten behoben",
+    "items": [
+      "Behoben: Nach dem Schließen lief FurrBox unsichtbar im Hintergrund weiter (wegen des VR-Fensters). Beim nächsten Start kam dann die Fehlermeldung „Object has been destroyed“ und FurrBox ging nicht mehr auf.",
+      "FurrBox beendet sich jetzt vollständig, wenn das Fenster geschlossen wird.",
+      "Enthält die neuen VR-Positionen „Handkante“, „Unterarm“ und „Über der Hand“."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.14",
     "title": "FurrBox VR: Fenster an der Handkante",
     "items": [

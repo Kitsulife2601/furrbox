@@ -161,7 +161,7 @@ let autoUpdater = null;
 
 function setUpdateState(patch) {
   updateState = { ...updateState, ...patch };
-  mainWindow?.webContents.send("furrbox:update", updateState);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:update", updateState);
 }
 
 function setupAutoUpdater() {
@@ -255,7 +255,7 @@ let appUrl = null;
 
 /** Only the FurrBox page itself (main window or the VR panel) may call the bridges. */
 function trusted(event) {
-  const contents = [mainWindow?.webContents, vrOverlay.webContents()].filter(Boolean);
+  const contents = [mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null, vrOverlay.webContents()].filter(Boolean);
   return contents.some((c) => event.sender === c && event.senderFrame === c.mainFrame);
 }
 
@@ -292,7 +292,9 @@ function saveVr(patch) {
 function vrStatus() {
   return { ...vrOverlay.status(), enabled: readConfig().vr?.enabled !== false };
 }
-vrOverlay.onChange(() => mainWindow?.webContents.send("furrbox:vr", vrStatus()));
+vrOverlay.onChange(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:vr", vrStatus());
+  });
 ipcMain.handle("furrbox:vr-status", (event) => (trusted(event) ? vrStatus() : null));
 ipcMain.handle("furrbox:vr-enable", (event, on) => {
   if (!trusted(event)) return null;
@@ -331,7 +333,7 @@ ipcMain.handle("furrbox:osc-chatbox", async (event, text) => {
 });
 
 function setStatus(text, isError = false) {
-  mainWindow?.webContents.send("furrbox:status", text, isError);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:status", text, isError);
 }
 
 async function createWindow() {
@@ -355,7 +357,14 @@ async function createWindow() {
       webviewTag: true,
     },
   });
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Closing the FurrBox window ends the app. The invisible window of the VR panel must not keep
+  // it running in the background (a second start then hit a destroyed window and crashed).
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    vrOverlay.stop();
+    app.quit();
+  });
 
   // Links that try to open a new window (FurrBrowser "Im neuen Tab öffnen") go to the system browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -382,7 +391,14 @@ async function createWindow() {
     if (mode) fs.writeFileSync(setupMarker, new Date().toISOString());
     await mainWindow.loadURL(url);
     appUrl = url;
-    if (config.vr?.enabled !== false) vrOverlay.start(url, config.vr?.placement);
+    // One-time switch to the new default position at the edge of the hand (mirrored for the right arm).
+    let vr = config.vr ?? {};
+    if (vr.placementVersion !== 2) {
+      const hand = vr.placement?.hand === "right" ? "right" : "left";
+      const side = hand === "right" ? -1 : 1;
+      vr = saveVr({ placementVersion: 2, placement: { hand, width: 0.13, x: -0.07 * side, y: 0, z: 0.06, tilt: 0, roll: -90 * side, turn: 0 } });
+    }
+    if (vr.enabled !== false) vrOverlay.start(url, vr.placement);
   } catch (error) {
     setStatus(`${error instanceof Error ? error.message : String(error)}\n\nKonfiguration: ${configPath}`, true);
   }
@@ -409,7 +425,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      mainWindow = null;
+      if (app.isReady() && !app.isQuitting) createWindow();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });

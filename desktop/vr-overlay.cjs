@@ -48,7 +48,8 @@ function findOpenvrDll() {
  * Panel position relative to the controller, in metres / degrees. The panel lies flat above the
  * controller like a wrist tablet: its top edge points away from you.
  */
-const DEFAULT_PLACEMENT = { hand: "left", width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0, roll: 0, turn: 0 };
+// Default: at the outer edge of the left hand ("Handkante").
+const DEFAULT_PLACEMENT = { hand: "left", width: 0.13, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 };
 
 function matrixFor(p) {
   // Overlay X -> controller X, overlay up (Y) -> controller forward (-Z), overlay normal (Z) -> controller up (Y),
@@ -329,7 +330,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   }
 
   function mouse(type, x, y, extra = {}) {
-    if (!win) return;
+    if (!win || win.isDestroyed()) return;
     win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(HEIGHT - y), ...extra });
   }
 
@@ -386,7 +387,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       // ignore
     }
     if (win) {
-      win.destroy();
+      if (!win.isDestroyed()) win.destroy();
       win = null;
     }
   }
@@ -398,7 +399,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       return () => listeners.delete(fn);
     },
     /** The window showing the /vr page (for IPC permission checks). */
-    webContents: () => win?.webContents ?? null,
+    webContents: () => (win && !win.isDestroyed() ? win.webContents : null),
     start(serverUrl, saved) {
       url = serverUrl;
       placement = { ...DEFAULT_PLACEMENT, ...(saved ?? {}) };
