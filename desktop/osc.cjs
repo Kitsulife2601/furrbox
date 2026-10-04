@@ -41,4 +41,9 @@ function sendChatbox(text) {
   return send(chatboxPacket(text));
 }
 
-module.exports = { sendChatbox, chatboxPacket };
+/** Empties the chatbox (an empty text removes the bubble). */
+function clearChatbox() {
+  return send(Buffer.concat([oscString("/chatbox/input"), oscString(",sTF"), oscString("")]));
+}
+
+module.exports = { sendChatbox, clearChatbox, chatboxPacket };

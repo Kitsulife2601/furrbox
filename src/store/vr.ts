@@ -17,7 +17,9 @@ export type VrInfoPlace = "top" | "bottom" | "off";
 
 export const VR_WIDGETS = [
   { id: "votekick", label: "Votekick-Warnung", hint: "Großer Hinweis, sobald jemand einen Votekick startet – mit Starter, wenn VRChat ihn nennt" },
+  { id: "instanceAlert", label: "Hinweis bei neuer Gruppen-Instanz", hint: "Meldung am Arm, sobald der Bot eine neu geöffnete Instanz unserer Gruppe sieht" },
   { id: "instance", label: "Wer ist in der Instanz", hint: "Liste der Leute mit Kommen und Gehen" },
+  { id: "team", label: "Team-Liste", hint: "Owner, Mods und Supporter – wer gerade bereit zum Moderieren ist und wer nicht" },
   { id: "chatbox", label: "Chatbox-Schnelltexte", hint: "Knöpfe, die per OSC einen Text in deine VRChat-Chatbox schreiben" },
   { id: "teamchat", label: "Team-Chat", hint: "Die neuesten Nachrichten aus dem FurrChat" },
 ] as const;
@@ -41,7 +43,7 @@ type VrSettings = {
 export const useVrSettings = create<VrSettings>()(
   persist(
     (set) => ({
-      widgets: { votekick: true, instance: true, chatbox: true, teamchat: false },
+      widgets: { votekick: true, instanceAlert: true, instance: true, team: true, chatbox: true, teamchat: false },
       infos: { time: "top", world: "top", people: "top", date: "off", joined: "bottom", instanceAge: "bottom" },
       texts: DEFAULT_TEXTS,
       status: { enabled: false, items: ["time", "people", "joined"], text: "" },
@@ -60,5 +62,16 @@ export function syncVrSettings() {
     if (e.key === "furrbox-vr") void useVrSettings.persist.rehydrate();
   };
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  // The panel page is rendered offscreen, where the storage event is not reliable – also check regularly.
+  let last = localStorage.getItem("furrbox-vr");
+  const timer = window.setInterval(() => {
+    const now = localStorage.getItem("furrbox-vr");
+    if (now === last) return;
+    last = now;
+    void useVrSettings.persist.rehydrate();
+  }, 1500);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.clearInterval(timer);
+  };
 }

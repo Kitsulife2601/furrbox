@@ -13,7 +13,7 @@ const path = require("node:path");
 const { createVrchat } = require("./vrchat.cjs");
 const { createLogWatcher } = require("./vrchat-log.cjs");
 const { createVrOverlay } = require("./vr-overlay.cjs");
-const { sendChatbox } = require("./osc.cjs");
+const { sendChatbox, clearChatbox } = require("./osc.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -289,8 +289,10 @@ function saveVr(patch) {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
   return config.vr;
 }
+// null = not switched in this session yet (then the saved setting counts).
+let vrEnabled = null;
 function vrStatus() {
-  return { ...vrOverlay.status(), enabled: readConfig().vr?.enabled !== false };
+  return { ...vrOverlay.status(), enabled: vrEnabled ?? readConfig().vr?.enabled !== false };
 }
 vrOverlay.onChange(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:vr", vrStatus());
@@ -298,9 +300,14 @@ vrOverlay.onChange(() => {
 ipcMain.handle("furrbox:vr-status", (event) => (trusted(event) ? vrStatus() : null));
 ipcMain.handle("furrbox:vr-enable", (event, on) => {
   if (!trusted(event)) return null;
-  saveVr({ enabled: Boolean(on) });
-  if (on && appUrl) vrOverlay.start(appUrl, readConfig().vr?.placement);
+  vrEnabled = Boolean(on);
+  if (vrEnabled && appUrl) vrOverlay.start(appUrl, readConfig().vr?.placement);
   else vrOverlay.stop();
+  try {
+    saveVr({ enabled: vrEnabled });
+  } catch (error) {
+    console.log("[vr] Einstellung konnte nicht gespeichert werden:", error?.message ?? error);
+  }
   return vrStatus();
 });
 ipcMain.handle("furrbox:vr-placement", (event, input) => {
@@ -317,8 +324,12 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
     roll: num(input?.roll, -180, 180, current.roll ?? 0),
     turn: num(input?.turn, -180, 180, current.turn ?? 0),
   };
-  saveVr({ placement });
   vrOverlay.setPlacement(placement);
+  try {
+    saveVr({ placement });
+  } catch (error) {
+    console.log("[vr] Position konnte nicht gespeichert werden:", error?.message ?? error);
+  }
   return vrStatus();
 });
 // Permanent status in the VRChat chatbox (time, world, …): composed here in the main process
@@ -369,6 +380,8 @@ ipcMain.handle("furrbox:osc-status", (event, input) => {
   for (const [location, at] of Object.entries(input?.opened ?? {}).slice(0, 50)) {
     if (typeof at === "string" && !Number.isNaN(Date.parse(at))) opened[String(location).slice(0, 300)] = at;
   }
+  // Switched off: empty the chatbox right away instead of leaving the last text hanging there.
+  if (chatStatus.enabled && !input?.enabled) clearChatbox().catch(() => undefined);
   chatStatus = {
     enabled: Boolean(input?.enabled),
     items: (Array.isArray(input?.items) ? input.items : []).filter((id) => STATUS_ITEMS.includes(id)),
@@ -452,10 +465,15 @@ async function createWindow() {
     appUrl = url;
     // One-time switch to the new default position at the edge of the hand (mirrored for the right arm).
     let vr = config.vr ?? {};
-    if (vr.placementVersion !== 2) {
+    if (vr.placementVersion !== 3) {
       const hand = vr.placement?.hand === "right" ? "right" : "left";
       const side = hand === "right" ? -1 : 1;
-      vr = saveVr({ placementVersion: 2, placement: { hand, width: 0.13, x: -0.07 * side, y: 0, z: 0.06, tilt: 0, roll: -90 * side, turn: 0 } });
+      const placement = { hand, width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 * side };
+      try {
+        vr = saveVr({ placementVersion: 3, placement });
+      } catch {
+        vr = { ...vr, placement };
+      }
     }
     if (vr.enabled !== false) vrOverlay.start(url, vr.placement);
   } catch (error) {

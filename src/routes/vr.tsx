@@ -1,14 +1,16 @@
 // FurrBox VR: the page shown on your arm in SteamVR (rendered offscreen by the desktop app,
-// 480 × 640, operated with the SteamVR laser pointer). Layout: a small info bar on top, pages in
-// the middle that you swipe through (or use the arrows), a small info bar at the bottom.
+// landscape 640 × 400, operated with the SteamVR laser pointer). Layout: a narrow info column on
+// the left, pages on the right that you swipe through (or use the tabs / arrows).
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, LogIn, LogOut, MessageSquare, Radar, Send, Users } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, DoorOpen, LogIn, LogOut, MessageSquare, Radar, Send, ShieldCheck, Users } from "lucide-react";
 import { desktopVrchat, unwrap, type VrcInstanceState } from "@/components/furr/VRChat";
 import { listChatMessages } from "@/lib/furr/api/chat";
+import { listPresence } from "@/lib/furr/api/presence";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
+import type { PresenceUser } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { syncVrSettings, useVrSettings, type VrInfoId, type VrWidgetId } from "@/store/vr";
 
@@ -17,14 +19,14 @@ const osc = () => (window as { furrbox?: { osc?: OscBridge } }).furrbox?.osc ?? 
 
 /** A vote kick stays on screen this long. */
 const VOTE_ALERT_MS = 45_000;
+/** A newly opened group instance is announced this long. */
+const INSTANCE_ALERT_MS = 2 * 60_000;
 /** Drag further than this (px) to change the page. */
 const SWIPE_PX = 60;
 
-const PAGE_TITLE: Record<Exclude<VrWidgetId, "votekick">, string> = {
-  instance: "Instanz",
-  chatbox: "Chatbox",
-  teamchat: "Team-Chat",
-};
+type PageId = Exclude<VrWidgetId, "votekick" | "instanceAlert">;
+const PAGES: PageId[] = ["instance", "team", "chatbox", "teamchat"];
+const PAGE_TITLE: Record<PageId, string> = { instance: "Instanz", team: "Team", chatbox: "Chatbox", teamchat: "Chat" };
 
 function clock(at: string | null) {
   return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
@@ -63,16 +65,18 @@ function VrPanel() {
     refetchInterval: 2_000,
   });
   const s = inst.data;
-  // Group instances: the bot knows since when they are open.
-  const wantsAge = infos.instanceAge !== "off";
+  // Group instances (from the Discord bot): since when they are open, and newly opened ones.
   const group = useQuery({
     queryKey: ["furr", "vrchat", "instances"],
     queryFn: () => listVrchatInstances(),
-    enabled: wantsAge && Boolean(me.data),
-    refetchInterval: 60_000,
+    enabled: Boolean(me.data) && (infos.instanceAge !== "off" || widgets.instanceAlert),
+    refetchInterval: 30_000,
     retry: false,
   });
   const openedAt = group.data?.instances.find((i) => i.location === s?.location)?.openedAt ?? null;
+  const fresh = (group.data?.instances ?? []).find(
+    (i) => now.getTime() - new Date(i.openedAt).getTime() < INSTANCE_ALERT_MS && i.location !== s?.location,
+  );
 
   const vote = s?.votes?.find((v) => !v.result && now.getTime() - new Date(v.at).getTime() < VOTE_ALERT_MS) ?? null;
   const lastVote = s?.votes?.[0] ?? null;
@@ -86,115 +90,128 @@ function VrPanel() {
     instanceAge: s?.inInstance ? (openedAt ? `Instanz offen: ${since(openedAt, now)}` : s.joinedAt ? `Instanz: mind. ${since(s.joinedAt, now)}` : null) : null,
   };
 
-  const pages = (["instance", "chatbox", "teamchat"] as const).filter((id) => widgets[id]);
+  const pages = PAGES.filter((id) => widgets[id]);
   const current = Math.min(page, Math.max(0, pages.length - 1));
   const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
+  const hasInfo = (Object.keys(info) as VrInfoId[]).some((id) => infos[id] !== "off" && info[id]);
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col gap-2 overflow-hidden rounded-[28px] border-2 border-white/15 bg-[#0b0d14]/92 p-3 text-white">
-      <InfoBar place="top" info={info} />
-
-      {widgets.votekick && vote && <VoteAlert vote={vote} />}
-      {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
-        <p className="rounded-xl bg-amber-500/12 px-3 py-1.5 text-[13px] text-amber-200">
-          Letzter Votekick {clock(lastVote.at)}: gegen <b>{lastVote.target}</b>
-          {lastVote.initiator ? ` – gestartet von ${lastVote.initiator}` : ""}
-          {lastVote.result === "kicked" ? " · wurde gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
-        </p>
+    <div className="flex h-screen w-screen select-none gap-2 overflow-hidden rounded-[24px] border-2 border-white/15 bg-[#0b0d14]/92 p-2.5 text-white">
+      {hasInfo && (
+        <aside className="flex w-[168px] shrink-0 flex-col justify-between gap-2 rounded-2xl bg-white/6 p-3">
+          <InfoGroup place="top" info={info} />
+          <InfoGroup place="bottom" info={info} />
+        </aside>
       )}
 
-      {!me.data ? (
-        <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
-          {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
-        </p>
-      ) : pages.length === 0 ? (
-        <div className="flex-1" />
-      ) : (
-        <>
-          {/* Pages: drag sideways with the laser (hold the trigger) or use the arrows below. */}
-          <div
-            className="relative min-h-0 flex-1 overflow-hidden"
-            onMouseDown={(e) => {
-              drag.current = e.clientX;
-            }}
-            onMouseUp={(e) => {
-              if (drag.current === null) return;
-              const dx = e.clientX - drag.current;
-              drag.current = null;
-              if (dx <= -SWIPE_PX) go(1);
-              else if (dx >= SWIPE_PX) go(-1);
-            }}
-            onMouseLeave={() => {
-              drag.current = null;
-            }}
-          >
-            <div className="flex h-full transition-transform duration-300 ease-out" style={{ transform: `translateX(-${current * 100}%)` }}>
-              {pages.map((id) => (
-                <div key={id} className="flex h-full w-full shrink-0 flex-col">
-                  {id === "instance" && <InstanceList state={s} />}
-                  {id === "chatbox" && <Chatbox />}
-                  {id === "teamchat" && <TeamChat />}
-                </div>
-              ))}
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {widgets.votekick && vote && <VoteAlert vote={vote} />}
+        {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
+          <p className="truncate rounded-xl bg-amber-500/12 px-3 py-1 text-[13px] text-amber-200">
+            Votekick {clock(lastVote.at)}: gegen <b>{lastVote.target}</b>
+            {lastVote.initiator ? ` – von ${lastVote.initiator}` : ""}
+            {lastVote.result === "kicked" ? " · gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
+          </p>
+        )}
+        {widgets.instanceAlert && fresh && !vote && (
+          <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-400/70 bg-emerald-500/20 px-3 py-2">
+            <DoorOpen className="size-7 shrink-0 text-emerald-300" />
+            <div className="min-w-0">
+              <p className="text-[12px] font-bold uppercase tracking-wide text-emerald-200">Neue Gruppen-Instanz · {clock(fresh.openedAt)}</p>
+              <p className="truncate text-[15px] font-semibold leading-tight">{fresh.worldName}</p>
+              <p className="truncate text-[12px] text-white/70">
+                {fresh.memberCount} {fresh.memberCount === 1 ? "Person" : "Leute"} · {fresh.region} · {fresh.access}
+              </p>
             </div>
           </div>
-          {pages.length > 1 && (
-            <nav className="flex items-center gap-2">
-              <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
-                <ChevronLeft className="size-6" />
-              </NavButton>
-              <div className="flex flex-1 items-center justify-center gap-2">
-                {pages.map((id, i) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setPage(i)}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-[13px] font-medium",
-                      i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
-                    )}
-                  >
-                    {PAGE_TITLE[id]}
-                  </button>
+        )}
+
+        {!me.data ? (
+          <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
+            {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
+          </p>
+        ) : pages.length === 0 ? (
+          <div className="flex-1" />
+        ) : (
+          <>
+            {/* Pages: drag sideways with the laser (hold the trigger) or use the tabs / arrows. */}
+            <div
+              className="relative min-h-0 flex-1 overflow-hidden"
+              onMouseDown={(e) => {
+                drag.current = e.clientX;
+              }}
+              onMouseUp={(e) => {
+                if (drag.current === null) return;
+                const dx = e.clientX - drag.current;
+                drag.current = null;
+                if (dx <= -SWIPE_PX) go(1);
+                else if (dx >= SWIPE_PX) go(-1);
+              }}
+              onMouseLeave={() => {
+                drag.current = null;
+              }}
+            >
+              <div className="flex h-full transition-transform duration-300 ease-out" style={{ transform: `translateX(-${current * 100}%)` }}>
+                {pages.map((id) => (
+                  <div key={id} className="flex h-full w-full shrink-0 flex-col">
+                    {id === "instance" && <InstanceList state={s} />}
+                    {id === "team" && <TeamList />}
+                    {id === "chatbox" && <Chatbox />}
+                    {id === "teamchat" && <TeamChat />}
+                  </div>
                 ))}
               </div>
-              <NavButton label="Weiter" disabled={current === pages.length - 1} onClick={() => go(1)}>
-                <ChevronRight className="size-6" />
-              </NavButton>
-            </nav>
-          )}
-        </>
-      )}
-
-      <InfoBar place="bottom" info={info} />
+            </div>
+            {pages.length > 1 && (
+              <nav className="flex items-center gap-1.5">
+                <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
+                  <ChevronLeft className="size-5" />
+                </NavButton>
+                <div className="flex flex-1 items-center justify-center gap-1.5">
+                  {pages.map((id, i) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPage(i)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-[13px] font-medium",
+                        i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
+                      )}
+                    >
+                      {PAGE_TITLE[id]}
+                    </button>
+                  ))}
+                </div>
+                <NavButton label="Weiter" disabled={current === pages.length - 1} onClick={() => go(1)}>
+                  <ChevronRight className="size-5" />
+                </NavButton>
+              </nav>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-/** Small bar with the info items chosen for this place (FurrSettings → FurrBox VR). */
-function InfoBar({ place, info }: { place: "top" | "bottom"; info: Record<VrInfoId, string | null> }) {
+/** Info items chosen for this place ("Oben" = upper part of the left column, "Unten" = lower part). */
+function InfoGroup({ place, info }: { place: "top" | "bottom"; info: Record<VrInfoId, string | null> }) {
   const infos = useVrSettings((s) => s.infos);
   const ids = (Object.keys(info) as VrInfoId[]).filter((id) => infos[id] === place && info[id]);
-  if (ids.length === 0) return null;
   return (
-    <div
-      className={cn(
-        "flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl bg-white/6 px-3",
-        place === "top" ? "py-2" : "justify-center py-1.5 text-white/65",
-      )}
-    >
+    <div className={cn("grid gap-1", place === "bottom" && "text-white/65")}>
       {ids.map((id) => (
-        <span
+        <p
           key={id}
           className={cn(
-            "flex min-w-0 items-center gap-1.5 truncate",
-            id === "time" && place === "top" ? "text-[24px] font-bold tabular-nums leading-none" : "text-[13px]",
-            id === "world" && "min-w-[45%] flex-1 font-semibold",
+            "flex items-center gap-1.5",
+            id === "time" ? "text-[34px] font-bold tabular-nums leading-none" : "text-[13px] leading-snug",
+            id === "world" && "font-semibold",
           )}
         >
           {id === "people" && <Users className="size-3.5 shrink-0" />}
-          <span className="truncate">{info[id]}</span>
-        </span>
+          <span className={cn(id === "world" ? "line-clamp-2" : "truncate")}>{info[id]}</span>
+        </p>
       ))}
     </div>
   );
@@ -207,7 +224,7 @@ function NavButton({ label, disabled, onClick, children }: { label: string; disa
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25"
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25"
     >
       {children}
     </button>
@@ -216,12 +233,12 @@ function NavButton({ label, disabled, onClick, children }: { label: string; disa
 
 function VoteAlert({ vote }: { vote: NonNullable<VrcInstanceState["votes"]>[number] }) {
   return (
-    <div className="furr-vr-alert flex items-center gap-3 rounded-2xl border-2 border-red-400 bg-red-500/25 px-4 py-3">
-      <AlertTriangle className="size-9 shrink-0 text-red-300" />
+    <div className="furr-vr-alert flex items-center gap-3 rounded-2xl border-2 border-red-400 bg-red-500/25 px-3 py-2">
+      <AlertTriangle className="size-8 shrink-0 text-red-300" />
       <div className="min-w-0">
-        <p className="text-[13px] font-bold uppercase tracking-wide text-red-200">Votekick gestartet · {clock(vote.at)}</p>
-        <p className="truncate text-[19px] font-bold leading-tight">gegen {vote.target}</p>
-        <p className="truncate text-[14px] text-white/80">
+        <p className="text-[12px] font-bold uppercase tracking-wide text-red-200">Votekick gestartet · {clock(vote.at)}</p>
+        <p className="truncate text-[18px] font-bold leading-tight">gegen {vote.target}</p>
+        <p className="truncate text-[13px] text-white/80">
           {vote.initiator ? (
             <>
               gestartet von <b>{vote.initiator}</b>
@@ -245,7 +262,7 @@ function InstanceList({ state: s }: { state: VrcInstanceState | undefined }) {
       </Hint>
     );
   }
-  const recent = s.events.slice(0, 3);
+  const recent = s.events.slice(0, 2);
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-1.5 rounded-2xl bg-white/6 p-2.5">
       <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-auto">
@@ -268,6 +285,49 @@ function InstanceList({ state: s }: { state: VrcInstanceState | undefined }) {
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+const ROLE_ORDER = ["dev", "owner", "moderator", "supporter"];
+
+/** How reachable a team member is right now. */
+function availability(u: PresenceUser) {
+  if (u.isAppOnline) return { rank: 0, dot: "bg-emerald-400", text: "bereit" };
+  if (u.isDiscordOnline) return { rank: 1, dot: "bg-amber-300", text: u.discordStatus === "dnd" ? "nicht stören" : "nur Discord" };
+  return { rank: 2, dot: "bg-white/25", text: "offline" };
+}
+
+/** Team list: who can moderate right now (FurrBox open) and who cannot. */
+function TeamList() {
+  const team = useQuery({ queryKey: ["furr", "presence", "team"], queryFn: () => listPresence({ data: "team" }), refetchInterval: 15_000 });
+  if (team.isError) return <Hint>{errorMessage(team.error)}</Hint>;
+  const list = [...(team.data ?? [])].sort(
+    (a, b) => availability(a).rank - availability(b).rank || ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.displayName.localeCompare(b.displayName, "de"),
+  );
+  const ready = list.filter((u) => u.isAppOnline).length;
+  return (
+    <section className="flex min-h-0 flex-1 flex-col gap-1.5 rounded-2xl bg-white/6 p-2.5">
+      <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
+        <ShieldCheck className="size-3.5" /> Team · {ready} bereit zum Moderieren
+      </p>
+      <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-1 overflow-auto">
+        {list.map((u) => {
+          const a = availability(u);
+          return (
+            <div key={u.id} className={cn("flex items-center gap-2 rounded-lg px-2 py-1", a.rank === 0 ? "bg-emerald-500/12" : "bg-white/5", a.rank === 2 && "opacity-55")}>
+              <span className={cn("size-2.5 shrink-0 rounded-full", a.dot)} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium leading-tight">{u.nickname || u.displayName}</span>
+                <span className="block truncate text-[11px] text-white/55">
+                  {u.roleLabel} · {a.text}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+        {team.data && list.length === 0 && <p className="col-span-2 text-[13px] text-white/50">Kein Team gefunden.</p>}
+      </div>
     </section>
   );
 }
@@ -306,7 +366,7 @@ function Chatbox() {
             type="button"
             onClick={() => void send(t)}
             className={cn(
-              "overflow-hidden rounded-xl px-3 py-2 text-left text-[15px] font-medium leading-tight active:scale-95",
+              "overflow-hidden rounded-xl px-3 py-1.5 text-left text-[14px] font-medium leading-tight active:scale-95",
               sent === t ? "bg-emerald-500/30" : "bg-white/10 hover:bg-accent/40",
             )}
           >
@@ -324,9 +384,9 @@ function TeamChat() {
     queryFn: () => listChatMessages({ data: { channel: "team" } }),
     refetchInterval: 5_000,
   });
-  const last = (chat.data ?? []).slice(-8);
+  const last = (chat.data ?? []).slice(-6);
   return (
-    <section className="flex min-h-0 flex-1 flex-col justify-end gap-1 overflow-hidden rounded-2xl bg-white/6 p-2.5">
+    <section className="flex min-h-0 flex-1 flex-col justify-end gap-0.5 overflow-hidden rounded-2xl bg-white/6 p-2.5">
       <p className="mb-auto flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
         <MessageSquare className="size-3.5" /> Team-Chat
       </p>
@@ -334,11 +394,9 @@ function TeamChat() {
         <p className="text-[13px] text-white/50">Noch keine Nachrichten.</p>
       ) : (
         last.map((m) => (
-          <p key={m.id} className="text-[14px] leading-snug">
-            <b className="font-semibold text-accent">{m.senderName}</b>{" "}
-            <span className="text-white/45">{clock(m.createdAt)}</span>
-            <br />
-            <span className="line-clamp-2 text-white/85">{m.content}</span>
+          <p key={m.id} className="truncate text-[14px] leading-snug">
+            <span className="tabular-nums text-white/40">{clock(m.createdAt)}</span>{" "}
+            <b className="font-semibold text-accent">{m.senderName}</b> <span className="text-white/85">{m.content}</span>
           </p>
         ))
       )}

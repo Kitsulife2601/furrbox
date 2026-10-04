@@ -1,6 +1,19 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.17",
+    "title": "FurrBox VR im Querformat mit Team-Liste",
+    "items": [
+      "Das Fenster am Arm ist jetzt quer und liegt flach von der Hand bis zum Handgelenk – wie eine breite Uhr.",
+      "Neue Seite „Team“: Owner, Mods und Supporter mit Status – grün = FurrBox offen und bereit zum Moderieren, gelb = nur in Discord online, grau = offline.",
+      "Neuer Hinweis am Arm, sobald der Bot eine neu geöffnete Instanz unserer Gruppe sieht (Welt, Anzahl Leute, Region).",
+      "Die Infos (Uhrzeit, Welt, …) stehen jetzt in einer schmalen Spalte links, die Seiten rechts daneben.",
+      "Behoben: Die Ein/Aus-Schalter unter „FurrBox VR“ wirken jetzt sofort – auch am Arm. Wird „Dauerhaft in der Chatbox“ ausgeschaltet, verschwindet der Text gleich aus der Chatbox.",
+      "Neue Positionen zum Anklicken: „Hand bis Handgelenk“, „Unterarm“ und „Handkante“."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.16",
     "title": "Infos dauerhaft in der VRChat-Chatbox",
     "items": [

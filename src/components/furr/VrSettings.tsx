@@ -11,9 +11,9 @@ type Placement = { hand: "left" | "right"; width: number; x: number; y: number; 
 
 /** Ready-made positions (for the left arm; mirrored for the right one). */
 const PRESETS: { id: string; label: string; hint: string; place: Omit<Placement, "hand"> }[] = [
-  { id: "edge", label: "Handkante", hint: "seitlich außen an der Hand", place: { width: 0.13, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 } },
-  { id: "watch", label: "Unterarm", hint: "wie eine Uhr am Unterarm", place: { width: 0.14, x: 0, y: 0.03, z: 0.22, tilt: 20, roll: 0, turn: 0 } },
-  { id: "top", label: "Über der Hand", hint: "flach über der Hand", place: { width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0, roll: 0, turn: 0 } },
+  { id: "wrist", label: "Hand bis Handgelenk", hint: "quer und flach auf dem Handrücken", place: { width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 } },
+  { id: "watch", label: "Unterarm", hint: "quer, weiter Richtung Ellbogen", place: { width: 0.2, x: 0, y: 0.04, z: 0.22, tilt: 0, roll: 0, turn: 90 } },
+  { id: "edge", label: "Handkante", hint: "seitlich außen an der Hand", place: { width: 0.16, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 } },
 ];
 type VrState = {
   status: "off" | "waiting" | "running" | "unsupported";
@@ -109,7 +109,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.14" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.17" />
       </div>
     );
   }
@@ -279,7 +279,12 @@ export function VrSettings() {
                 onClick={() => {
                   // Mirror left/right for the right arm.
                   const mirror = p.hand === "right" ? -1 : 1;
-                  place({ ...preset.place, x: preset.place.x * mirror, roll: (preset.place.roll ?? 0) * mirror });
+                  place({
+                    ...preset.place,
+                    x: preset.place.x * mirror,
+                    roll: (preset.place.roll ?? 0) * mirror,
+                    turn: (preset.place.turn ?? 0) * mirror,
+                  });
                 }}
                 className="rounded-lg border border-border bg-elevated/40 px-2 py-2 text-left hover:border-accent"
               >
@@ -296,7 +301,7 @@ export function VrSettings() {
           <Slider label="Seitlich kippen" value={Math.round(p.roll ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ roll: v })} />
           <Slider label="Drehen" value={Math.round(p.turn ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ turn: v })} />
           <p className="text-[11px] text-subtle">
-            Zeigt das Fenster bei „Handkante“ von dir weg, stell „Seitlich kippen“ auf den Wert mit umgekehrtem Vorzeichen (z. B. −90 statt 90).
+            Steht der Text auf dem Kopf, stell „Drehen“ auf den Wert mit umgekehrtem Vorzeichen (z. B. −90 statt 90).
           </p>
         </section>
       )}

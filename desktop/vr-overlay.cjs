@@ -26,8 +26,9 @@ const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
 const INPUT_MOUSE = 1;
 const EVENT_SIZE = 64;
 
-const WIDTH = 480;
-const HEIGHT = 640;
+// Landscape: the panel lies along the arm.
+const WIDTH = 640;
+const HEIGHT = 400;
 
 /** Where SteamVR lives (from %LOCALAPPDATA%\openvr\openvrpaths.vrpath). */
 function findOpenvrDll() {
@@ -48,8 +49,9 @@ function findOpenvrDll() {
  * Panel position relative to the controller, in metres / degrees. The panel lies flat above the
  * controller like a wrist tablet: its top edge points away from you.
  */
-// Default: at the outer edge of the left hand ("Handkante").
-const DEFAULT_PLACEMENT = { hand: "left", width: 0.13, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 };
+// Default: flat on the back of the left hand up to the wrist, readable when you look at your arm
+// like at a watch (turn 90° = the long side runs along the arm).
+const DEFAULT_PLACEMENT = { hand: "left", width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 };
 
 function matrixFor(p) {
   // Overlay X -> controller X, overlay up (Y) -> controller forward (-Z), overlay normal (Z) -> controller up (Y),
