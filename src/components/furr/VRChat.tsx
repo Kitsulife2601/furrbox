@@ -61,6 +61,8 @@ export type VrcInstanceState = {
   players: VrcLogPlayer[];
   left: (VrcLogPlayer & { leftAt: string })[];
   events: { kind: "join" | "leave"; name: string; id: string | null; at: string }[];
+  /** Vote kicks seen in this instance, newest first (desktop 2.0.12+). */
+  votes?: { id: string; target: string; initiator: string | null; at: string; result: "kicked" | "failed" | null }[];
   /** Only in worlds with the FurrBox map script (vrchat-world/FurrBoxMap.cs). */
   map?: {
     bounds: { minX: number; minZ: number; maxX: number; maxZ: number } | null;

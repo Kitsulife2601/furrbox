@@ -12,6 +12,8 @@ const net = require("node:net");
 const path = require("node:path");
 const { createVrchat } = require("./vrchat.cjs");
 const { createLogWatcher } = require("./vrchat-log.cjs");
+const { createVrOverlay } = require("./vr-overlay.cjs");
+const { sendChatbox } = require("./osc.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -39,7 +41,8 @@ function serverUrlFor(config) {
 function readConfig() {
   // discordClientId/-Secret: Discord application for the login (redirect URI
   // http://127.0.0.1:47821/api/auth/callback/discord). discordGuildId is optional.
-  const defaults = { serverUrl: "", fullscreen: true, discordClientId: "", discordClientSecret: "", discordGuildId: "" };
+  // vr: the FurrBox panel on your arm in SteamVR (see vr-overlay.cjs).
+  const defaults = { serverUrl: "", fullscreen: true, discordClientId: "", discordClientSecret: "", discordGuildId: "", vr: { enabled: true, placement: {} } };
   try {
     return { ...defaults, ...JSON.parse(fs.readFileSync(configPath, "utf8")) };
   } catch {
@@ -235,9 +238,23 @@ ipcMain.handle("furrbox:update-install", () => {
 // Personal VRChat login (see vrchat.cjs). Only the FurrBox page itself may use it – not pages
 // opened in the FurrBrowser <webview> (they run in their own webContents).
 const vrchat = createVrchat(userData);
+// FurrBox VR (arm panel). Its /vr page runs in an offscreen window and may use the same calls.
+const vrOverlay = createVrOverlay({
+  BrowserWindow,
+  preload: path.join(__dirname, "preload.cjs"),
+  log: (...args) => console.log("[vr]", ...args),
+});
+let appUrl = null;
+
+/** Only the FurrBox page itself (main window or the VR panel) may call the bridges. */
+function trusted(event) {
+  const contents = [mainWindow?.webContents, vrOverlay.webContents()].filter(Boolean);
+  return contents.some((c) => event.sender === c && event.senderFrame === c.mainFrame);
+}
+
 function vrchatHandler(name, fn) {
   ipcMain.handle(`furrbox:vrchat-${name}`, async (event, ...args) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+    if (!trusted(event)) {
       return { ok: false, error: "Nicht erlaubt." };
     }
     try {
@@ -258,6 +275,51 @@ vrchatHandler("instance", () => vrchatLog.poll());
 vrchatHandler("people", (ids) => vrchat.people(ids));
 vrchatHandler("world", (worldId) => vrchat.world(String(worldId ?? "")));
 vrchatHandler("moderate", (action, groupId, userId) => vrchat.moderate(String(action), String(groupId), String(userId)));
+
+function saveVr(patch) {
+  const config = readConfig();
+  config.vr = { enabled: true, placement: {}, ...(config.vr ?? {}), ...patch };
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+  return config.vr;
+}
+function vrStatus() {
+  return { ...vrOverlay.status(), enabled: readConfig().vr?.enabled !== false };
+}
+vrOverlay.onChange(() => mainWindow?.webContents.send("furrbox:vr", vrStatus()));
+ipcMain.handle("furrbox:vr-status", (event) => (trusted(event) ? vrStatus() : null));
+ipcMain.handle("furrbox:vr-enable", (event, on) => {
+  if (!trusted(event)) return null;
+  saveVr({ enabled: Boolean(on) });
+  if (on && appUrl) vrOverlay.start(appUrl, readConfig().vr?.placement);
+  else vrOverlay.stop();
+  return vrStatus();
+});
+ipcMain.handle("furrbox:vr-placement", (event, input) => {
+  if (!trusted(event)) return null;
+  const num = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+  const current = { ...readConfig().vr?.placement };
+  const placement = {
+    hand: input?.hand === "right" ? "right" : input?.hand === "left" ? "left" : (current.hand ?? "left"),
+    width: num(input?.width, 0.08, 0.6, current.width ?? 0.2),
+    x: num(input?.x, -0.5, 0.5, current.x ?? 0),
+    y: num(input?.y, -0.5, 0.5, current.y ?? 0.06),
+    z: num(input?.z, -0.5, 0.5, current.z ?? 0.1),
+    tilt: num(input?.tilt, -90, 90, current.tilt ?? 0),
+  };
+  saveVr({ placement });
+  vrOverlay.setPlacement(placement);
+  return vrStatus();
+});
+// OSC to VRChat (chatbox text). Text only, max. 144 characters – VRChat's own limit.
+ipcMain.handle("furrbox:osc-chatbox", async (event, text) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    await sendChatbox(String(text ?? ""));
+    return { ok: true, value: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
 
 function setStatus(text, isError = false) {
   mainWindow?.webContents.send("furrbox:status", text, isError);
@@ -310,6 +372,8 @@ async function createWindow() {
     await minimum;
     if (mode) fs.writeFileSync(setupMarker, new Date().toISOString());
     await mainWindow.loadURL(url);
+    appUrl = url;
+    if (config.vr?.enabled !== false) vrOverlay.start(url, config.vr?.placement);
   } catch (error) {
     setStatus(`${error instanceof Error ? error.message : String(error)}\n\nKonfiguration: ${configPath}`, true);
   }
@@ -361,6 +425,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     app.isQuitting = true;
     globalShortcut.unregisterAll();
+    vrOverlay.stop();
     if (serverProcess) serverProcess.kill();
   });
 

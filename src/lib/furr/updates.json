@@ -1,6 +1,19 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.12",
+    "title": "FurrBox VR: Fenster am Arm in SteamVR",
+    "items": [
+      "Neu: FurrBox VR. Läuft SteamVR, hängt ein FurrBox-Fenster an deinem Arm – bedient mit dem Laser vom anderen Controller.",
+      "Am Arm siehst du Uhrzeit, aktuelle Welt, wer in der Instanz ist und wer kommt oder geht.",
+      "Votekick-Warnung: Startet jemand einen Votekick, blinkt am Arm ein roter Hinweis – gegen wen, und wer ihn gestartet hat, sofern VRChat das nennt.",
+      "Chatbox-Knöpfe: Ein Druck am Arm schreibt per OSC einen deiner Schnelltexte in die VRChat-Chatbox.",
+      "Auf dem Desktop unter FurrSettings → „FurrBox VR“ stellst du ein, welche Bereiche du sehen willst, welche Schnelltexte es gibt und wo das Fenster am Arm sitzt (Arm, Größe, Position, Neigung).",
+      "Optional am Arm: die neuesten Nachrichten aus dem Team-Chat."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.11",
     "title": "Eigene Animationen für Herunterfahren und Setup",
     "items": [

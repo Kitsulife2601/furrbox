@@ -28,6 +28,7 @@ import {
 } from "@/components/desktop/UpdatePopup";
 import UPDATES from "@/lib/furr/updates.json";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
+import { VrSettings } from "./VrSettings";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
 const WALLS: { id: WallpaperId; label: string }[] = [
@@ -45,7 +46,7 @@ const FITS: { id: WallpaperFit; label: string }[] = [
   { id: "tile", label: "Kacheln" },
 ];
 
-type Section = "personal" | "account" | "chat" | "system";
+type Section = "personal" | "account" | "chat" | "vr" | "system";
 
 export function Settings() {
   const me = useMe();
@@ -56,6 +57,7 @@ export function Settings() {
     ...(me.data?.permissions.canConfigureChat
       ? ([["chat", "FurrChat"]] as [Section, string][])
       : []),
+    ["vr", "FurrBox VR"],
     ["system", "System"],
   ];
   return (
@@ -79,6 +81,7 @@ export function Settings() {
         {section === "personal" && <Personal />}
         {section === "account" && <Account />}
         {section === "chat" && <ChatRetention />}
+        {section === "vr" && <VrSettings />}
         {section === "system" && <SystemInfo />}
       </div>
     </div>

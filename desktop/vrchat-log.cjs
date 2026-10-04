@@ -10,6 +10,14 @@ const LOG_DIR = process.env.FURRBOX_VRCHAT_LOG_DIR || path.join(os.homedir(), "A
 //   [FurrBoxMap] b|minX|minZ|maxX|maxZ   map area in decimetres   [FurrBoxMap] i|<url>   top-down picture
 //   [FurrBoxMap] n|<playerId>|<name>     player name              [FurrBoxMap] t|<id>:<x>:<z>:<rotY>|…
 const MAP_TAG = "[FurrBoxMap] ";
+// Vote kicks, as VRChat writes them:
+//   [ModerationManager] A vote kick has been initiated against NAME, do you agree?
+//   [ModerationManager] STARTER has initiated a vote kick against NAME.   (who started it, when VRChat logs it)
+//   [ModerationManager] Vote to kick NAME succeeded
+const MOD_TAG = "[ModerationManager] ";
+const VOTE_AGAINST = /^A vote kick has been initiated against (.+?), do you agree\?$/;
+const VOTE_BY = /^(.+?) has initiated a vote kick against (.+?)\.?$/;
+const VOTE_DONE = /^Vote to kick (.+?) (succeeded|failed)\.?$/;
 const LINE = /^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2}) \w+\s+-\s+(.*)$/;
 const PLAYER = /^(.+?)(?: \((usr_[0-9a-f-]{36})\))?$/i;
 const MAX_EVENTS = 300;
@@ -30,6 +38,7 @@ function createLogWatcher() {
       left: [],
       events: [],
       map: { bounds: null, image: null, names: new Map(), positions: new Map(), at: null },
+      votes: [],
     };
   }
 
@@ -56,6 +65,8 @@ function createLogWatcher() {
     }
     const tag = m[7].indexOf(MAP_TAG);
     if (tag >= 0) return handleMap(m[7].slice(tag + MAP_TAG.length).trim(), at);
+    const mod = m[7].indexOf(MOD_TAG);
+    if (mod >= 0) return handleVote(m[7].slice(mod + MOD_TAG.length).trim(), at);
     if (!m[7].startsWith("[Behaviour] ")) return;
     const msg = m[7].slice(12);
     if (msg.startsWith("Entering Room: ")) {
@@ -87,6 +98,23 @@ function createLogWatcher() {
       state.events.push({ kind: "leave", name: p[1], id: p[2] ?? null, at });
     }
     if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
+  }
+
+  function handleVote(msg, at) {
+    let v = VOTE_BY.exec(msg);
+    if (v) {
+      // The same vote may already be known from the "initiated against" line – add who started it.
+      const open = state.votes.find((x) => x.target === v[2] && !x.initiator && Date.parse(at) - Date.parse(x.at) < 10_000);
+      if (open) open.initiator = v[1];
+      else state.votes.push({ id: `${at}-${v[2]}`, target: v[2], initiator: v[1], at, result: null });
+    } else if ((v = VOTE_AGAINST.exec(msg))) {
+      const open = state.votes.find((x) => x.target === v[1] && Date.parse(at) - Date.parse(x.at) < 10_000);
+      if (!open) state.votes.push({ id: `${at}-${v[1]}`, target: v[1], initiator: null, at, result: null });
+    } else if ((v = VOTE_DONE.exec(msg))) {
+      const open = [...state.votes].reverse().find((x) => x.target === v[1] && !x.result);
+      if (open) open.result = v[2] === "succeeded" ? "kicked" : "failed";
+    }
+    if (state.votes.length > 30) state.votes = state.votes.slice(-30);
   }
 
   function handleMap(msg, at) {
@@ -139,7 +167,7 @@ function createLogWatcher() {
         const text = rest + chunk.toString("utf8", 0, n);
         const lines = text.split(/\r?\n/);
         rest = lines.pop() ?? "";
-        for (const line of lines) if (line.includes("[Behaviour]") || line.includes(MAP_TAG) || line.includes("HandleApplicationQuit")) handle(line);
+        for (const line of lines) if (line.includes("[Behaviour]") || line.includes(MAP_TAG) || line.includes(MOD_TAG) || line.includes("HandleApplicationQuit")) handle(line);
       }
     } finally {
       fs.closeSync(fd);
@@ -167,6 +195,7 @@ function createLogWatcher() {
         players: [...state.players.values()],
         left: state.left,
         events: state.events.slice(-100).reverse(),
+        votes: state.votes.slice(-10).reverse(),
         map: state.map.at
           ? {
               bounds: state.map.bounds,

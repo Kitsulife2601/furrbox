@@ -27,5 +27,19 @@ contextBridge.exposeInMainWorld("furrbox", {
     world: (worldId) => ipcRenderer.invoke("furrbox:vrchat-world", worldId),
     moderate: (action, groupId, userId) => ipcRenderer.invoke("furrbox:vrchat-moderate", action, groupId, userId),
   },
+  // FurrBox VR: the panel on your arm in SteamVR.
+  vr: {
+    status: () => ipcRenderer.invoke("furrbox:vr-status"),
+    enable: (on) => ipcRenderer.invoke("furrbox:vr-enable", on),
+    setPlacement: (placement) => ipcRenderer.invoke("furrbox:vr-placement", placement),
+    onChange: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("furrbox:vr", listener);
+      return () => ipcRenderer.removeListener("furrbox:vr", listener);
+    },
+  },
+  osc: {
+    chatbox: (text) => ipcRenderer.invoke("furrbox:osc-chatbox", text),
+  },
   onStatus: (callback) => ipcRenderer.on("furrbox:status", (_event, text, isError) => callback(text, isError)),
 });

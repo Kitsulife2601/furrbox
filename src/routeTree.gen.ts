@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as VrRouteImport } from './routes/vr'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBridgeSplatRouteImport } from './routes/api/bridge/$'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VrRoute = VrRouteImport.update({
+  id: '/vr',
+  path: '/vr',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -38,12 +44,14 @@ const ApiBridgeSplatRoute = ApiBridgeSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/vr': typeof VrRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bridge/$': typeof ApiBridgeSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/vr': typeof VrRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bridge/$': typeof ApiBridgeSplatRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/vr': typeof VrRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bridge/$': typeof ApiBridgeSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/api/auth/$' | '/api/bridge/$'
+  fullPaths: '/' | '/login' | '/vr' | '/api/auth/$' | '/api/bridge/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/api/auth/$' | '/api/bridge/$'
-  id: '__root__' | '/' | '/login' | '/api/auth/$' | '/api/bridge/$'
+  to: '/' | '/login' | '/vr' | '/api/auth/$' | '/api/bridge/$'
+  id: '__root__' | '/' | '/login' | '/vr' | '/api/auth/$' | '/api/bridge/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  VrRoute: typeof VrRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBridgeSplatRoute: typeof ApiBridgeSplatRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vr': {
+      id: '/vr'
+      path: '/vr'
+      fullPath: '/vr'
+      preLoaderRoute: typeof VrRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  VrRoute: VrRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBridgeSplatRoute: ApiBridgeSplatRoute,
 }
