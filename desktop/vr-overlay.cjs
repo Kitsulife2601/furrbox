@@ -26,9 +26,9 @@ const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
 const INPUT_MOUSE = 1;
 const EVENT_SIZE = 64;
 
-// Landscape: the panel lies along the arm.
-const WIDTH = 640;
-const HEIGHT = 400;
+// Landscape: the panel lies along the arm. Collapsed, only a small round button is shown.
+const FULL = { width: 640, height: 400 };
+const BUTTON = { width: 128, height: 128, meters: 0.045 };
 
 /** Where SteamVR lives (from %LOCALAPPDATA%\openvr\openvrpaths.vrpath). */
 function findOpenvrDll() {
@@ -105,6 +105,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let lastHit = 0;
   let mouseDown = false;
   let lastFrameError = -1;
+  let collapsed = false;
+  const size = () => (collapsed ? BUTTON : FULL);
   const listeners = new Set();
 
   function setState(patch) {
@@ -181,10 +183,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       api.ovr("SetOverlayFlag", "int FN(uint64_t, int, bool)", handle, FLAG_SCROLL, true);
       visible = false;
       interactive = false;
-      const scale = Buffer.alloc(8);
-      scale.writeFloatLE(WIDTH, 0);
-      scale.writeFloatLE(HEIGHT, 4);
-      api.ovr("SetOverlayMouseScale", "int FN(uint64_t, void*)", handle, scale);
+      applySize();
       attachedTo = INVALID_DEVICE;
       applyPlacement();
       openPage();
@@ -201,7 +200,12 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function applyPlacement() {
     if (!api || handle === null) return;
-    api.ovr("SetOverlayWidthInMeters", "int FN(uint64_t, float)", handle, Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.2)));
+    api.ovr(
+      "SetOverlayWidthInMeters",
+      "int FN(uint64_t, float)",
+      handle,
+      collapsed ? BUTTON.meters : Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.2)),
+    );
     const hands = findHands();
     const device = placement.hand === "right" ? hands.right : hands.left;
     pointerHand = placement.hand === "right" ? hands.left : hands.right;
@@ -220,6 +224,16 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     attachedTo = device;
     show(true);
     if (changed) for (const fn of listeners) fn(status());
+  }
+
+  /** Mouse coordinates follow the size of the page (button or full panel). */
+  function applySize() {
+    if (!api || handle === null) return;
+    const scale = Buffer.alloc(8);
+    scale.writeFloatLE(size().width, 0);
+    scale.writeFloatLE(size().height, 4);
+    api.ovr("SetOverlayMouseScale", "int FN(uint64_t, void*)", handle, scale);
+    if (win && !win.isDestroyed()) win.setContentSize(size().width, size().height);
   }
 
   function show(on) {
@@ -293,8 +307,9 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   function openPage() {
     if (win || !url) return;
     win = new BrowserWindow({
-      width: WIDTH,
-      height: HEIGHT,
+      width: size().width,
+      height: size().height,
+      useContentSize: true,
       show: false,
       frame: false,
       transparent: true,
@@ -333,7 +348,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function mouse(type, x, y, extra = {}) {
     if (!win || win.isDestroyed()) return;
-    win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(HEIGHT - y), ...extra });
+    win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(size().height - y), ...extra });
   }
 
   function pump() {
@@ -355,7 +370,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           mouse("mouseUp", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.scrollSmooth || type === EVENT.scroll) {
           // Scroll data: xdelta, ydelta (floats) – position is unknown, scroll the middle of the page.
-          win?.webContents.sendInputEvent({ type: "mouseWheel", x: WIDTH / 2, y: HEIGHT / 2, deltaX: x * 120, deltaY: y * 120 });
+          win?.webContents.sendInputEvent({ type: "mouseWheel", x: size().width / 2, y: size().height / 2, deltaX: x * 120, deltaY: y * 120 });
         }
       }
       // SteamVR is closing: let go, otherwise it waits for us.
@@ -427,6 +442,14 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       applyPlacement();
       for (const fn of listeners) fn(status());
       return placement;
+    },
+    /** Small button (true) or the full panel (false) – chosen by the /vr page. */
+    setCollapsed(on) {
+      if (collapsed === Boolean(on)) return;
+      collapsed = Boolean(on);
+      applySize();
+      attachedTo = INVALID_DEVICE;
+      applyPlacement();
     },
     /** Tells the /vr page something (e.g. new settings). */
     send(channel, payload) {

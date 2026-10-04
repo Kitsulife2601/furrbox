@@ -96,6 +96,8 @@ export function VrSettings() {
   const texts = useVrSettings((s) => s.texts);
   const setTexts = useVrSettings((s) => s.setTexts);
   const [draft, setDraft] = useState(texts.join("\n"));
+  const buttonMode = useVrSettings((s) => s.buttonMode);
+  const setButtonMode = useVrSettings((s) => s.setButtonMode);
   const status = useVrSettings((s) => s.status);
   const setStatus = useVrSettings((s) => s.setStatus);
 
@@ -109,7 +111,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.17" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.18" />
       </div>
     );
   }
@@ -135,6 +137,18 @@ export function VrSettings() {
           </p>
         </div>
         <Toggle on={Boolean(state?.enabled)} label="FurrBox VR" onChange={(on) => void bridge.enable(on).then(setState)} />
+      </div>
+
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium">Nur ein kleiner Knopf am Arm</p>
+          <p className="text-[12px] text-muted">
+            {buttonMode
+              ? "Am Arm sitzt nur ein kleiner Pfoten-Knopf. Tippst du ihn an, klappt das Fenster auf. Bei Votekick, neuer Chat-Nachricht oder neuer Gruppen-Instanz öffnet es sich von selbst und schließt sich danach wieder."
+              : "Das Fenster ist dauerhaft am Arm zu sehen."}
+          </p>
+        </div>
+        <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
       </div>
 
       <section className="grid gap-2">

@@ -4,7 +4,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, DoorOpen, LogIn, LogOut, MessageSquare, Radar, Send, ShieldCheck, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  DoorOpen,
+  LogIn,
+  LogOut,
+  MessageSquare,
+  Music,
+  Pause,
+  PawPrint,
+  Play,
+  Radar,
+  Send,
+  ShieldCheck,
+  SkipBack,
+  SkipForward,
+  Users,
+  X,
+} from "lucide-react";
 import { desktopVrchat, unwrap, type VrcInstanceState } from "@/components/furr/VRChat";
 import { listChatMessages } from "@/lib/furr/api/chat";
 import { listPresence } from "@/lib/furr/api/presence";
@@ -17,6 +36,16 @@ import { syncVrSettings, useVrSettings, type VrInfoId, type VrWidgetId } from "@
 type OscBridge = { chatbox(text: string): Promise<{ ok: true } | { ok: false; error: string }> };
 const osc = () => (window as { furrbox?: { osc?: OscBridge } }).furrbox?.osc ?? null;
 
+type Song = { playing: boolean; title: string; artist: string; app: string };
+type MediaBridge = { state(): Promise<Song | null>; control(action: "toggle" | "next" | "prev"): Promise<boolean> };
+const mediaBridge = () => (window as { furrbox?: { media?: MediaBridge } }).furrbox?.media ?? null;
+const panelBridge = () => (window as { furrbox?: { vr?: { setCollapsed?(on: boolean): Promise<boolean> } } }).furrbox?.vr ?? null;
+
+/** After opening by itself (vote kick, chat, new instance) the panel closes again after this time. */
+const AUTO_CLOSE_MS = 25_000;
+/** A new chat message is announced this long. */
+const CHAT_ALERT_MS = 20_000;
+
 /** A vote kick stays on screen this long. */
 const VOTE_ALERT_MS = 45_000;
 /** A newly opened group instance is announced this long. */
@@ -24,9 +53,9 @@ const INSTANCE_ALERT_MS = 2 * 60_000;
 /** Drag further than this (px) to change the page. */
 const SWIPE_PX = 60;
 
-type PageId = Exclude<VrWidgetId, "votekick" | "instanceAlert">;
-const PAGES: PageId[] = ["instance", "team", "chatbox", "teamchat"];
-const PAGE_TITLE: Record<PageId, string> = { instance: "Instanz", team: "Team", chatbox: "Chatbox", teamchat: "Chat" };
+type PageId = Exclude<VrWidgetId, "votekick" | "instanceAlert" | "chatAlert">;
+const PAGES: PageId[] = ["instance", "team", "music", "chatbox", "teamchat"];
+const PAGE_TITLE: Record<PageId, string> = { instance: "Instanz", team: "Team", music: "Musik", chatbox: "Chatbox", teamchat: "Chat" };
 
 function clock(at: string | null) {
   return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
@@ -45,6 +74,22 @@ function VrPanel() {
   const [now, setNow] = useState(() => new Date());
   const [page, setPage] = useState(0);
   const drag = useRef<number | null>(null);
+  const buttonMode = useVrSettings((s) => s.buttonMode);
+  // Button mode: closed by default; "auto" = opened by an event and closes again by itself.
+  const [open, setOpen] = useState<false | "manual" | "auto">(false);
+  const closeTimer = useRef<number | null>(null);
+  const collapsed = buttonMode && !open;
+
+  useEffect(() => {
+    void panelBridge()?.setCollapsed?.(collapsed);
+  }, [collapsed]);
+
+  function openBecause(reason: "auto" | "manual") {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    setOpen((current) => (current === "manual" ? "manual" : reason));
+    if (reason === "auto") closeTimer.current = window.setTimeout(() => setOpen((current) => (current === "auto" ? false : current)), AUTO_CLOSE_MS);
+  }
 
   useEffect(() => {
     // The page floats in VR: no page background, only the panel itself.
@@ -81,6 +126,40 @@ function VrPanel() {
   const vote = s?.votes?.find((v) => !v.result && now.getTime() - new Date(v.at).getTime() < VOTE_ALERT_MS) ?? null;
   const lastVote = s?.votes?.[0] ?? null;
 
+  // Newest message of the team chat (for the "new message" hint).
+  const chat = useQuery({
+    queryKey: ["furr", "chat", "team", ""],
+    queryFn: () => listChatMessages({ data: { channel: "team" } }),
+    enabled: Boolean(me.data) && (widgets.chatAlert || widgets.teamchat),
+    refetchInterval: 5_000,
+  });
+  const newest = chat.data?.[chat.data.length - 1] ?? null;
+  const chatAlert =
+    widgets.chatAlert && newest && newest.senderId !== me.data?.userId && now.getTime() - new Date(newest.createdAt).getTime() < CHAT_ALERT_MS
+      ? newest
+      : null;
+
+  const song = useQuery({
+    queryKey: ["furr", "vr", "media"],
+    queryFn: async () => (await mediaBridge()!.state()) ?? null,
+    enabled: Boolean(mediaBridge()) && (widgets.music || infos.music !== "off") && !collapsed,
+    refetchInterval: 3_000,
+  });
+
+  // Something happened: open the panel by itself (button mode), once per event.
+  const eventKey = [widgets.votekick && vote?.id, widgets.instanceAlert && fresh?.instanceId, chatAlert?.id].filter(Boolean).join("|");
+  const seenEvent = useRef("");
+  useEffect(() => {
+    if (!eventKey || eventKey === seenEvent.current) return;
+    seenEvent.current = eventKey;
+    openBecause("auto");
+  }, [eventKey]);
+  // The chat hint depends on the clock – look more often than the 10 s tick while one is due.
+  useEffect(() => {
+    if (!newest) return;
+    setNow(new Date());
+  }, [newest?.id]);
+
   const info: Record<VrInfoId, string | null> = {
     time: now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
     date: now.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
@@ -88,6 +167,7 @@ function VrPanel() {
     people: s?.inInstance ? `${s.players.length} Leute` : null,
     joined: s?.inInstance && s.joinedAt ? `Du: seit ${since(s.joinedAt, now)}` : null,
     instanceAge: s?.inInstance ? (openedAt ? `Instanz offen: ${since(openedAt, now)}` : s.joinedAt ? `Instanz: mind. ${since(s.joinedAt, now)}` : null) : null,
+    music: song.data?.playing && song.data.title ? `♪ ${song.data.title}${song.data.artist ? ` – ${song.data.artist}` : ""}` : null,
   };
 
   const pages = PAGES.filter((id) => widgets[id]);
@@ -95,8 +175,41 @@ function VrPanel() {
   const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
   const hasInfo = (Object.keys(info) as VrInfoId[]).some((id) => infos[id] !== "off" && info[id]);
 
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        aria-label="FurrBox öffnen"
+        onClick={() => openBecause("manual")}
+        className="grid h-screen w-screen place-items-center rounded-full border-4 border-white/25 bg-[#0b0d14]/90 text-accent hover:bg-accent hover:text-black"
+      >
+        <PawPrint className="size-16" strokeWidth={2.2} />
+      </button>
+    );
+  }
+
   return (
-    <div className="flex h-screen w-screen select-none gap-2 overflow-hidden rounded-[24px] border-2 border-white/15 bg-[#0b0d14]/92 p-2.5 text-white">
+    <div
+      className="relative flex h-screen w-screen select-none gap-2 overflow-hidden rounded-[24px] border-2 border-white/15 bg-[#0b0d14]/92 p-2.5 text-white"
+      onMouseDownCapture={() => {
+        // You are using the panel: it stays open until you close it.
+        if (open === "auto") openBecause("manual");
+        setOpen((current) => (current === "auto" ? "manual" : current));
+      }}
+    >
+      {buttonMode && (
+        <button
+          type="button"
+          aria-label="Fenster schließen"
+          onClick={() => {
+            if (closeTimer.current) window.clearTimeout(closeTimer.current);
+            setOpen(false);
+          }}
+          className="absolute right-2 top-2 z-10 grid size-9 place-items-center rounded-full bg-white/12 hover:bg-red-500/70"
+        >
+          <X className="size-5" />
+        </button>
+      )}
       {hasInfo && (
         <aside className="flex w-[168px] shrink-0 flex-col justify-between gap-2 rounded-2xl bg-white/6 p-3">
           <InfoGroup place="top" info={info} />
@@ -113,7 +226,16 @@ function VrPanel() {
             {lastVote.result === "kicked" ? " · gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
           </p>
         )}
-        {widgets.instanceAlert && fresh && !vote && (
+        {chatAlert && !vote && (
+          <div className="flex items-center gap-3 rounded-2xl border-2 border-accent/70 bg-accent/15 px-3 py-2 pr-12">
+            <MessageSquare className="size-7 shrink-0 text-accent" />
+            <div className="min-w-0">
+              <p className="text-[12px] font-bold uppercase tracking-wide text-accent">Neue Nachricht · {chatAlert.senderName}</p>
+              <p className="line-clamp-2 text-[15px] leading-tight">{chatAlert.content}</p>
+            </div>
+          </div>
+        )}
+        {widgets.instanceAlert && fresh && !vote && !chatAlert && (
           <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-400/70 bg-emerald-500/20 px-3 py-2">
             <DoorOpen className="size-7 shrink-0 text-emerald-300" />
             <div className="min-w-0">
@@ -156,6 +278,7 @@ function VrPanel() {
                   <div key={id} className="flex h-full w-full shrink-0 flex-col">
                     {id === "instance" && <InstanceList state={s} />}
                     {id === "team" && <TeamList />}
+                    {id === "music" && <MusicPage song={song.data ?? null} onChanged={() => void song.refetch()} />}
                     {id === "chatbox" && <Chatbox />}
                     {id === "teamchat" && <TeamChat />}
                   </div>
@@ -210,7 +333,7 @@ function InfoGroup({ place, info }: { place: "top" | "bottom"; info: Record<VrIn
           )}
         >
           {id === "people" && <Users className="size-3.5 shrink-0" />}
-          <span className={cn(id === "world" ? "line-clamp-2" : "truncate")}>{info[id]}</span>
+          <span className={cn(id === "world" || id === "music" ? "line-clamp-2" : "truncate")}>{info[id]}</span>
         </p>
       ))}
     </div>
@@ -327,6 +450,50 @@ function TeamList() {
           );
         })}
         {team.data && list.length === 0 && <p className="col-span-2 text-[13px] text-white/50">Kein Team gefunden.</p>}
+      </div>
+    </section>
+  );
+}
+
+/** What is playing (from Windows' media controls) with previous / play-pause / next. */
+function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => void }) {
+  const bridge = mediaBridge();
+  if (!bridge) return <Hint>Musik braucht die FurrBox-Desktop-App.</Hint>;
+  const control = (action: "toggle" | "next" | "prev") => {
+    void bridge.control(action).then(() => window.setTimeout(onChanged, 1200));
+  };
+  const app = song?.app
+    ? /spotify/i.test(song.app)
+      ? "Spotify"
+      : /chrome|msedge|firefox|opera|brave/i.test(song.app)
+        ? "Browser"
+        : song.app.replace(/\.exe$/i, "").split(/[!.]/)[0]
+    : "";
+  return (
+    <section className="flex min-h-0 flex-1 flex-col justify-between gap-2 rounded-2xl bg-white/6 p-3">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
+          <Music className="size-3.5" /> {song?.title ? (song.playing ? "Läuft gerade" : "Pausiert") : "Musik"} {app && `· ${app}`}
+        </p>
+        {song?.title ? (
+          <>
+            <p className="mt-1 line-clamp-2 text-[20px] font-bold leading-tight">{song.title}</p>
+            <p className="truncate text-[15px] text-white/65">{song.artist}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-[14px] text-white/55">Gerade läuft nichts. Starte Musik in Spotify, YouTube oder einem anderen Player.</p>
+        )}
+      </div>
+      <div className="flex items-center justify-center gap-3">
+        <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-12 place-items-center rounded-full bg-white/10 hover:bg-white/20">
+          <SkipBack className="size-6" />
+        </button>
+        <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-14 place-items-center rounded-full bg-accent text-black hover:brightness-110">
+          {song?.playing ? <Pause className="size-7" /> : <Play className="size-7" />}
+        </button>
+        <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-12 place-items-center rounded-full bg-white/10 hover:bg-white/20">
+          <SkipForward className="size-6" />
+        </button>
       </div>
     </section>
   );

@@ -32,11 +32,17 @@ contextBridge.exposeInMainWorld("furrbox", {
     status: () => ipcRenderer.invoke("furrbox:vr-status"),
     enable: (on) => ipcRenderer.invoke("furrbox:vr-enable", on),
     setPlacement: (placement) => ipcRenderer.invoke("furrbox:vr-placement", placement),
+    setCollapsed: (on) => ipcRenderer.invoke("furrbox:vr-collapsed", on),
     onChange: (callback) => {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on("furrbox:vr", listener);
       return () => ipcRenderer.removeListener("furrbox:vr", listener);
     },
+  },
+  // Current song from Windows' media controls (Spotify, YouTube, …) and play/pause/next/previous.
+  media: {
+    state: () => ipcRenderer.invoke("furrbox:media-state"),
+    control: (action) => ipcRenderer.invoke("furrbox:media-control", action),
   },
   osc: {
     chatbox: (text) => ipcRenderer.invoke("furrbox:osc-chatbox", text),

@@ -14,6 +14,7 @@ const { createVrchat } = require("./vrchat.cjs");
 const { createLogWatcher } = require("./vrchat-log.cjs");
 const { createVrOverlay } = require("./vr-overlay.cjs");
 const { sendChatbox, clearChatbox } = require("./osc.cjs");
+const { createMedia } = require("./media.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -252,6 +253,8 @@ const vrOverlay = createVrOverlay({
   },
 });
 let appUrl = null;
+// Current song (Spotify, YouTube, …) for the VR panel and the chatbox status.
+const media = createMedia((...args) => console.log("[media]", ...args));
 
 /** Only the FurrBox page itself (main window or the VR panel) may call the bridges. */
 function trusted(event) {
@@ -298,6 +301,14 @@ vrOverlay.onChange(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:vr", vrStatus());
   });
 ipcMain.handle("furrbox:vr-status", (event) => (trusted(event) ? vrStatus() : null));
+// Only the panel page itself switches between the small button and the full panel.
+ipcMain.handle("furrbox:vr-collapsed", (event, on) => {
+  if (event.sender !== vrOverlay.webContents()) return false;
+  vrOverlay.setCollapsed(Boolean(on));
+  return true;
+});
+ipcMain.handle("furrbox:media-state", (event) => (trusted(event) ? media.state() : null));
+ipcMain.handle("furrbox:media-control", (event, action) => (trusted(event) ? media.control(String(action)) : false));
 ipcMain.handle("furrbox:vr-enable", (event, on) => {
   if (!trusted(event)) return null;
   vrEnabled = Boolean(on);
@@ -334,7 +345,7 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
 });
 // Permanent status in the VRChat chatbox (time, world, …): composed here in the main process
 // every few seconds – VRChat hides a chatbox text after a while, so it has to be sent again.
-const STATUS_ITEMS = ["time", "date", "world", "people", "joined", "instanceAge"];
+const STATUS_ITEMS = ["time", "date", "world", "people", "joined", "instanceAge", "music"];
 const STATUS_EVERY_MS = 5000;
 let chatStatus = { enabled: false, items: [], text: "", opened: {} };
 let chatStatusPausedUntil = 0;
@@ -357,6 +368,10 @@ function statusText() {
     joined: s.joinedAt ? `Hier seit ${duration(s.joinedAt)}` : null,
     instanceAge: opened ? `Instanz offen: ${duration(opened)}` : s.joinedAt ? `Instanz: mind. ${duration(s.joinedAt)}` : null,
   };
+  if (chatStatus.items.includes("music")) {
+    const song = media.state();
+    part.music = song.playing && song.title ? `🎵 ${song.title}${song.artist ? ` – ${song.artist}` : ""}`.slice(0, 70) : null;
+  }
   const lines = chatStatus.items.map((id) => part[id]).filter(Boolean);
   // Short items share a line, long ones (world, instance) get their own.
   const short = lines.filter((l) => l.length <= 12).join("  ");
@@ -532,6 +547,7 @@ if (!app.requestSingleInstanceLock()) {
     app.isQuitting = true;
     globalShortcut.unregisterAll();
     vrOverlay.stop();
+    media.stop();
     if (serverProcess) serverProcess.kill();
   });
 

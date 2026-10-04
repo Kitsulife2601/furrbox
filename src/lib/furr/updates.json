@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.18",
+    "title": "FurrBox VR: nur noch ein Knopf am Arm, Musik und Chat-Hinweise",
+    "items": [
+      "Am Arm sitzt jetzt nur noch ein kleiner Pfoten-Knopf. Erst wenn du ihn antippst, klappt das Fenster auf – mit dem ✕ oben rechts klappt es wieder zu.",
+      "Bei Votekick, neuer Nachricht im Team-Chat oder neuer Gruppen-Instanz öffnet sich das Fenster von selbst an Hand und Handgelenk und schließt sich nach kurzer Zeit wieder.",
+      "Neue Seite „Musik“: zeigt, was gerade läuft (Spotify, YouTube im Browser und andere Player) mit Knöpfen für Zurück, Pause/Weiter und Nächster Titel. Ohne Anmeldung.",
+      "Der laufende Titel kann auch in der Info-Spalte am Arm und dauerhaft in der VRChat-Chatbox stehen.",
+      "Wer das Fenster lieber immer sieht, schaltet unter FurrSettings → „FurrBox VR“ „Nur ein kleiner Knopf am Arm“ aus."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.17",
     "title": "FurrBox VR im Querformat mit Team-Liste",
     "items": [
