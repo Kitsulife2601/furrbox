@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("furrbox", {
   },
   osc: {
     chatbox: (text) => ipcRenderer.invoke("furrbox:osc-chatbox", text),
+    // Permanent status in the chatbox: { enabled, items, text, opened }.
+    status: (config) => ipcRenderer.invoke("furrbox:osc-status", config),
   },
   onStatus: (callback) => ipcRenderer.on("furrbox:status", (_event, text, isError) => callback(text, isError)),
 });

@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.16",
+    "title": "Infos dauerhaft in der VRChat-Chatbox",
+    "items": [
+      "Neu: Uhrzeit, Datum, Welt, Anzahl Leute, deine Zeit in der Instanz und die Laufzeit der Instanz können dauerhaft in deiner VRChat-Chatbox stehen. FurrBox aktualisiert sie alle 5 Sekunden von selbst.",
+      "Einschalten unter FurrSettings → „FurrBox VR“ → „Dauerhaft in der VRChat-Chatbox“. Dort wählst du, welche Infos erscheinen, und kannst einen eigenen Text in die erste Zeile setzen.",
+      "Ein Schnelltext vom Arm bleibt 10 Sekunden stehen, danach kommen die Infos zurück.",
+      "Die Infos werden nur geschickt, solange du in einer Welt bist."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.15",
     "title": "Absturz beim erneuten Starten behoben",
     "items": [

@@ -4,6 +4,7 @@ import { Glasses } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VR_INFOS, VR_WIDGETS, useVrSettings, type VrInfoPlace } from "@/store/vr";
 import { DesktopHint } from "./VRChat";
+import { chatboxStatusBridge } from "./useChatboxStatus";
 import { Btn } from "./ui";
 
 type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number };
@@ -95,6 +96,8 @@ export function VrSettings() {
   const texts = useVrSettings((s) => s.texts);
   const setTexts = useVrSettings((s) => s.setTexts);
   const [draft, setDraft] = useState(texts.join("\n"));
+  const status = useVrSettings((s) => s.status);
+  const setStatus = useVrSettings((s) => s.setStatus);
 
   useEffect(() => {
     if (!bridge) return;
@@ -180,6 +183,55 @@ export function VrSettings() {
           „Wie lange die Instanz offen ist“ weiß FurrBox genau bei Instanzen unserer Gruppe. Bei anderen steht dort, wie lange sie mindestens
           läuft (seit du drin bist).
         </p>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-[13px] font-semibold">Dauerhaft in der VRChat-Chatbox</h3>
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium">Infos über deinem Kopf anzeigen</p>
+            <p className="text-[12px] text-muted">
+              {chatboxStatusBridge()
+                ? "FurrBox schreibt die gewählten Infos alle 5 Sekunden neu in deine Chatbox – solange du in einer Welt bist. Jeder in der Nähe sieht sie."
+                : "Braucht die FurrBox-Desktop-App in der neuesten Version."}
+            </p>
+          </div>
+          <Toggle on={status.enabled} label="Dauerhaft in der Chatbox" onChange={(on) => setStatus({ enabled: on })} />
+        </div>
+        {status.enabled && (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {VR_INFOS.map((item) => {
+                const on = status.items.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setStatus({
+                        items: on ? status.items.filter((id) => id !== item.id) : VR_INFOS.map((i) => i.id).filter((id) => id === item.id || status.items.includes(id)),
+                      })
+                    }
+                    className={cn("rounded-full px-3 py-1.5 text-[12px]", on ? "bg-accent text-accent-fg" : "bg-elevated/60 text-muted hover:text-fg")}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={status.text}
+              onChange={(e) => setStatus({ text: e.target.value.slice(0, 60) })}
+              placeholder="Eigener Text in der ersten Zeile (optional), z. B. Mod im Dienst"
+              className="h-9 rounded-lg border border-border bg-bg/60 px-3 text-[13px] outline-none focus:border-accent"
+            />
+            <p className="text-[11px] text-subtle">
+              In VRChat muss OSC eingeschaltet sein (Aktionsmenü → Optionen → OSC → Aktiviert). Drückst du am Arm einen Schnelltext, bleibt er
+              10 Sekunden stehen, danach kommen die Infos zurück.
+            </p>
+          </>
+        )}
       </section>
 
       {widgets.chatbox && (

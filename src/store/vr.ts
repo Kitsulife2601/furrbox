@@ -30,6 +30,9 @@ type VrSettings = {
   widgets: Record<VrWidgetId, boolean>;
   infos: Record<VrInfoId, VrInfoPlace>;
   texts: string[];
+  /** Permanent status in the VRChat chatbox (sent again every few seconds by the desktop app). */
+  status: { enabled: boolean; items: VrInfoId[]; text: string };
+  setStatus: (patch: Partial<VrSettings["status"]>) => void;
   setWidget: (id: VrWidgetId, on: boolean) => void;
   setInfo: (id: VrInfoId, place: VrInfoPlace) => void;
   setTexts: (texts: string[]) => void;
@@ -41,11 +44,13 @@ export const useVrSettings = create<VrSettings>()(
       widgets: { votekick: true, instance: true, chatbox: true, teamchat: false },
       infos: { time: "top", world: "top", people: "top", date: "off", joined: "bottom", instanceAge: "bottom" },
       texts: DEFAULT_TEXTS,
+      status: { enabled: false, items: ["time", "people", "joined"], text: "" },
+      setStatus: (patch) => set((s) => ({ status: { ...s.status, ...patch } })),
       setWidget: (id, on) => set((s) => ({ widgets: { ...s.widgets, [id]: on } })),
       setInfo: (id, place) => set((s) => ({ infos: { ...s.infos, [id]: place } })),
       setTexts: (texts) => set({ texts: texts.map((t) => t.trim().slice(0, 144)).filter(Boolean).slice(0, 8) }),
     }),
-    { name: "furrbox-vr", version: 2, migrate: (state) => state as VrSettings, merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) } }) },
+    { name: "furrbox-vr", version: 2, migrate: (state) => state as VrSettings, merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) } }) },
   ),
 );
 

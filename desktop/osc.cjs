@@ -25,7 +25,14 @@ function send(packet) {
 
 /** /chatbox/input "text" true false – send immediately, without the notification sound. */
 function chatboxPacket(text) {
-  const clean = String(text).replace(/\s+/g, " ").trim().slice(0, 144);
+  // Line breaks are allowed (VRChat shows them), everything else is squeezed to single spaces.
+  const clean = String(text)
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 9)
+    .join("\n")
+    .slice(0, 144);
   if (!clean) throw new Error("Der Text ist leer.");
   return Buffer.concat([oscString("/chatbox/input"), oscString(",sTF"), oscString(clean)]);
 }

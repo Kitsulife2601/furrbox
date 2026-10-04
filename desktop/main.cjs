@@ -321,10 +321,69 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
   vrOverlay.setPlacement(placement);
   return vrStatus();
 });
+// Permanent status in the VRChat chatbox (time, world, …): composed here in the main process
+// every few seconds – VRChat hides a chatbox text after a while, so it has to be sent again.
+const STATUS_ITEMS = ["time", "date", "world", "people", "joined", "instanceAge"];
+const STATUS_EVERY_MS = 5000;
+let chatStatus = { enabled: false, items: [], text: "", opened: {} };
+let chatStatusPausedUntil = 0;
+
+function duration(fromIso) {
+  const min = Math.max(0, Math.floor((Date.now() - new Date(fromIso).getTime()) / 60_000));
+  return min < 60 ? `${min} Min.` : `${Math.floor(min / 60)} Std. ${min % 60} Min.`;
+}
+
+function statusText() {
+  const s = vrchatLog.poll();
+  if (!s.inInstance) return null; // VRChat is closed or still loading
+  const now = new Date();
+  const opened = chatStatus.opened[s.location];
+  const part = {
+    time: `🕒 ${now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`,
+    date: now.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
+    world: s.worldName ? `🌍 ${s.worldName}` : null,
+    people: `👥 ${s.players.length}`,
+    joined: s.joinedAt ? `Hier seit ${duration(s.joinedAt)}` : null,
+    instanceAge: opened ? `Instanz offen: ${duration(opened)}` : s.joinedAt ? `Instanz: mind. ${duration(s.joinedAt)}` : null,
+  };
+  const lines = chatStatus.items.map((id) => part[id]).filter(Boolean);
+  // Short items share a line, long ones (world, instance) get their own.
+  const short = lines.filter((l) => l.length <= 12).join("  ");
+  const long = lines.filter((l) => l.length > 12);
+  return [chatStatus.text, short, ...long].filter(Boolean).join("\n") || null;
+}
+
+setInterval(() => {
+  if (!chatStatus.enabled || Date.now() < chatStatusPausedUntil) return;
+  try {
+    const text = statusText();
+    if (text) sendChatbox(text).catch(() => undefined);
+  } catch {
+    // The VRChat log is not readable right now – try again next time.
+  }
+}, STATUS_EVERY_MS).unref();
+
+ipcMain.handle("furrbox:osc-status", (event, input) => {
+  if (!trusted(event)) return false;
+  const opened = {};
+  for (const [location, at] of Object.entries(input?.opened ?? {}).slice(0, 50)) {
+    if (typeof at === "string" && !Number.isNaN(Date.parse(at))) opened[String(location).slice(0, 300)] = at;
+  }
+  chatStatus = {
+    enabled: Boolean(input?.enabled),
+    items: (Array.isArray(input?.items) ? input.items : []).filter((id) => STATUS_ITEMS.includes(id)),
+    text: String(input?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 60),
+    opened,
+  };
+  return true;
+});
+
 // OSC to VRChat (chatbox text). Text only, max. 144 characters – VRChat's own limit.
 ipcMain.handle("furrbox:osc-chatbox", async (event, text) => {
   if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
   try {
+    // A quick text stays visible for a moment before the permanent status takes over again.
+    chatStatusPausedUntil = Date.now() + 10_000;
     await sendChatbox(String(text ?? ""));
     return { ok: true, value: true };
   } catch (error) {
