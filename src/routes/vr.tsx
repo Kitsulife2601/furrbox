@@ -1,29 +1,48 @@
 // FurrBox VR: the page shown on your arm in SteamVR (rendered offscreen by the desktop app,
-// 480 × 640, operated with the SteamVR laser pointer – so everything is big and scroll-free where possible).
+// 480 × 640, operated with the SteamVR laser pointer). Layout: a small info bar on top, pages in
+// the middle that you swipe through (or use the arrows), a small info bar at the bottom.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, LogIn, LogOut, MessageSquare, Radar, Send, Users } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, LogIn, LogOut, MessageSquare, Radar, Send, Users } from "lucide-react";
 import { desktopVrchat, unwrap, type VrcInstanceState } from "@/components/furr/VRChat";
 import { listChatMessages } from "@/lib/furr/api/chat";
+import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
-import { syncVrSettings, useVrSettings } from "@/store/vr";
+import { syncVrSettings, useVrSettings, type VrInfoId, type VrWidgetId } from "@/store/vr";
 
 type OscBridge = { chatbox(text: string): Promise<{ ok: true } | { ok: false; error: string }> };
 const osc = () => (window as { furrbox?: { osc?: OscBridge } }).furrbox?.osc ?? null;
 
 /** A vote kick stays on screen this long. */
 const VOTE_ALERT_MS = 45_000;
+/** Drag further than this (px) to change the page. */
+const SWIPE_PX = 60;
+
+const PAGE_TITLE: Record<Exclude<VrWidgetId, "votekick">, string> = {
+  instance: "Instanz",
+  chatbox: "Chatbox",
+  teamchat: "Team-Chat",
+};
 
 function clock(at: string | null) {
   return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
 }
 
+function since(at: string | null, now: Date) {
+  if (!at) return null;
+  const min = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 60_000));
+  return min < 60 ? `${min} Min.` : `${Math.floor(min / 60)} Std. ${min % 60} Min.`;
+}
+
 function VrPanel() {
   const me = useMe();
   const widgets = useVrSettings((s) => s.widgets);
+  const infos = useVrSettings((s) => s.infos);
   const [now, setNow] = useState(() => new Date());
+  const [page, setPage] = useState(0);
+  const drag = useRef<number | null>(null);
 
   useEffect(() => {
     // The page floats in VR: no page background, only the panel itself.
@@ -44,24 +63,36 @@ function VrPanel() {
     refetchInterval: 2_000,
   });
   const s = inst.data;
+  // Group instances: the bot knows since when they are open.
+  const wantsAge = infos.instanceAge !== "off";
+  const group = useQuery({
+    queryKey: ["furr", "vrchat", "instances"],
+    queryFn: () => listVrchatInstances(),
+    enabled: wantsAge && Boolean(me.data),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+  const openedAt = group.data?.instances.find((i) => i.location === s?.location)?.openedAt ?? null;
+
   const vote = s?.votes?.find((v) => !v.result && now.getTime() - new Date(v.at).getTime() < VOTE_ALERT_MS) ?? null;
   const lastVote = s?.votes?.[0] ?? null;
 
+  const info: Record<VrInfoId, string | null> = {
+    time: now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+    date: now.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
+    world: s?.inInstance ? (s.worldName ?? "Unbekannte Welt") : "Nicht in einer Instanz",
+    people: s?.inInstance ? `${s.players.length} Leute` : null,
+    joined: s?.inInstance && s.joinedAt ? `Du: seit ${since(s.joinedAt, now)}` : null,
+    instanceAge: s?.inInstance ? (openedAt ? `Instanz offen: ${since(openedAt, now)}` : s.joinedAt ? `Instanz: mind. ${since(s.joinedAt, now)}` : null) : null,
+  };
+
+  const pages = (["instance", "chatbox", "teamchat"] as const).filter((id) => widgets[id]);
+  const current = Math.min(page, Math.max(0, pages.length - 1));
+  const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
+
   return (
-    <div className="flex h-screen w-screen flex-col gap-2 overflow-hidden rounded-[28px] border-2 border-white/15 bg-[#0b0d14]/92 p-3 text-white">
-      {widgets.clock && (
-        <header className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-2.5">
-          <span className="text-[34px] font-bold tabular-nums leading-none">
-            {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-semibold">{s?.inInstance ? (s.worldName ?? "Unbekannte Welt") : "Nicht in einer Instanz"}</p>
-            <p className="flex items-center gap-1.5 text-[13px] text-white/60">
-              <Users className="size-4" /> {s?.inInstance ? `${s.players.length} in der Instanz` : "FurrBox VR"}
-            </p>
-          </div>
-        </header>
-      )}
+    <div className="flex h-screen w-screen select-none flex-col gap-2 overflow-hidden rounded-[28px] border-2 border-white/15 bg-[#0b0d14]/92 p-3 text-white">
+      <InfoBar place="top" info={info} />
 
       {widgets.votekick && vote && <VoteAlert vote={vote} />}
       {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
@@ -76,15 +107,110 @@ function VrPanel() {
         <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
           {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
         </p>
+      ) : pages.length === 0 ? (
+        <div className="flex-1" />
       ) : (
         <>
-          {widgets.instance && <InstanceList state={s} />}
-          {widgets.chatbox && <Chatbox />}
-          {widgets.teamchat && <TeamChat />}
-          {!widgets.instance && !widgets.chatbox && !widgets.teamchat && <div className="flex-1" />}
+          {/* Pages: drag sideways with the laser (hold the trigger) or use the arrows below. */}
+          <div
+            className="relative min-h-0 flex-1 overflow-hidden"
+            onMouseDown={(e) => {
+              drag.current = e.clientX;
+            }}
+            onMouseUp={(e) => {
+              if (drag.current === null) return;
+              const dx = e.clientX - drag.current;
+              drag.current = null;
+              if (dx <= -SWIPE_PX) go(1);
+              else if (dx >= SWIPE_PX) go(-1);
+            }}
+            onMouseLeave={() => {
+              drag.current = null;
+            }}
+          >
+            <div className="flex h-full transition-transform duration-300 ease-out" style={{ transform: `translateX(-${current * 100}%)` }}>
+              {pages.map((id) => (
+                <div key={id} className="flex h-full w-full shrink-0 flex-col">
+                  {id === "instance" && <InstanceList state={s} />}
+                  {id === "chatbox" && <Chatbox />}
+                  {id === "teamchat" && <TeamChat />}
+                </div>
+              ))}
+            </div>
+          </div>
+          {pages.length > 1 && (
+            <nav className="flex items-center gap-2">
+              <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
+                <ChevronLeft className="size-6" />
+              </NavButton>
+              <div className="flex flex-1 items-center justify-center gap-2">
+                {pages.map((id, i) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPage(i)}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-[13px] font-medium",
+                      i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
+                    )}
+                  >
+                    {PAGE_TITLE[id]}
+                  </button>
+                ))}
+              </div>
+              <NavButton label="Weiter" disabled={current === pages.length - 1} onClick={() => go(1)}>
+                <ChevronRight className="size-6" />
+              </NavButton>
+            </nav>
+          )}
         </>
       )}
+
+      <InfoBar place="bottom" info={info} />
     </div>
+  );
+}
+
+/** Small bar with the info items chosen for this place (FurrSettings → FurrBox VR). */
+function InfoBar({ place, info }: { place: "top" | "bottom"; info: Record<VrInfoId, string | null> }) {
+  const infos = useVrSettings((s) => s.infos);
+  const ids = (Object.keys(info) as VrInfoId[]).filter((id) => infos[id] === place && info[id]);
+  if (ids.length === 0) return null;
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl bg-white/6 px-3",
+        place === "top" ? "py-2" : "justify-center py-1.5 text-white/65",
+      )}
+    >
+      {ids.map((id) => (
+        <span
+          key={id}
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 truncate",
+            id === "time" && place === "top" ? "text-[24px] font-bold tabular-nums leading-none" : "text-[13px]",
+            id === "world" && "flex-1 font-semibold",
+          )}
+        >
+          {id === "people" && <Users className="size-3.5 shrink-0" />}
+          <span className="truncate">{info[id]}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function NavButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -168,19 +294,19 @@ function Chatbox() {
   }
 
   return (
-    <section className="rounded-2xl bg-white/6 p-2.5">
+    <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/6 p-2.5">
       <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
         <Send className="size-3.5" /> Chatbox {sent && <span className="normal-case tracking-normal text-emerald-300">· gesendet</span>}
         {error && <span className="normal-case tracking-normal text-red-300">· {error}</span>}
       </p>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5">
         {texts.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => void send(t)}
             className={cn(
-              "truncate rounded-xl px-3 py-2.5 text-left text-[14px] font-medium active:scale-95",
+              "overflow-hidden rounded-xl px-3 py-2 text-left text-[15px] font-medium leading-tight active:scale-95",
               sent === t ? "bg-emerald-500/30" : "bg-white/10 hover:bg-accent/40",
             )}
           >
@@ -198,18 +324,21 @@ function TeamChat() {
     queryFn: () => listChatMessages({ data: { channel: "team" } }),
     refetchInterval: 5_000,
   });
-  const last = (chat.data ?? []).slice(-3);
+  const last = (chat.data ?? []).slice(-8);
   return (
-    <section className="rounded-2xl bg-white/6 p-2.5">
-      <p className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
+    <section className="flex min-h-0 flex-1 flex-col justify-end gap-1 overflow-hidden rounded-2xl bg-white/6 p-2.5">
+      <p className="mb-auto flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
         <MessageSquare className="size-3.5" /> Team-Chat
       </p>
       {last.length === 0 ? (
         <p className="text-[13px] text-white/50">Noch keine Nachrichten.</p>
       ) : (
         last.map((m) => (
-          <p key={m.id} className="truncate text-[14px]">
-            <b className="font-semibold text-accent">{m.senderName}</b> <span className="text-white/85">{m.content}</span>
+          <p key={m.id} className="text-[14px] leading-snug">
+            <b className="font-semibold text-accent">{m.senderName}</b>{" "}
+            <span className="text-white/45">{clock(m.createdAt)}</span>
+            <br />
+            <span className="line-clamp-2 text-white/85">{m.content}</span>
           </p>
         ))
       )}
@@ -218,7 +347,11 @@ function TeamChat() {
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <div className="grid flex-1 place-items-center rounded-2xl bg-white/6 px-6 text-center text-[15px] text-white/60"><div>{children}</div></div>;
+  return (
+    <div className="grid flex-1 place-items-center rounded-2xl bg-white/6 px-6 text-center text-[15px] text-white/60">
+      <div>{children}</div>
+    </div>
+  );
 }
 
 export const Route = createFileRoute("/vr")({ component: VrPanel });

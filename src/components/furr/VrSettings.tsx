@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Glasses } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VR_WIDGETS, useVrSettings } from "@/store/vr";
+import { VR_INFOS, VR_WIDGETS, useVrSettings, type VrInfoPlace } from "@/store/vr";
 import { DesktopHint } from "./VRChat";
 import { Btn } from "./ui";
 
@@ -12,6 +12,8 @@ type VrState = {
   error: string | null;
   enabled: boolean;
   installed: boolean;
+  /** Hanging on a controller right now (false = waiting for the controller). */
+  attached?: boolean;
   placement: Placement;
 };
 type VrBridge = {
@@ -81,6 +83,8 @@ export function VrSettings() {
   const [state, setState] = useState<VrState | null>(null);
   const widgets = useVrSettings((s) => s.widgets);
   const setWidget = useVrSettings((s) => s.setWidget);
+  const infos = useVrSettings((s) => s.infos);
+  const setInfo = useVrSettings((s) => s.setInfo);
   const texts = useVrSettings((s) => s.texts);
   const setTexts = useVrSettings((s) => s.setTexts);
   const [draft, setDraft] = useState(texts.join("\n"));
@@ -95,7 +99,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.12" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.13" />
       </div>
     );
   }
@@ -112,14 +116,22 @@ export function VrSettings() {
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium">Fenster am Arm anzeigen</p>
           <p className={cn("text-[12px]", state?.status === "running" ? "text-emerald-300" : "text-muted")}>
-            {state ? (state.error ?? STATUS_TEXT[state.enabled ? state.status : "off"]) : "Lade…"}
+            {!state
+              ? "Lade…"
+              : (state.error ??
+                (state.enabled && state.status === "running" && state.attached === false
+                  ? "Mit SteamVR verbunden – warte auf den Controller (einschalten und kurz bewegen)."
+                  : STATUS_TEXT[state.enabled ? state.status : "off"]))}
           </p>
         </div>
         <Toggle on={Boolean(state?.enabled)} label="FurrBox VR" onChange={(on) => void bridge.enable(on).then(setState)} />
       </div>
 
       <section className="grid gap-2">
-        <h3 className="text-[13px] font-semibold">Was soll am Arm zu sehen sein?</h3>
+        <h3 className="text-[13px] font-semibold">Seiten am Arm</h3>
+        <p className="text-[11px] text-muted">
+          Zwischen den Seiten wechselst du in VR durch Wischen (Trigger halten und zur Seite ziehen) oder mit den Pfeilen.
+        </p>
         {VR_WIDGETS.map((w) => (
           <div key={w.id} className="flex items-center gap-3 rounded-lg bg-elevated/30 px-3 py-2">
             <div className="min-w-0 flex-1">
@@ -129,6 +141,38 @@ export function VrSettings() {
             <Toggle on={widgets[w.id]} label={w.label} onChange={(on) => setWidget(w.id, on)} />
           </div>
         ))}
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-[13px] font-semibold">Kleine Infos oben und unten</h3>
+        <p className="text-[11px] text-muted">Wähle für jede Info, ob sie in der Leiste über oder unter den Seiten steht.</p>
+        {VR_INFOS.map((item) => (
+          <div key={item.id} className="flex items-center gap-3 rounded-lg bg-elevated/30 px-3 py-1.5">
+            <p className="min-w-0 flex-1 text-[13px]">{item.label}</p>
+            <div className="flex rounded-md bg-bg/60 p-0.5 text-[12px]">
+              {(
+                [
+                  ["top", "Oben"],
+                  ["bottom", "Unten"],
+                  ["off", "Aus"],
+                ] as [VrInfoPlace, string][]
+              ).map(([place, label]) => (
+                <button
+                  key={place}
+                  type="button"
+                  onClick={() => setInfo(item.id, place)}
+                  className={cn("rounded px-2.5 py-1", infos[item.id] === place ? "bg-accent text-accent-fg" : "text-muted hover:text-fg")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="text-[11px] text-subtle">
+          „Wie lange die Instanz offen ist“ weiß FurrBox genau bei Instanzen unserer Gruppe. Bei anderen steht dort, wie lange sie mindestens
+          läuft (seit du drin bist).
+        </p>
       </section>
 
       {widgets.chatbox && (
@@ -191,8 +235,8 @@ function Header() {
         <Glasses className="size-5 text-accent" /> FurrBox VR
       </p>
       <p className="text-[12px] text-muted">
-        Ein FurrBox-Fenster an deinem Arm in SteamVR – mit Uhr, Instanz-Liste, Votekick-Warnung und Chatbox-Knöpfen. Bedient wird es mit
-        dem Laser vom anderen Controller.
+        Ein FurrBox-Fenster an deinem Arm in SteamVR – mit Uhr, Instanz-Liste, Votekick-Warnung und Chatbox-Knöpfen. Zeig mit dem anderen
+        Controller darauf, dann erscheint der Laser. Sonst stört es VRChat nicht.
       </p>
     </div>
   );

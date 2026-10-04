@@ -242,7 +242,14 @@ const vrchat = createVrchat(userData);
 const vrOverlay = createVrOverlay({
   BrowserWindow,
   preload: path.join(__dirname, "preload.cjs"),
-  log: (...args) => console.log("[vr]", ...args),
+  log: (...args) => {
+    console.log("[vr]", ...args);
+    try {
+      fs.appendFileSync(path.join(userData, "vr.log"), `${new Date().toISOString()} ${args.join(" ")}\n`);
+    } catch {
+      // The log is only a help.
+    }
+  },
 });
 let appUrl = null;
 

@@ -1,6 +1,19 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.13",
+    "title": "FurrBox VR: Menü-Problem behoben, Wischen und wählbare Infos",
+    "items": [
+      "Behoben: Das FurrBox-Fenster hat die Controller dauerhaft belegt, dadurch ging das VRChat-Menü nicht mehr. Der Laser erscheint jetzt nur noch, wenn du mit dem anderen Controller auf das Fenster zeigst.",
+      "Behoben: Das Fenster wird erst angezeigt, wenn es wirklich am Arm hängt. Ohne Controller bleibt es unsichtbar, statt irgendwo im Raum zu stehen.",
+      "Die Controller werden zuverlässiger erkannt, auch wenn sie erst später eingeschaltet werden.",
+      "Neu: Seiten zum Wischen. Trigger halten und zur Seite ziehen wechselt zwischen Instanz, Chatbox und Team-Chat – oder du nimmst die Pfeile unten.",
+      "Neu: schmale Info-Leisten über und unter den Seiten. In FurrSettings → „FurrBox VR“ wählst du für Uhrzeit, Datum, Welt, Anzahl Leute, deine Zeit in der Instanz und die Laufzeit der Instanz jeweils „Oben“, „Unten“ oder „Aus“.",
+      "In den Einstellungen steht jetzt, ob FurrBox noch auf den Controller wartet."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.12",
     "title": "FurrBox VR: Fenster am Arm in SteamVR",
     "items": [
