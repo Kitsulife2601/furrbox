@@ -11,6 +11,7 @@ const TABLES = require("./openvr-tables.json");
 const SYSTEM = "IVRSystem_026";
 const OVERLAY = "IVROverlay_028";
 
+const OVERLAY_KEY = process.env.FURRBOX_VR_KEY || "de.furrbox.arm";
 const APP_BACKGROUND = 3; // does not start SteamVR, fails when it is not running
 const ROLE = { left: 1, right: 2 };
 const INVALID_DEVICE = 0xffffffff;
@@ -20,6 +21,13 @@ const POSE_SIZE = 80; // TrackedDevicePose_t: matrix (48) + velocities (24) + re
 const UNIVERSE_STANDING = 1;
 /** The panel reacts to the laser only while the other controller points at it from this close (m). */
 const POINT_DISTANCE = 0.9;
+// "Looking at your arm": the panel is within this angle of where the headset points, faces you
+// and is close enough. Opens after GAZE_ON_MS, closes GAZE_OFF_MS after you look away.
+const GAZE_COS = Math.cos((24 * Math.PI) / 180);
+const GAZE_FACING = 0.2;
+const GAZE_DISTANCE = 0.9;
+const GAZE_ON_MS = 250;
+const GAZE_OFF_MS = 1800;
 const EVENT = { mouseMove: 300, mouseDown: 301, mouseUp: 302, scroll: 305, scrollSmooth: 309, quit: 700 };
 const FLAG_INTERACTIVE = 65536; // MakeOverlaysInteractiveIfVisible
 const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
@@ -28,7 +36,7 @@ const EVENT_SIZE = 64;
 
 // Landscape: the panel lies along the arm. Collapsed, only a small round button is shown.
 const FULL = { width: 640, height: 400 };
-const BUTTON = { width: 128, height: 128, meters: 0.045 };
+const BUTTON = { width: 128, height: 128, meters: 0.06 };
 // A short notice ("Votekick gegen …") without opening the whole panel.
 const ALERT = { width: 480, height: 128, meters: 0.17 };
 
@@ -107,6 +115,10 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let lastHit = 0;
   let mouseDown = false;
   let lastFrameError = -1;
+  let lastConnectError = "";
+  let gazing = false;
+  let gazeSince = 0;
+  let gazeLost = 0;
   let mode = "full"; // full | button | alert
   const size = () => (mode === "button" ? BUTTON : mode === "alert" ? ALERT : FULL);
   const listeners = new Set();
@@ -172,10 +184,14 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       return false;
     }
     try {
-      if (!lib.valid(OVERLAY) || !lib.valid(SYSTEM)) throw new Error("Diese SteamVR-Version wird noch nicht unterstützt (bitte SteamVR aktualisieren).");
+      if (!lib.valid(OVERLAY) || !lib.valid(SYSTEM)) {
+        disconnect();
+        setState({ status: "unsupported", error: "Diese SteamVR-Version wird noch nicht unterstützt (bitte SteamVR aktualisieren)." });
+        return false;
+      }
       api = { sys: bind(SYSTEM), ovr: bind(OVERLAY) };
       const out = [0n];
-      const e = api.ovr("CreateOverlay", "int FN(const char*, const char*, _Out_ uint64_t*)", "de.furrbox.arm", "FurrBox", out);
+      const e = api.ovr("CreateOverlay", "int FN(const char*, const char*, _Out_ uint64_t*)", OVERLAY_KEY, "FurrBox", out);
       if (e) throw new Error(`Overlay konnte nicht angelegt werden (Fehler ${e}).`);
       handle = out[0];
       api.ovr("SetOverlayInputMethod", "int FN(uint64_t, int)", handle, INPUT_MOUSE);
@@ -189,13 +205,16 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       attachedTo = INVALID_DEVICE;
       applyPlacement();
       openPage();
+      lastConnectError = "";
       setState({ status: "running", error: null });
       log("VR-Overlay: mit SteamVR verbunden.");
       return true;
     } catch (error) {
-      log("VR-Overlay:", error.message);
+      // E.g. the overlay name is still held by a FurrBox that is just closing: try again shortly.
+      if (error.message !== lastConnectError) log("VR-Overlay:", error.message);
+      lastConnectError = error.message;
       disconnect();
-      setState({ status: "unsupported", error: error.message });
+      setState({ status: "waiting", error: error.message });
       return false;
     }
   }
@@ -274,6 +293,46 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     return { left, right };
   }
 
+  /** Are you looking at the panel (like at a watch)? Tells the page, which then opens / closes. */
+  function updateGaze(pointing) {
+    let looking = false;
+    if (attachedTo !== INVALID_DEVICE) {
+      const count = attachedTo + 1;
+      const poses = Buffer.alloc(POSE_SIZE * count);
+      api.sys("GetDeviceToAbsoluteTrackingPose", "void FN(int, float, void*, uint32_t)", UNIVERSE_STANDING, 0, poses, count);
+      const row = (device, i) => poses.readFloatLE(device * POSE_SIZE + i * 4);
+      if (poses.readUInt8(76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
+        const p = matrixFor(placement);
+        const h = (i) => row(attachedTo, i);
+        // Panel centre and normal in room coordinates: hand pose × placement.
+        const centre = [0, 1, 2].map((r) => h(r * 4) * p[3] + h(r * 4 + 1) * p[7] + h(r * 4 + 2) * p[11] + h(r * 4 + 3));
+        const normal = [0, 1, 2].map((r) => h(r * 4) * p[2] + h(r * 4 + 1) * p[6] + h(r * 4 + 2) * p[10]);
+        const head = [row(0, 3), row(0, 7), row(0, 11)];
+        const forward = [-row(0, 2), -row(0, 6), -row(0, 10)];
+        const to = centre.map((v, i) => v - head[i]);
+        const dist = Math.hypot(...to) || 1;
+        const dir = to.map((v) => v / dist);
+        const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        looking = dist < GAZE_DISTANCE && dot(forward, dir) > GAZE_COS && -dot(normal, dir) > GAZE_FACING;
+      }
+    }
+    const now = Date.now();
+    if (looking || pointing) {
+      gazeLost = 0;
+      if (!gazeSince) gazeSince = now;
+      if (!gazing && now - gazeSince >= GAZE_ON_MS) setGazing(true);
+    } else {
+      gazeSince = 0;
+      if (!gazeLost) gazeLost = now;
+      if (gazing && now - gazeLost >= GAZE_OFF_MS) setGazing(false);
+    }
+  }
+
+  function setGazing(on) {
+    gazing = on;
+    if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-gaze", on);
+  }
+
   /** Switches the laser on only while the other controller points at the panel. */
   function updatePointer() {
     if (!api || handle === null || !visible) return;
@@ -304,6 +363,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     if (hit) lastHit = now;
     // Keep the laser for a moment after leaving the panel (so a click at the edge still lands).
     setInteractive(hit || (interactive && now - lastHit < 400));
+    updateGaze(interactive);
   }
 
   function openPage() {

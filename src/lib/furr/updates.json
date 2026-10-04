@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.20",
+    "title": "FurrBox VR: Aufklappen beim Hinschauen",
+    "items": [
+      "Das Fenster am Arm klappt jetzt von selbst auf, sobald du auf deinen Arm schaust – wie bei einer Uhr, ganz ohne Antippen. Schaust du weg, klappt es nach knapp 2 Sekunden wieder zu.",
+      "Solange du mit dem Laser auf das Fenster zeigst, bleibt es offen.",
+      "Der Pfoten-Knopf ist größer und damit leichter zu treffen.",
+      "Abschaltbar unter FurrSettings → „FurrBox VR“ → „Beim Hinschauen aufklappen“."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.19",
     "title": "Anwesenheit, Hinweise statt Aufklappen und Musik mit Laufzeit",
     "items": [

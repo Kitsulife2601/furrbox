@@ -38,6 +38,9 @@ type VrSettings = {
   /** true = only a small button on the arm; the panel opens on a tap or when something happens. */
   buttonMode: boolean;
   setButtonMode: (on: boolean) => void;
+  /** Open the panel by looking at your arm (no tapping needed). */
+  gazeOpen: boolean;
+  setGazeOpen: (on: boolean) => void;
   /** Permanent status in the VRChat chatbox (sent again every few seconds by the desktop app). */
   status: { enabled: boolean; items: VrInfoId[]; text: string };
   setStatus: (patch: Partial<VrSettings["status"]>) => void;
@@ -53,6 +56,8 @@ export const useVrSettings = create<VrSettings>()(
       infos: { time: "top", world: "top", people: "top", date: "off", joined: "bottom", instanceAge: "bottom", music: "off" },
       buttonMode: true,
       setButtonMode: (buttonMode) => set({ buttonMode }),
+      gazeOpen: true,
+      setGazeOpen: (gazeOpen) => set({ gazeOpen }),
       texts: DEFAULT_TEXTS,
       status: { enabled: false, items: ["time", "people", "joined"], text: "" },
       setStatus: (patch) => set((s) => ({ status: { ...s.status, ...patch } })),

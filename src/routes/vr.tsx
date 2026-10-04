@@ -41,7 +41,8 @@ const osc = () => (window as { furrbox?: { osc?: OscBridge } }).furrbox?.osc ?? 
 type Song = { playing: boolean; title: string; artist: string; app: string; position?: number; duration?: number };
 type MediaBridge = { state(): Promise<Song | null>; control(action: "toggle" | "next" | "prev"): Promise<boolean> };
 const mediaBridge = () => (window as { furrbox?: { media?: MediaBridge } }).furrbox?.media ?? null;
-const panelBridge = () => (window as { furrbox?: { vr?: { setMode?(mode: "button" | "alert" | "full"): Promise<boolean> } } }).furrbox?.vr ?? null;
+type PanelBridge = { setMode?(mode: "button" | "alert" | "full"): Promise<boolean>; onGaze?(cb: (looking: boolean) => void): () => void };
+const panelBridge = () => (window as { furrbox?: { vr?: PanelBridge } }).furrbox?.vr ?? null;
 
 function mmss(sec: number) {
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
@@ -81,7 +82,11 @@ function VrPanel() {
   const queryClient = useQueryClient();
   // Button mode: closed by default. Events do not open the panel – they show a short notice instead.
   const [open, setOpen] = useState(false);
-  const collapsed = buttonMode && !open;
+  // Looking at your arm opens the panel, looking away closes it again (no tapping needed).
+  const gazeOpen = useVrSettings((s) => s.gazeOpen);
+  const [gaze, setGaze] = useState(false);
+  useEffect(() => panelBridge()?.onGaze?.(setGaze), []);
+  const collapsed = buttonMode && !open && !(gazeOpen && gaze);
   /** Notices marked "Erledigt" (vote kick / chat message / instance ids). */
   const [done, setDone] = useState<string[]>([]);
   const dismiss = (id: string) => setDone((d) => [...d.slice(-40), id]);

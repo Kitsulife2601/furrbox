@@ -101,6 +101,8 @@ export function VrSettings() {
   const [draft, setDraft] = useState(texts.join("\n"));
   const buttonMode = useVrSettings((s) => s.buttonMode);
   const setButtonMode = useVrSettings((s) => s.setButtonMode);
+  const gazeOpen = useVrSettings((s) => s.gazeOpen);
+  const setGazeOpen = useVrSettings((s) => s.setGazeOpen);
   const status = useVrSettings((s) => s.status);
   const setStatus = useVrSettings((s) => s.setStatus);
 
@@ -114,7 +116,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.19" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.20" />
       </div>
     );
   }
@@ -153,6 +155,20 @@ export function VrSettings() {
         </div>
         <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
       </div>
+
+      {buttonMode && (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium">Beim Hinschauen aufklappen</p>
+            <p className="text-[12px] text-muted">
+              {gazeOpen
+                ? "Schaust du auf deinen Arm, klappt das Fenster von selbst auf – ganz ohne Antippen. Schaust du weg, klappt es nach knapp 2 Sekunden wieder zu."
+                : "Das Fenster öffnet sich nur, wenn du den Pfoten-Knopf antippst."}
+            </p>
+          </div>
+          <Toggle on={gazeOpen} label="Beim Hinschauen aufklappen" onChange={setGazeOpen} />
+        </div>
+      )}
 
       <DutySection />
 
