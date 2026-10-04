@@ -273,6 +273,15 @@ async function poll() {
     }
     await handleVrchatJobs(queue.vrchatJobs);
     handleBotFiles(bridge, log, queue.botFiles);
+    // Messages FurrBox wants posted (e.g. "instance opened – who is anwesend"). No pings.
+    for (const m of queue.discordMessages ?? []) {
+      try {
+        const channel = await client.channels.fetch(m.channelId);
+        if (channel?.isTextBased()) await channel.send({ content: String(m.content).slice(0, 1900), allowedMentions: { parse: [] } });
+      } catch (err) {
+        log("Discord-Nachricht fehlgeschlagen:", err instanceof Error ? err.message : err);
+      }
+    }
     if (active) await flush();
     delay = filesBusy() ? 2_000 : active ? ACTIVE_POLL_MS : IDLE_POLL_MS;
   } catch (err) {

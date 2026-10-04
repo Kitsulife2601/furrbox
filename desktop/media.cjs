@@ -5,7 +5,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const EMPTY = { playing: false, title: "", artist: "", app: "" };
+const EMPTY = { playing: false, title: "", artist: "", app: "", position: 0, duration: 0, at: 0 };
 const ACTIONS = ["toggle", "next", "prev"];
 
 function createMedia(log = () => undefined) {
@@ -42,6 +42,9 @@ function createMedia(log = () => undefined) {
             title: String(j.title ?? "").slice(0, 120),
             artist: String(j.artist ?? "").slice(0, 80),
             app: String(j.app ?? "").slice(0, 80),
+            position: Number(j.position) || 0,
+            duration: Number(j.duration) || 0,
+            at: Date.now(),
           };
         } catch {
           // not a status line
@@ -73,7 +76,10 @@ function createMedia(log = () => undefined) {
     state() {
       lastAsked = Date.now();
       start();
-      return state;
+      // Position keeps counting between two reports of the watcher.
+      const extra = state.playing && state.at ? Math.floor((Date.now() - state.at) / 1000) : 0;
+      const position = state.duration ? Math.min(state.duration, state.position + extra) : state.position + extra;
+      return { playing: state.playing, title: state.title, artist: state.artist, app: state.app, position, duration: state.duration };
     },
     control(action) {
       if (!ACTIONS.includes(action) || process.platform !== "win32") return false;

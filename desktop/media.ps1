@@ -20,10 +20,21 @@ $manager = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessi
 
 function Current() {
   $session = $manager.GetCurrentSession()
-  if (-not $session) { return @{ playing = $false; title = ""; artist = ""; app = "" } }
+  if (-not $session) { return @{ playing = $false; title = ""; artist = ""; app = ""; position = 0; duration = 0 } }
   $props = Await ($session.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
   $status = $session.GetPlaybackInfo().PlaybackStatus.ToString()
-  @{ playing = ($status -eq "Playing"); title = [string]$props.Title; artist = [string]$props.Artist; app = [string]$session.SourceAppUserModelId }
+  # Where the title is right now: the last reported position plus the time since then while playing.
+  $timeline = $session.GetTimelineProperties()
+  $position = $timeline.Position.TotalSeconds
+  if ($status -eq "Playing" -and $timeline.LastUpdatedTime.Year -gt 2000) {
+    $position += ([DateTimeOffset]::Now - $timeline.LastUpdatedTime).TotalSeconds
+  }
+  $duration = ($timeline.EndTime - $timeline.StartTime).TotalSeconds
+  if ($duration -gt 0 -and $position -gt $duration) { $position = $duration }
+  @{
+    playing = ($status -eq "Playing"); title = [string]$props.Title; artist = [string]$props.Artist; app = [string]$session.SourceAppUserModelId
+    position = [int][Math]::Max(0, $position); duration = [int][Math]::Max(0, $duration)
+  }
 }
 
 if ($Action -eq "watch") {
@@ -31,7 +42,7 @@ if ($Action -eq "watch") {
   $last = ""
   $ticks = 0
   while ($true) {
-    try { $json = (Current | ConvertTo-Json -Compress) } catch { $json = '{"playing":false,"title":"","artist":"","app":""}' }
+    try { $json = (Current | ConvertTo-Json -Compress) } catch { $json = '{"playing":false,"title":"","artist":"","app":"","position":0,"duration":0}' }
     if ($json -ne $last -or $ticks -ge 5) {
       [Console]::Out.WriteLine($json)
       $last = $json

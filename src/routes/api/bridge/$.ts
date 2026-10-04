@@ -13,13 +13,43 @@
 //   POST /api/bridge/file-down          -> { fileId, idx, data } (piece of a requested file) -> { pending }
 //   POST /api/bridge/file-down-done     -> { fileId, ok, totalChunks?, error? }
 import { createFileRoute } from "@tanstack/react-router";
-import { appendTextFile, discordName, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
+import { appendTextFile, discordName, getSetting, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
 import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
 import { VRC_ACCESS, VRC_REGION, parseLocation, vrchatAuditAction } from "@/lib/furr/vrchat-location";
 import { isRole } from "@/lib/furr/roles";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+const DUTY_ROLE: Record<string, string> = { dev: "Dev", owner: "Owner", moderator: "Mod", supporter: "Supporter" };
+
+/**
+ * "Instance opened" message for Discord: who is anwesend (can moderate right now) and who is not.
+ * Queued for the bot when a duty channel is set (FurrSettings → FurrBox VR).
+ */
+async function announceInstance(headline: string) {
+  const channelId = await getSetting("duty_channel_id", "1434484156431204382");
+  if (!/^\d{17,22}$/.test(channelId)) return;
+  const sql = await getSql();
+  const staff = await sql<{ name: string; privilege: string; on_duty: boolean }>`
+    select coalesce(dm.nickname, dm.display_name) as name, dm.highest_privilege as privilege,
+           coalesce(d.on_duty and pr.last_heartbeat_at > now() - interval '15 minutes', false) as on_duty
+    from discord_member dm
+    left join furr_profile p on p.discord_id = dm.discord_id
+    left join mod_duty d on d.user_id = p.user_id
+    left join furr_presence pr on pr.user_id = p.user_id
+    where dm.highest_privilege in ('dev', 'owner', 'moderator', 'supporter')
+    order by array_position(array['dev', 'owner', 'moderator', 'supporter'], dm.highest_privilege), 1`;
+  const line = (list: typeof staff) => (list.length ? list.map((s) => `${s.name} (${DUTY_ROLE[s.privilege] ?? s.privilege})`).join(", ") : "niemand");
+  const content = [
+    `🟢 **Neue Gruppen-Instanz:** ${headline}`,
+    `✅ **Anwesend (kann moderieren):** ${line(staff.filter((s) => s.on_duty))}`,
+    `❌ **Nicht anwesend:** ${line(staff.filter((s) => !s.on_duty))}`,
+  ]
+    .join("\n")
+    .slice(0, 1900);
+  await sql`insert into bot_outbox (id, channel_id, content) values (${newId()}, ${channelId}, ${content})`;
 }
 
 function authorized(request: Request) {
@@ -88,6 +118,10 @@ async function handle(request: Request, action: string) {
       update bot_file_request r set status = 'sending' from furr_file f
       where f.id = r.file_id and r.status = 'queued'
       returning f.id, f.folder, f.name`;
+    // Discord messages for the bot to post (handed out once; old ones are dropped).
+    await sql`delete from bot_outbox where created_at < now() - interval '1 hour'`;
+    const outbox = await sql<{ id: string; channel_id: string; content: string }>`
+      update bot_outbox set status = 'sent' where status = 'queued' returning id, channel_id, content`;
     // Lets the bot poll fast only while someone has FurrBox open (keeps the database asleep otherwise).
     const activeRows = await sql<{ n: number }>`
       select count(*)::int as n from furr_presence where last_heartbeat_at > now() - interval '3 minutes'`;
@@ -104,6 +138,7 @@ async function handle(request: Request, action: string) {
       })),
       inspections: inspections.map((i) => ({ requestId: i.id, messageId: i.message_id })),
       vrchatJobs: vrchatJobs.map((j) => ({ jobId: j.id, kind: j.kind, payload: j.payload_json ? JSON.parse(j.payload_json) : {} })),
+      discordMessages: outbox.map((m) => ({ channelId: m.channel_id, content: m.content })),
       botFiles: {
         uploads: uploads.map((u) => ({ fileId: u.id, folder: u.folder, name: u.name, totalChunks: u.bot_chunks })),
         downloads: downloads.map((d) => ({ fileId: d.id, folder: d.folder, name: d.name })),
@@ -370,10 +405,9 @@ async function handle(request: Request, action: string) {
             capacity = excluded.capacity, member_count = excluded.member_count, last_seen = now(), closed_at = null,
             first_seen = case when vrchat_instance.closed_at is not null then now() else vrchat_instance.first_seen end`;
         if (!known.has(i.instanceId)) {
-          await notify(
-            "VRChat-Instanz geöffnet",
-            `${i.world.name} · ${VRC_REGION[loc.region] ?? loc.region} · ${VRC_ACCESS[loc.access] ?? loc.access} · ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`,
-          );
+          const headline = `${i.world.name} · ${VRC_REGION[loc.region] ?? loc.region} · ${VRC_ACCESS[loc.access] ?? loc.access} · ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`;
+          await notify("VRChat-Instanz geöffnet", headline);
+          await announceInstance(headline).catch(() => undefined);
         }
       }
       await sql.query(

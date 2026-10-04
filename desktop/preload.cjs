@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("furrbox", {
     status: () => ipcRenderer.invoke("furrbox:vr-status"),
     enable: (on) => ipcRenderer.invoke("furrbox:vr-enable", on),
     setPlacement: (placement) => ipcRenderer.invoke("furrbox:vr-placement", placement),
-    setCollapsed: (on) => ipcRenderer.invoke("furrbox:vr-collapsed", on),
+    setMode: (mode) => ipcRenderer.invoke("furrbox:vr-mode", mode),
     onChange: (callback) => {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on("furrbox:vr", listener);

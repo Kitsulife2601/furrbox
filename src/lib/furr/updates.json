@@ -1,6 +1,20 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.19",
+    "title": "Anwesenheit, Hinweise statt Aufklappen und Musik mit Laufzeit",
+    "items": [
+      "Neu: Anwesenheit. Am Arm (Seite „Team“) und unter FurrSettings → „FurrBox VR“ schaltest du zwischen „Anwesend“ (du kannst gerade moderieren) und „Nicht anwesend“ um. Die Team-Liste zeigt, wer anwesend ist.",
+      "Sobald eine Gruppen-Instanz aufgeht, schreibt der Discord-Bot in den Team-Kanal, wer anwesend ist und wer nicht.",
+      "Das Fenster am Arm klappt bei Ereignissen nicht mehr auf. Statt des Knopfs erscheint ein kurzer Hinweis (Votekick, neue Chat-Nachricht, neue Gruppen-Instanz) mit „Erledigt“-Knopf.",
+      "Votekick-Hinweis mit „Erledigt“: schließt den Hinweis und schreibt ins Anwesenheits-Protokoll, wer sich darum gekümmert hat.",
+      "Anwesenheits-Protokoll unter FurrSettings → „FurrBox VR“ und als Textdatei in FurrFS (VRChat_Logs → Anwesenheit.txt).",
+      "Musik in der Chatbox und am Arm jetzt mit Laufzeit: Fortschrittsbalken und z. B. „1:23 / 3:45“.",
+      "Der Pfoten-Knopf am Arm hat einen grünen Rand, solange du anwesend bist."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.18",
     "title": "FurrBox VR: nur noch ein Knopf am Arm, Musik und Chat-Hinweise",
     "items": [

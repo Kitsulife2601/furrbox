@@ -1,5 +1,8 @@
 // FurrSettings → FurrBox VR: the panel on your arm in SteamVR – on/off, what it shows, where it sits.
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { listDuty, listDutyLog, setDuty } from "@/lib/furr/api/duty";
+import { useMe } from "@/lib/furr/client";
 import { Glasses } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VR_INFOS, VR_WIDGETS, useVrSettings, type VrInfoPlace } from "@/store/vr";
@@ -111,7 +114,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.18" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.19" />
       </div>
     );
   }
@@ -144,12 +147,14 @@ export function VrSettings() {
           <p className="text-[13px] font-medium">Nur ein kleiner Knopf am Arm</p>
           <p className="text-[12px] text-muted">
             {buttonMode
-              ? "Am Arm sitzt nur ein kleiner Pfoten-Knopf. Tippst du ihn an, klappt das Fenster auf. Bei Votekick, neuer Chat-Nachricht oder neuer Gruppen-Instanz öffnet es sich von selbst und schließt sich danach wieder."
+              ? "Am Arm sitzt nur ein kleiner Pfoten-Knopf. Tippst du ihn an, klappt das Fenster auf. Bei Votekick, neuer Chat-Nachricht oder neuer Gruppen-Instanz erscheint statt des Knopfs ein kurzer Hinweis mit „Erledigt“ – das Fenster klappt dabei nicht auf."
               : "Das Fenster ist dauerhaft am Arm zu sehen."}
           </p>
         </div>
         <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
       </div>
+
+      <DutySection />
 
       <section className="grid gap-2">
         <h3 className="text-[13px] font-semibold">Seiten am Arm</h3>
@@ -320,6 +325,59 @@ export function VrSettings() {
         </section>
       )}
     </div>
+  );
+}
+
+/** Anwesenheit: your own switch plus the log (who was anwesend when, handled vote kicks). */
+function DutySection() {
+  const me = useMe();
+  const queryClient = useQueryClient();
+  const allowed = Boolean(me.data?.permissions.canUseEvidence);
+  const duty = useQuery({ queryKey: ["furr", "duty"], queryFn: () => listDuty(), enabled: allowed, refetchInterval: 20_000 });
+  const log = useQuery({ queryKey: ["furr", "duty", "log"], queryFn: () => listDutyLog(), enabled: allowed, refetchInterval: 30_000 });
+  if (!allowed) return null;
+  const onDuty = Boolean(duty.data?.find((d) => d.userId === me.data?.userId)?.onDuty);
+  const KIND = { on: "ist anwesend", off: "ist nicht mehr anwesend", votekick: "Votekick erledigt" } as const;
+  return (
+    <section className="grid gap-2">
+      <h3 className="text-[13px] font-semibold">Anwesenheit</h3>
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium">{onDuty ? "Du bist anwesend" : "Du bist nicht anwesend"}</p>
+          <p className="text-[12px] text-muted">
+            „Anwesend“ heißt: Du kannst gerade moderieren. Das Team sieht es in der Team-Liste am Arm, und der Bot schreibt es in Discord,
+            sobald eine Gruppen-Instanz aufgeht. Den Schalter gibt es auch am Arm auf der Seite „Team“. Ist deine FurrBox länger als 15 Minuten
+            zu, giltst du automatisch als nicht anwesend.
+          </p>
+        </div>
+        <Toggle
+          on={onDuty}
+          label="Anwesend"
+          onChange={async (on) => {
+            await setDuty({ data: on }).catch(() => undefined);
+            await queryClient.invalidateQueries({ queryKey: ["furr", "duty"] });
+          }}
+        />
+      </div>
+      <details className="rounded-lg bg-elevated/30 px-3 py-2">
+        <summary className="cursor-pointer text-[12px] text-muted">Anwesenheits-Protokoll ({log.data?.length ?? 0})</summary>
+        <div className="mt-2 grid max-h-48 gap-1 overflow-auto text-[12px]">
+          {(log.data ?? []).map((e) => (
+            <p key={e.id} className="flex gap-2">
+              <span className="shrink-0 tabular-nums text-subtle">
+                {new Date(e.at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="min-w-0">
+                <b className="font-medium">{e.name}</b> {KIND[e.kind]}
+                {e.detail ? ` – ${e.detail}` : ""}
+              </span>
+            </p>
+          ))}
+          {log.data?.length === 0 && <p className="text-subtle">Noch keine Einträge.</p>}
+        </div>
+        <p className="mt-2 text-[11px] text-subtle">Das Protokoll liegt auch als Textdatei in FurrFS: Moderation_Beweise → VRChat_Logs → Anwesenheit.txt</p>
+      </details>
+    </section>
   );
 }
 

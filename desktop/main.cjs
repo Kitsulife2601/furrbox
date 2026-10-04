@@ -302,9 +302,9 @@ vrOverlay.onChange(() => {
   });
 ipcMain.handle("furrbox:vr-status", (event) => (trusted(event) ? vrStatus() : null));
 // Only the panel page itself switches between the small button and the full panel.
-ipcMain.handle("furrbox:vr-collapsed", (event, on) => {
+ipcMain.handle("furrbox:vr-mode", (event, mode) => {
   if (event.sender !== vrOverlay.webContents()) return false;
-  vrOverlay.setCollapsed(Boolean(on));
+  vrOverlay.setMode(String(mode));
   return true;
 });
 ipcMain.handle("furrbox:media-state", (event) => (trusted(event) ? media.state() : null));
@@ -370,7 +370,20 @@ function statusText() {
   };
   if (chatStatus.items.includes("music")) {
     const song = media.state();
-    part.music = song.playing && song.title ? `🎵 ${song.title}${song.artist ? ` – ${song.artist}` : ""}`.slice(0, 70) : null;
+    if (song.playing && song.title) {
+      const time = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+      const head = `🎵 ${song.title}${song.artist ? ` – ${song.artist}` : ""}`.slice(0, 60);
+      if (song.duration > 0) {
+        // ▰▰▰▱▱▱▱▱▱▱ 1:23 / 3:45
+        const filled = Math.min(10, Math.max(0, Math.round((song.position / song.duration) * 10)));
+        part.music = `${head}
+${"▰".repeat(filled)}${"▱".repeat(10 - filled)} ${time(song.position)} / ${time(song.duration)}`;
+      } else {
+        part.music = head;
+      }
+    } else {
+      part.music = null;
+    }
   }
   const lines = chatStatus.items.map((id) => part[id]).filter(Boolean);
   // Short items share a line, long ones (world, instance) get their own.

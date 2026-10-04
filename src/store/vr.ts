@@ -17,11 +17,11 @@ export type VrInfoId = (typeof VR_INFOS)[number]["id"];
 export type VrInfoPlace = "top" | "bottom" | "off";
 
 export const VR_WIDGETS = [
-  { id: "votekick", label: "Votekick-Warnung", hint: "Großer Hinweis, sobald jemand einen Votekick startet – mit Starter, wenn VRChat ihn nennt" },
-  { id: "chatAlert", label: "Hinweis bei neuer Chat-Nachricht", hint: "Das Fenster klappt auf und zeigt die neue Nachricht aus dem Team-Chat" },
+  { id: "votekick", label: "Votekick-Warnung", hint: "Roter Hinweis, sobald jemand einen Votekick startet – mit Starter, wenn VRChat ihn nennt, und „Erledigt“-Knopf" },
+  { id: "chatAlert", label: "Hinweis bei neuer Chat-Nachricht", hint: "Kurzer Hinweis am Arm mit der neuen Nachricht aus dem Team-Chat" },
   { id: "instanceAlert", label: "Hinweis bei neuer Gruppen-Instanz", hint: "Meldung am Arm, sobald der Bot eine neu geöffnete Instanz unserer Gruppe sieht" },
   { id: "instance", label: "Wer ist in der Instanz", hint: "Liste der Leute mit Kommen und Gehen" },
-  { id: "team", label: "Team-Liste", hint: "Owner, Mods und Supporter – wer gerade bereit zum Moderieren ist und wer nicht" },
+  { id: "team", label: "Team-Liste", hint: "Owner, Mods und Supporter – wer anwesend ist und wer nicht, mit deinem Anwesend-Schalter" },
   { id: "music", label: "Musik", hint: "Was gerade läuft (Spotify, YouTube, …) mit Pause und Weiter" },
   { id: "chatbox", label: "Chatbox-Schnelltexte", hint: "Knöpfe, die per OSC einen Text in deine VRChat-Chatbox schreiben" },
   { id: "teamchat", label: "Team-Chat", hint: "Die neuesten Nachrichten aus dem FurrChat" },

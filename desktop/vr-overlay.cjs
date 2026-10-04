@@ -29,6 +29,8 @@ const EVENT_SIZE = 64;
 // Landscape: the panel lies along the arm. Collapsed, only a small round button is shown.
 const FULL = { width: 640, height: 400 };
 const BUTTON = { width: 128, height: 128, meters: 0.045 };
+// A short notice ("Votekick gegen …") without opening the whole panel.
+const ALERT = { width: 480, height: 128, meters: 0.17 };
 
 /** Where SteamVR lives (from %LOCALAPPDATA%\openvr\openvrpaths.vrpath). */
 function findOpenvrDll() {
@@ -105,8 +107,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let lastHit = 0;
   let mouseDown = false;
   let lastFrameError = -1;
-  let collapsed = false;
-  const size = () => (collapsed ? BUTTON : FULL);
+  let mode = "full"; // full | button | alert
+  const size = () => (mode === "button" ? BUTTON : mode === "alert" ? ALERT : FULL);
   const listeners = new Set();
 
   function setState(patch) {
@@ -204,7 +206,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       "SetOverlayWidthInMeters",
       "int FN(uint64_t, float)",
       handle,
-      collapsed ? BUTTON.meters : Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.2)),
+      mode === "full" ? Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.2)) : size().meters,
     );
     const hands = findHands();
     const device = placement.hand === "right" ? hands.right : hands.left;
@@ -443,10 +445,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       for (const fn of listeners) fn(status());
       return placement;
     },
-    /** Small button (true) or the full panel (false) – chosen by the /vr page. */
-    setCollapsed(on) {
-      if (collapsed === Boolean(on)) return;
-      collapsed = Boolean(on);
+    /** "button" (small paw), "alert" (short notice) or "full" (whole panel) – chosen by the /vr page. */
+    setMode(next) {
+      const wanted = next === "button" || next === "alert" ? next : "full";
+      if (mode === wanted) return;
+      mode = wanted;
       applySize();
       attachedTo = INVALID_DEVICE;
       applyPlacement();
