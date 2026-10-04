@@ -18,6 +18,13 @@ let serverProcess = null;
 
 const userData = app.getPath("userData");
 const configPath = path.join(userData, "furrbox-config.json");
+// FurrBox's own setup screen (setup.html) is shown once after installing and after every update.
+const setupMarker = path.join(userData, "setup-done");
+
+function setupMode() {
+  if (process.argv.includes("--updated")) return "update";
+  return fs.existsSync(setupMarker) ? null : "install";
+}
 
 // Central FurrBox server (Vercel). Every install connects here unless furrbox-config.json sets
 // its own "serverUrl" – or "local" to run the bundled server on this PC instead.
@@ -212,7 +219,16 @@ ipcMain.handle("furrbox:update-install", () => {
   if (!autoUpdater || updateState.status !== "ready") return false;
   app.isQuitting = true;
   if (serverProcess) serverProcess.kill();
-  autoUpdater.quitAndInstall(false, true);
+  // Own "Update wird installiert" screen instead of the Windows installer window: the update
+  // then installs silently and FurrBox starts again by itself.
+  const updater = autoUpdater;
+  const install = () => updater.quitAndInstall(true, true);
+  if (mainWindow) {
+    mainWindow
+      .loadFile(path.join(__dirname, "setup.html"), { query: { mode: "apply" } })
+      .catch(() => undefined)
+      .finally(() => setTimeout(install, 3200));
+  } else install();
   return true;
 });
 
@@ -276,7 +292,11 @@ async function createWindow() {
     return { action: "deny" };
   });
 
-  await mainWindow.loadFile(path.join(__dirname, "splash.html"));
+  const mode = setupMode();
+  // The setup animation plays to the end even when the server answers faster.
+  const minimum = new Promise((resolve) => setTimeout(resolve, mode === "install" ? 6800 : mode === "update" ? 4200 : 0));
+  if (mode) await mainWindow.loadFile(path.join(__dirname, "setup.html"), { query: { mode } });
+  else await mainWindow.loadFile(path.join(__dirname, "splash.html"));
 
   try {
     let url = serverUrlFor(config);
@@ -287,6 +307,8 @@ async function createWindow() {
       setStatus("Lokaler FurrBox-Server wird gestartet…");
       url = await startLocalServer(config);
     }
+    await minimum;
+    if (mode) fs.writeFileSync(setupMarker, new Date().toISOString());
     await mainWindow.loadURL(url);
   } catch (error) {
     setStatus(`${error instanceof Error ? error.message : String(error)}\n\nKonfiguration: ${configPath}`, true);

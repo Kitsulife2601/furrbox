@@ -1,5 +1,17 @@
 [
   {
+    "date": "2026-10-04",
+    "version": "2.0.11",
+    "title": "Eigene Animationen für Herunterfahren und Setup",
+    "items": [
+      "Herunterfahren, Neustarten und Abmelden haben jetzt eine eigene FurrBox-Animation: Die Pfote schläft ein, statt der Windows-Punkte.",
+      "Nach der Installation begrüßt dich FurrBox mit einem eigenen Einrichtungs-Bildschirm mit Pfoten-Animation.",
+      "Der Windows-Assistent mit „Weiter“-Seiten ist weg: Die Installation läuft mit einem Klick durch und FurrBox startet danach von selbst.",
+      "Updates zeigen jetzt einen eigenen Bildschirm „Update wird installiert“. FurrBox schließt sich kurz und startet von selbst wieder.",
+      "Nach einem Update erscheint kurz „FurrBox wurde aktualisiert“."
+    ]
+  },
+  {
     "date": "2026-10-02",
     "title": "Beweise ohne Größenlimit",
     "items": [

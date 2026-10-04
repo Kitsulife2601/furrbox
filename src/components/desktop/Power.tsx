@@ -1,4 +1,5 @@
-// Power menu like Windows: lock, sign out, restart, shut down – with a shutdown animation.
+// Power menu: lock, sign out, restart, shut down – with FurrBox's own shutdown animation (the paw
+// goes to sleep: toes fade out one by one, the ring unwinds, the screen fades to night).
 // Shutting down closes the desktop app (window.close() ends Electron); in a normal browser tab,
 // which may not close itself, a "FurrBox wurde heruntergefahren" screen remains.
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +19,7 @@ const usePower = create<{ mode: PowerMode | null; done: boolean; start: (m: Powe
   finish: () => set({ done: true }),
 }));
 
-const ANIMATION_MS = 2600;
+const ANIMATION_MS = 3400;
 
 /** Power button in the start menu with the small Windows-style menu above it. */
 export function PowerButton() {
@@ -101,10 +102,13 @@ export function PowerOverlay() {
   }, [mode, finish]);
 
   if (!mode) return null;
-  const text = mode === "restart" ? "Neustart wird ausgeführt" : mode === "signout" ? "Abmelden" : "Wird heruntergefahren";
+  const text = mode === "restart" ? "FurrBox startet neu" : mode === "signout" ? "Du wirst abgemeldet" : "FurrBox fährt herunter";
+  const sub = mode === "restart" ? "Gleich geht es weiter…" : mode === "signout" ? "Bis zum nächsten Mal!" : "Bis bald! 🐾";
 
   return (
-    <div className="furr-power fixed inset-0 z-[10000] grid cursor-wait place-items-center bg-[#06070b] text-white">
+    <div className="furr-power fixed inset-0 z-[10000] grid cursor-wait place-items-center overflow-hidden bg-[#06070b] text-white">
+      <div className="furr-power-glow" aria-hidden />
+      <div className="furr-power-stars" aria-hidden />
       {done ? (
         <div className="furr-power-done grid place-items-center gap-3 text-center">
           <Power className="size-8 text-white/40" />
@@ -118,13 +122,44 @@ export function PowerOverlay() {
           </button>
         </div>
       ) : (
-        <div className="grid place-items-center gap-6">
-          <div className="furr-spinner" aria-hidden>
-            {Array.from({ length: 5 }, (_, i) => (
-              <span key={i} style={{ animationDelay: `${i * 0.12}s` }} />
-            ))}
+        <div className="relative grid place-items-center gap-5">
+          <div className={cn("furr-power-logo", mode === "restart" && "furr-power-restart")} aria-hidden>
+            <svg className="furr-power-ring" viewBox="0 0 150 150">
+              <defs>
+                <linearGradient id="furr-power-rg" x1="0" x2="1" y1="0" y2="1">
+                  <stop offset="0" stopColor="var(--os-accent, #4cc2ff)" />
+                  <stop offset="1" stopColor="#a78bfa" stopOpacity=".25" />
+                </linearGradient>
+              </defs>
+              <circle cx="75" cy="75" r="70" />
+            </svg>
+            <svg className="furr-power-paw" viewBox="0 0 100 100">
+              <g transform="rotate(-20 20 42)">
+                <ellipse className="t1" cx="20" cy="42" rx="9" ry="12" />
+              </g>
+              <g transform="rotate(-6 38 24)">
+                <ellipse className="t2" cx="38" cy="24" rx="10" ry="13" />
+              </g>
+              <g transform="rotate(6 62 24)">
+                <ellipse className="t3" cx="62" cy="24" rx="10" ry="13" />
+              </g>
+              <g transform="rotate(20 80 42)">
+                <ellipse className="t4" cx="80" cy="42" rx="9" ry="12" />
+              </g>
+              <path className="pad" d="M50 48c-13 0-26 13-28 26-2 11 6 17 15 15 5-1 9-3 13-3s8 2 13 3c9 2 17-4 15-15-2-13-15-26-28-26z" />
+            </svg>
+            {mode !== "restart" && (
+              <span className="furr-power-zzz">
+                <i>z</i>
+                <i>z</i>
+                <i>z</i>
+              </span>
+            )}
           </div>
-          <p className="text-[20px] font-light tracking-wide">{text}</p>
+          <p className="furr-power-text text-[20px] font-semibold tracking-wide">{text}</p>
+          <p className="furr-power-text text-[13px] text-white/55" style={{ animationDelay: "0.25s" }}>
+            {sub}
+          </p>
         </div>
       )}
     </div>

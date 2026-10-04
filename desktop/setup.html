@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>FurrBox</title>
+    <!-- FurrBox's own setup screen (instead of the Windows installer wizard):
+         ?mode=install  first start after installing
+         ?mode=update   first start after an update
+         ?mode=apply    shown right before an update is installed (the app restarts by itself) -->
+    <style>
+      :root { --accent: #4cc2ff; --accent2: #a78bfa; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #06070b; color: #f3f4f6; font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+      body { display: grid; place-items: center; }
+      .glow { position: fixed; inset: -20%; background: radial-gradient(40% 35% at 50% 40%, rgba(76, 194, 255, .2), transparent 70%), radial-gradient(30% 30% at 62% 62%, rgba(167, 139, 250, .14), transparent 70%); animation: breathe 4s ease-in-out infinite; }
+      .stars { position: fixed; inset: 0; background-image: radial-gradient(1px 1px at 12% 20%, #fff8, transparent), radial-gradient(1px 1px at 78% 30%, #fff6, transparent), radial-gradient(1.5px 1.5px at 30% 80%, #fff5, transparent), radial-gradient(1px 1px at 88% 75%, #fff7, transparent), radial-gradient(1px 1px at 55% 12%, #fff5, transparent), radial-gradient(1px 1px at 20% 55%, #fff4, transparent); animation: twinkle 2.6s ease-in-out infinite alternate; }
+
+      /* Paw prints walking across the screen. */
+      .trail { position: fixed; left: 0; right: 0; bottom: 4%; height: 90px; pointer-events: none; }
+      @media (max-height: 760px) { .trail { display: none; } }
+      .trail svg { position: absolute; width: 34px; height: 34px; fill: var(--accent); opacity: 0; animation: step 5.6s ease-in-out infinite; }
+
+      .stage { position: relative; display: flex; flex-direction: column; align-items: center; width: min(520px, 86vw); }
+      .logo { position: relative; width: 132px; height: 132px; }
+      .ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+      .ring circle { fill: none; stroke-width: 4; stroke-linecap: round; }
+      .ring .track { stroke: #ffffff12; }
+      .ring .fill { stroke: url(#rg); stroke-dasharray: 408; stroke-dashoffset: 408; transition: stroke-dashoffset .9s cubic-bezier(.4, 0, .2, 1); }
+      .paw { position: absolute; inset: 28px; filter: drop-shadow(0 0 14px rgba(76, 194, 255, .55)); animation: bob 2.4s ease-in-out infinite; }
+      .paw ellipse, .paw path { fill: var(--accent); transform-box: fill-box; transform-origin: center; opacity: 0; animation: pop .5s cubic-bezier(.3, 1.6, .5, 1) forwards; }
+      .paw .t1 { animation-delay: .15s } .paw .t2 { animation-delay: .3s } .paw .t3 { animation-delay: .45s } .paw .t4 { animation-delay: .6s } .paw .pad { animation-delay: .8s }
+      h1 { margin: 26px 0 0; font-size: 26px; font-weight: 600; letter-spacing: .02em; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .6s .3s ease-out both; }
+      .sub { margin: 8px 0 0; font-size: 13px; color: #9aa1ad; text-align: center; animation: rise .6s .45s ease-out both; }
+
+      .steps { margin: 26px 0 0; padding: 0; list-style: none; width: 100%; display: grid; gap: 8px; }
+      .steps li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: #ffffff08; border: 1px solid #ffffff10; font-size: 13px; color: #9aa1ad; opacity: 0; transform: translateY(8px); animation: rise .5s ease-out forwards; transition: color .3s, border-color .3s, background .3s; }
+      .steps li.active { color: #f3f4f6; border-color: rgba(76, 194, 255, .45); background: rgba(76, 194, 255, .08); }
+      .steps li.done { color: #cbd5e1; }
+      .dot { position: relative; flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #ffffff2a; box-sizing: border-box; transition: border-color .3s, background .3s; }
+      li.active .dot { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+      li.done .dot { border-color: #34d399; background: #34d399; }
+      li.done .dot::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #06070b; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+      .error { margin-top: 14px; max-width: 520px; font-size: 12px; color: #fca5a5; white-space: pre-wrap; text-align: center; }
+
+      @keyframes pop { from { opacity: 0; transform: scale(.2) } to { opacity: 1; transform: scale(1) } }
+      @keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+      @keyframes spin { to { transform: rotate(360deg) } }
+      @keyframes breathe { 50% { opacity: .6; transform: scale(1.05) } }
+      @keyframes twinkle { from { opacity: .45 } to { opacity: 1 } }
+      @keyframes bob { 50% { transform: translateY(-4px) } }
+      @keyframes step { 0% { opacity: 0; transform: var(--r) scale(.6) } 8% { opacity: .55; transform: var(--r) scale(1) } 45% { opacity: .55 } 70%, 100% { opacity: 0 } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="stars"></div>
+    <div class="trail" id="trail"></div>
+    <div class="stage">
+      <div class="logo">
+        <svg class="ring" viewBox="0 0 150 150" aria-hidden="true">
+          <defs>
+            <linearGradient id="rg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4cc2ff" /><stop offset="1" stop-color="#a78bfa" /></linearGradient>
+          </defs>
+          <circle class="track" cx="75" cy="75" r="65" />
+          <circle class="fill" id="ringFill" cx="75" cy="75" r="65" />
+        </svg>
+        <svg class="paw" viewBox="0 0 100 100" aria-hidden="true">
+          <g transform="rotate(-20 20 42)"><ellipse class="t1" cx="20" cy="42" rx="9" ry="12" /></g>
+          <g transform="rotate(-6 38 24)"><ellipse class="t2" cx="38" cy="24" rx="10" ry="13" /></g>
+          <g transform="rotate(6 62 24)"><ellipse class="t3" cx="62" cy="24" rx="10" ry="13" /></g>
+          <g transform="rotate(20 80 42)"><ellipse class="t4" cx="80" cy="42" rx="9" ry="12" /></g>
+          <path class="pad" d="M50 48c-13 0-26 13-28 26-2 11 6 17 15 15 5-1 9-3 13-3s8 2 13 3c9 2 17-4 15-15-2-13-15-26-28-26z" />
+        </svg>
+      </div>
+      <h1 id="title"></h1>
+      <p class="sub" id="sub"></p>
+      <ul class="steps" id="steps"></ul>
+      <p class="error" id="error"></p>
+    </div>
+    <script>
+      const MODES = {
+        install: {
+          title: "Willkommen bei FurrBox",
+          sub: "FurrBox wird für dich eingerichtet – das dauert nur einen Moment.",
+          steps: ["Dateien werden vorbereitet", "Dein Desktop wird eingerichtet", "Verbindung zum Team wird hergestellt", "Fast fertig"],
+          stepMs: 1500,
+        },
+        update: {
+          title: "FurrBox wurde aktualisiert",
+          sub: "Das Update wird abgeschlossen.",
+          steps: ["Neue Version wird geladen", "Einstellungen werden übernommen", "Verbindung zum Team wird hergestellt"],
+          stepMs: 1200,
+        },
+        apply: {
+          title: "Update wird installiert",
+          sub: "FurrBox schließt sich kurz und startet in ungefähr 20 Sekunden von selbst wieder. Bitte nichts weiter tun.",
+          steps: ["Update wird vorbereitet", "FurrBox wird neu gestartet"],
+          stepMs: 1300,
+        },
+      };
+      const mode = MODES[new URLSearchParams(location.search).get("mode")] ? new URLSearchParams(location.search).get("mode") : "install";
+      const cfg = MODES[mode];
+      document.getElementById("title").textContent = cfg.title;
+      document.getElementById("sub").textContent = cfg.sub;
+
+      const list = document.getElementById("steps");
+      const items = cfg.steps.map((text, i) => {
+        const li = document.createElement("li");
+        li.style.animationDelay = `${0.6 + i * 0.12}s`;
+        li.innerHTML = '<span class="dot"></span><span></span>';
+        li.lastChild.textContent = text;
+        list.appendChild(li);
+        return li;
+      });
+      const ring = document.getElementById("ringFill");
+      function show(n) {
+        items.forEach((li, i) => {
+          li.classList.toggle("done", i < n);
+          li.classList.toggle("active", i === n);
+        });
+        // The last step stays "active" until the app really is ready.
+        ring.style.strokeDashoffset = String(408 * (1 - Math.min(n + 0.5, items.length - 0.15) / items.length));
+      }
+      let current = 0;
+      show(0);
+      const timer = setInterval(() => {
+        if (current >= items.length - 1) return clearInterval(timer);
+        current += 1;
+        show(current);
+      }, cfg.stepMs);
+
+      // Paw prints walking from left to right.
+      const trail = document.getElementById("trail");
+      const PAW = '<g transform="rotate(-20 20 42)"><ellipse cx="20" cy="42" rx="9" ry="12"/></g><g transform="rotate(-6 38 24)"><ellipse cx="38" cy="24" rx="10" ry="13"/></g><g transform="rotate(6 62 24)"><ellipse cx="62" cy="24" rx="10" ry="13"/></g><g transform="rotate(20 80 42)"><ellipse cx="80" cy="42" rx="9" ry="12"/></g><path d="M50 48c-13 0-26 13-28 26-2 11 6 17 15 15 5-1 9-3 13-3s8 2 13 3c9 2 17-4 15-15-2-13-15-26-28-26z"/>';
+      const COUNT = 12;
+      for (let i = 0; i < COUNT; i += 1) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 100 100");
+        svg.innerHTML = PAW;
+        svg.style.left = `${4 + (i * 92) / COUNT}%`;
+        svg.style.top = i % 2 ? "44px" : "6px";
+        svg.style.setProperty("--r", `rotate(${i % 2 ? 100 : 80}deg)`);
+        svg.style.animationDelay = `${i * 0.35}s`;
+        trail.appendChild(svg);
+      }
+
+      window.furrbox?.onStatus?.((text, isError) => {
+        if (!isError) return;
+        document.getElementById("error").textContent = text;
+        clearInterval(timer);
+      });
+    </script>
+  </body>
+</html>

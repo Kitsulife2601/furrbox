@@ -239,7 +239,7 @@
   background: color-mix(in oklab, var(--os-accent) 70%, transparent);
 }
 
-/* Shutdown screen (Power.tsx): fade to black + Windows-style orbiting dots. */
+/* Shutdown screen (Power.tsx): FurrBox's own animation – the paw goes to sleep. */
 .furr-power {
   animation: furr-power-in 0.6s ease-out both;
 }
@@ -251,63 +251,192 @@
     opacity: 0;
   }
 }
-.furr-spinner {
-  position: relative;
-  width: 48px;
-  height: 48px;
+.furr-power-glow {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(40% 35% at 50% 45%, color-mix(in srgb, var(--os-accent, #4cc2ff) 22%, transparent), transparent 70%),
+    radial-gradient(30% 30% at 60% 60%, rgb(167 139 250 / 0.14), transparent 70%);
+  animation: furr-power-dim 3.2s ease-in forwards;
 }
-.furr-spinner span {
+.furr-power-stars {
   position: absolute;
   inset: 0;
-  animation: furr-orbit 2.2s infinite;
+  background-image:
+    radial-gradient(1px 1px at 12% 20%, #fff8, transparent), radial-gradient(1px 1px at 78% 30%, #fff6, transparent),
+    radial-gradient(1.5px 1.5px at 30% 80%, #fff5, transparent), radial-gradient(1px 1px at 88% 75%, #fff7, transparent),
+    radial-gradient(1px 1px at 55% 12%, #fff5, transparent), radial-gradient(1px 1px at 20% 55%, #fff4, transparent),
+    radial-gradient(1.5px 1.5px at 66% 88%, #fff5, transparent), radial-gradient(1px 1px at 42% 38%, #fff4, transparent);
+  animation: furr-power-twinkle 2.4s ease-in-out infinite alternate;
 }
-.furr-spinner span::before {
-  content: "";
+.furr-power-logo {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  animation: furr-power-sink 3.2s ease-in forwards;
+}
+.furr-power-ring {
   position: absolute;
-  top: 0;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  border-radius: 50%;
-  background: #fff;
+  inset: 0;
+  transform: rotate(-90deg);
 }
-@keyframes furr-orbit {
-  0% {
-    transform: rotate(225deg);
+.furr-power-ring circle {
+  fill: none;
+  stroke: url(#furr-power-rg);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 440;
+  animation: furr-power-unwind 3s ease-in-out forwards;
+}
+.furr-power-paw {
+  position: absolute;
+  inset: 30px;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--os-accent, #4cc2ff) 55%, transparent));
+}
+.furr-power-paw ellipse,
+.furr-power-paw path {
+  fill: var(--os-accent, #4cc2ff);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: furr-power-toe 0.55s ease-in forwards;
+}
+.furr-power-paw .t4 {
+  animation-delay: 0.5s;
+}
+.furr-power-paw .t3 {
+  animation-delay: 0.9s;
+}
+.furr-power-paw .t2 {
+  animation-delay: 1.3s;
+}
+.furr-power-paw .t1 {
+  animation-delay: 1.7s;
+}
+.furr-power-paw .pad {
+  animation: furr-power-pad 1s ease-in 2.2s forwards;
+}
+.furr-power-zzz {
+  position: absolute;
+  right: 4px;
+  top: 6px;
+  font-weight: 700;
+  color: rgb(255 255 255 / 0.7);
+}
+.furr-power-zzz i {
+  position: absolute;
+  font-style: normal;
+  opacity: 0;
+  animation: furr-power-zzz 2.2s ease-out infinite;
+}
+.furr-power-zzz i:nth-child(2) {
+  animation-delay: 0.7s;
+}
+.furr-power-zzz i:nth-child(3) {
+  animation-delay: 1.4s;
+}
+.furr-power-text {
+  animation: furr-power-text 0.7s ease-out both;
+}
+/* Restart: the ring keeps spinning instead of unwinding, the paw pulses. */
+.furr-power-restart {
+  animation: none;
+}
+.furr-power-restart .furr-power-ring {
+  animation: furr-power-spin 1.4s linear infinite;
+}
+.furr-power-restart .furr-power-ring circle {
+  stroke-dasharray: 280 400;
+  animation: none;
+}
+.furr-power-restart .furr-power-paw ellipse,
+.furr-power-restart .furr-power-paw path {
+  animation: furr-power-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes furr-power-unwind {
+  to {
+    stroke-dashoffset: 440;
+    opacity: 0.2;
+  }
+}
+@keyframes furr-power-toe {
+  to {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+@keyframes furr-power-pad {
+  40% {
+    transform: scale(1.08);
     opacity: 1;
-    animation-timing-function: ease-out;
   }
-  7% {
-    transform: rotate(345deg);
-    animation-timing-function: linear;
-  }
-  30% {
-    transform: rotate(455deg);
-    animation-timing-function: ease-in-out;
-  }
-  39% {
-    transform: rotate(690deg);
-    animation-timing-function: linear;
-  }
-  70% {
-    transform: rotate(815deg);
-    opacity: 1;
-    animation-timing-function: ease-out;
-  }
-  75% {
-    transform: rotate(945deg);
-    animation-timing-function: ease-out;
-  }
-  76%,
-  100% {
-    transform: rotate(945deg);
+  to {
+    transform: scale(0.3);
     opacity: 0;
   }
 }
+@keyframes furr-power-sink {
+  0%,
+  70% {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: translateY(14px) scale(0.92);
+    opacity: 0.25;
+  }
+}
+@keyframes furr-power-dim {
+  to {
+    opacity: 0.15;
+  }
+}
+@keyframes furr-power-twinkle {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes furr-power-zzz {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.6);
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(22px, -34px) scale(1.5);
+  }
+}
+@keyframes furr-power-text {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes furr-power-spin {
+  to {
+    transform: rotate(270deg);
+  }
+}
+@keyframes furr-power-pulse {
+  from {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .furr-spinner span {
-    animation-duration: 6s;
+  .furr-power *,
+  .furr-power *::before {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
