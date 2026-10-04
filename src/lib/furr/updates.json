@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-04",
+    "title": "Anwesend-Schalter direkt am Handgelenk",
+    "items": [
+      "„Anwesend“ / „Nicht anwesend“ schaltest du jetzt direkt im kleinen Feld am Handgelenk um – einfach antippen.",
+      "Der Schalter ist aus den Einstellungen am Desktop verschwunden. Dort steht nur noch das Anwesenheits-Protokoll."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.21",
     "title": "FurrBox VR im Stil von OVR Toolkit",
     "items": [

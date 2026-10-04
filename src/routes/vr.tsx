@@ -313,12 +313,23 @@ function VrPanel() {
       >
         <div className="flex items-center gap-2.5">
           <span className="text-[40px] font-bold tabular-nums leading-none">{info.time}</span>
-          <div className="min-w-0 flex-1 text-[13px] leading-tight text-white/70">
-            <p className="truncate">{info.date}</p>
-            <p className="flex items-center gap-1.5 truncate">
-              <span className={cn("size-2.5 shrink-0 rounded-full", onDuty ? "bg-emerald-400" : "bg-white/30")} />
-              {onDuty ? "Anwesend" : "Nicht anwesend"}
-            </p>
+          <div className="grid min-w-0 flex-1 justify-items-start gap-1">
+            <p className="truncate text-[13px] leading-none text-white/70">{info.date}</p>
+            {/* Tap to switch between "Anwesend" (you can moderate right now) and "Nicht anwesend". */}
+            {me.data && (
+              <button
+                type="button"
+                onClick={() => void toggleDuty()}
+                aria-pressed={onDuty}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold leading-none",
+                  onDuty ? "bg-emerald-500 text-black" : "bg-white/12 text-white hover:bg-white/25",
+                )}
+              >
+                <span className={cn("size-2.5 shrink-0 rounded-full", onDuty ? "bg-black/60" : "bg-white/40")} />
+                {onDuty ? "Anwesend" : "Nicht anwesend"}
+              </button>
+            )}
           </div>
           <BatteryChips battery={battery.data ?? null} />
           {buttonMode && (

@@ -1,7 +1,7 @@
 // FurrSettings → FurrBox VR: the panel on your arm in SteamVR – on/off, what it shows, where it sits.
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listDuty, listDutyLog, setDuty } from "@/lib/furr/api/duty";
+import { useQuery } from "@tanstack/react-query";
+import { listDutyLog } from "@/lib/furr/api/duty";
 import { useMe } from "@/lib/furr/client";
 import { Glasses } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -345,37 +345,20 @@ export function VrSettings() {
   );
 }
 
-/** Anwesenheit: your own switch plus the log (who was anwesend when, handled vote kicks). */
+/** Anwesenheits-Protokoll. The switch itself lives in the VR panel (wrist widget and page "Team"). */
 function DutySection() {
   const me = useMe();
-  const queryClient = useQueryClient();
   const allowed = Boolean(me.data?.permissions.canUseEvidence);
-  const duty = useQuery({ queryKey: ["furr", "duty"], queryFn: () => listDuty(), enabled: allowed, refetchInterval: 20_000 });
   const log = useQuery({ queryKey: ["furr", "duty", "log"], queryFn: () => listDutyLog(), enabled: allowed, refetchInterval: 30_000 });
   if (!allowed) return null;
-  const onDuty = Boolean(duty.data?.find((d) => d.userId === me.data?.userId)?.onDuty);
   const KIND = { on: "ist anwesend", off: "ist nicht mehr anwesend", votekick: "Votekick erledigt" } as const;
   return (
     <section className="grid gap-2">
       <h3 className="text-[13px] font-semibold">Anwesenheit</h3>
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium">{onDuty ? "Du bist anwesend" : "Du bist nicht anwesend"}</p>
-          <p className="text-[12px] text-muted">
-            „Anwesend“ heißt: Du kannst gerade moderieren. Das Team sieht es in der Team-Liste am Arm, und der Bot schreibt es in Discord,
-            sobald eine Gruppen-Instanz aufgeht. Den Schalter gibt es auch am Arm auf der Seite „Team“. Ist deine FurrBox länger als 15 Minuten
-            zu, giltst du automatisch als nicht anwesend.
-          </p>
-        </div>
-        <Toggle
-          on={onDuty}
-          label="Anwesend"
-          onChange={async (on) => {
-            await setDuty({ data: on }).catch(() => undefined);
-            await queryClient.invalidateQueries({ queryKey: ["furr", "duty"] });
-          }}
-        />
-      </div>
+      <p className="text-[12px] text-muted">
+        „Anwesend“ oder „Nicht anwesend“ schaltest du in VR um: im kleinen Feld am Handgelenk oder auf der Seite „Team“. Ist deine FurrBox
+        länger als 15 Minuten zu, giltst du automatisch als nicht anwesend.
+      </p>
       <details className="rounded-lg bg-elevated/30 px-3 py-2">
         <summary className="cursor-pointer text-[12px] text-muted">Anwesenheits-Protokoll ({log.data?.length ?? 0})</summary>
         <div className="mt-2 grid max-h-48 gap-1 overflow-auto text-[12px]">
