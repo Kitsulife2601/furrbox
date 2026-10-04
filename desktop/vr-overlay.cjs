@@ -48,16 +48,41 @@ function findOpenvrDll() {
  * Panel position relative to the controller, in metres / degrees. The panel lies flat above the
  * controller like a wrist tablet: its top edge points away from you.
  */
-const DEFAULT_PLACEMENT = { hand: "left", width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0 };
+const DEFAULT_PLACEMENT = { hand: "left", width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0, roll: 0, turn: 0 };
 
 function matrixFor(p) {
   // Overlay X -> controller X, overlay up (Y) -> controller forward (-Z), overlay normal (Z) -> controller up (Y),
   // then tilted around X by `tilt` degrees towards the user.
-  const a = (Number(p.tilt) || 0) * (Math.PI / 180);
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  // Columns: X=(1,0,0)  Y=(0,s,-c)  Z=(0,c,s)
-  return [1, 0, 0, p.x, 0, s, c, p.y, 0, -c, s, p.z];
+  const rad = (v) => (Number(v) || 0) * (Math.PI / 180);
+  const c = Math.cos(rad(p.tilt));
+  const s = Math.sin(rad(p.tilt));
+  // Flat panel, columns: X=(1,0,0)  Y=(0,s,-c)  Z=(0,c,s)
+  let m = [
+    [1, 0, 0],
+    [0, s, c],
+    [0, -c, s],
+  ];
+  const mul = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
+  // "turn": spin the panel around its own middle (like turning a phone from portrait to landscape).
+  const ct = Math.cos(rad(p.turn));
+  const st = Math.sin(rad(p.turn));
+  m = mul(m, [
+    [ct, -st, 0],
+    [st, ct, 0],
+    [0, 0, 1],
+  ]);
+  // "roll": tip the whole panel sideways around the controller's forward axis (90° = edge of the hand).
+  const cr = Math.cos(rad(p.roll));
+  const sr = Math.sin(rad(p.roll));
+  m = mul(
+    [
+      [cr, -sr, 0],
+      [sr, cr, 0],
+      [0, 0, 1],
+    ],
+    m,
+  );
+  return [...m[0], p.x, ...m[1], p.y, ...m[2], p.z];
 }
 
 function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {

@@ -6,7 +6,14 @@ import { VR_INFOS, VR_WIDGETS, useVrSettings, type VrInfoPlace } from "@/store/v
 import { DesktopHint } from "./VRChat";
 import { Btn } from "./ui";
 
-type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number };
+type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number };
+
+/** Ready-made positions (for the left arm; mirrored for the right one). */
+const PRESETS: { id: string; label: string; hint: string; place: Omit<Placement, "hand"> }[] = [
+  { id: "edge", label: "Handkante", hint: "seitlich außen an der Hand", place: { width: 0.13, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 } },
+  { id: "watch", label: "Unterarm", hint: "wie eine Uhr am Unterarm", place: { width: 0.14, x: 0, y: 0.03, z: 0.22, tilt: 20, roll: 0, turn: 0 } },
+  { id: "top", label: "Über der Hand", hint: "flach über der Hand", place: { width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0, roll: 0, turn: 0 } },
+];
 type VrState = {
   status: "off" | "waiting" | "running" | "unsupported";
   error: string | null;
@@ -99,7 +106,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.13" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.14" />
       </div>
     );
   }
@@ -212,16 +219,33 @@ export function VrSettings() {
               </button>
             ))}
           </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  // Mirror left/right for the right arm.
+                  const mirror = p.hand === "right" ? -1 : 1;
+                  place({ ...preset.place, x: preset.place.x * mirror, roll: (preset.place.roll ?? 0) * mirror });
+                }}
+                className="rounded-lg border border-border bg-elevated/40 px-2 py-2 text-left hover:border-accent"
+              >
+                <span className="block text-[13px] font-medium">{preset.label}</span>
+                <span className="block text-[11px] text-muted">{preset.hint}</span>
+              </button>
+            ))}
+          </div>
           <Slider label="Größe (Breite)" value={cm(p.width)} min={8} max={50} step={1} unit="cm" onChange={(v) => place({ width: v / 100 })} />
           <Slider label="Links / Rechts" value={cm(p.x)} min={-30} max={30} step={1} unit="cm" onChange={(v) => place({ x: v / 100 })} />
           <Slider label="Höhe über Hand" value={cm(p.y)} min={-20} max={30} step={1} unit="cm" onChange={(v) => place({ y: v / 100 })} />
           <Slider label="Zum Ellbogen" value={cm(p.z)} min={-20} max={40} step={1} unit="cm" onChange={(v) => place({ z: v / 100 })} />
           <Slider label="Neigung zu dir" value={Math.round(p.tilt)} min={-60} max={90} step={5} unit="°" onChange={(v) => place({ tilt: v })} />
-          <div>
-            <Btn variant="ghost" onClick={() => place({ width: 0.2, x: 0, y: 0.06, z: 0.1, tilt: 0 })}>
-              Zurücksetzen
-            </Btn>
-          </div>
+          <Slider label="Seitlich kippen" value={Math.round(p.roll ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ roll: v })} />
+          <Slider label="Drehen" value={Math.round(p.turn ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ turn: v })} />
+          <p className="text-[11px] text-subtle">
+            Zeigt das Fenster bei „Handkante“ von dir weg, stell „Seitlich kippen“ auf den Wert mit umgekehrtem Vorzeichen (z. B. −90 statt 90).
+          </p>
         </section>
       )}
     </div>

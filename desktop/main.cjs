@@ -312,6 +312,8 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
     y: num(input?.y, -0.5, 0.5, current.y ?? 0.06),
     z: num(input?.z, -0.5, 0.5, current.z ?? 0.1),
     tilt: num(input?.tilt, -90, 90, current.tilt ?? 0),
+    roll: num(input?.roll, -180, 180, current.roll ?? 0),
+    turn: num(input?.turn, -180, 180, current.turn ?? 0),
   };
   saveVr({ placement });
   vrOverlay.setPlacement(placement);

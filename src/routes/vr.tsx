@@ -189,7 +189,7 @@ function InfoBar({ place, info }: { place: "top" | "bottom"; info: Record<VrInfo
           className={cn(
             "flex min-w-0 items-center gap-1.5 truncate",
             id === "time" && place === "top" ? "text-[24px] font-bold tabular-nums leading-none" : "text-[13px]",
-            id === "world" && "flex-1 font-semibold",
+            id === "world" && "min-w-[45%] flex-1 font-semibold",
           )}
         >
           {id === "people" && <Users className="size-3.5 shrink-0" />}

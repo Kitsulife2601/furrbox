@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.14",
+    "title": "FurrBox VR: Fenster an der Handkante",
+    "items": [
+      "Neu: fertige Positionen zum Anklicken unter FurrSettings → „FurrBox VR“: „Handkante“, „Unterarm“ und „Über der Hand“.",
+      "Neue Regler „Seitlich kippen“ und „Drehen“, damit das Fenster auch seitlich an der Hand sitzen kann.",
+      "Der Name der Welt steht wieder in der Leiste am Arm."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.13",
     "title": "FurrBox VR: Menü-Problem behoben, Wischen und wählbare Infos",
     "items": [
