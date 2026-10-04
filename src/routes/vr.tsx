@@ -1,6 +1,7 @@
 // FurrBox VR: the page shown on your arm in SteamVR (rendered offscreen by the desktop app,
-// landscape 640 × 400, operated with the SteamVR laser pointer). Layout: a narrow info column on
-// the left, pages on the right that you swipe through (or use the tabs / arrows).
+// operated with the SteamVR laser pointer). Layout like OVR Toolkit: a small widget on the wrist
+// (clock, music, battery, notices – 520 × 200) and, when open, a window above it (520 × 700 in total)
+// with pages you swipe through.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -41,7 +42,12 @@ const osc = () => (window as { furrbox?: { osc?: OscBridge } }).furrbox?.osc ?? 
 type Song = { playing: boolean; title: string; artist: string; app: string; position?: number; duration?: number };
 type MediaBridge = { state(): Promise<Song | null>; control(action: "toggle" | "next" | "prev"): Promise<boolean> };
 const mediaBridge = () => (window as { furrbox?: { media?: MediaBridge } }).furrbox?.media ?? null;
-type PanelBridge = { setMode?(mode: "button" | "alert" | "full"): Promise<boolean>; onGaze?(cb: (looking: boolean) => void): () => void };
+type Battery = { headset: number | null; left: number | null; right: number | null };
+type PanelBridge = {
+  setMode?(mode: "widget" | "full"): Promise<boolean>;
+  onGaze?(cb: (looking: boolean) => void): () => void;
+  battery?(): Promise<Battery | null>;
+};
 const panelBridge = () => (window as { furrbox?: { vr?: PanelBridge } }).furrbox?.vr ?? null;
 
 function mmss(sec: number) {
@@ -146,7 +152,7 @@ function VrPanel() {
   const song = useQuery({
     queryKey: ["furr", "vr", "media"],
     queryFn: async () => (await mediaBridge()!.state()) ?? null,
-    enabled: Boolean(mediaBridge()) && (widgets.music || infos.music !== "off") && !collapsed,
+    enabled: Boolean(mediaBridge()),
     refetchInterval: 3_000,
   });
 
@@ -172,16 +178,6 @@ function VrPanel() {
     void markVotekickDone({ data: { target: vote.target, initiator: vote.initiator, world: s?.worldName ?? null } }).catch(() => undefined);
   };
 
-  const mode = !collapsed ? "full" : notice ? "alert" : "button";
-  useEffect(() => {
-    void panelBridge()?.setMode?.(mode);
-  }, [mode]);
-  // The chat hint depends on the clock – look more often than the 10 s tick while one is due.
-  useEffect(() => {
-    if (!newest) return;
-    setNow(new Date());
-  }, [newest?.id]);
-
   const info: Record<VrInfoId, string | null> = {
     time: now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
     date: now.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
@@ -189,172 +185,201 @@ function VrPanel() {
     people: s?.inInstance ? `${s.players.length} Leute` : null,
     joined: s?.inInstance && s.joinedAt ? `Du: seit ${since(s.joinedAt, now)}` : null,
     instanceAge: s?.inInstance ? (openedAt ? `Instanz offen: ${since(openedAt, now)}` : s.joinedAt ? `Instanz: mind. ${since(s.joinedAt, now)}` : null) : null,
-    music: song.data?.playing && song.data.title ? `♪ ${song.data.title}${song.data.artist ? ` – ${song.data.artist}` : ""}` : null,
+    music: null,
   };
-
   const pages = PAGES.filter((id) => widgets[id]);
   const current = Math.min(page, Math.max(0, pages.length - 1));
   const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
-  const hasInfo = (Object.keys(info) as VrInfoId[]).some((id) => infos[id] !== "off" && info[id]);
 
-  if (collapsed && notice) {
-    const tone = { red: "border-red-400 bg-red-950/95", blue: "border-accent bg-[#0b1a26]/95", green: "border-emerald-400 bg-emerald-950/95" }[notice.tone];
-    return (
-      <div className={cn("flex h-screen w-screen select-none items-center gap-2 overflow-hidden rounded-[28px] border-4 p-2 text-white", tone, notice.tone === "red" && "furr-vr-alert")}>
-        <button type="button" onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 px-2 text-left" aria-label="Fenster öffnen">
-          {notice.tone === "red" ? (
-            <AlertTriangle className="size-10 shrink-0 text-red-300" />
-          ) : notice.tone === "blue" ? (
-            <MessageSquare className="size-10 shrink-0 text-accent" />
-          ) : (
-            <DoorOpen className="size-10 shrink-0 text-emerald-300" />
-          )}
-          <span className="min-w-0">
-            <span className="block truncate text-[20px] font-bold leading-tight">{notice.title}</span>
-            <span className="block truncate text-[15px] text-white/75">{notice.text}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => (notice.tone === "red" ? voteDone() : dismiss(notice.id))}
-          className="flex h-full shrink-0 flex-col items-center justify-center gap-1 rounded-2xl bg-white/12 px-4 text-[14px] font-semibold hover:bg-emerald-500/60"
-        >
-          <Check className="size-7" /> Erledigt
-        </button>
-      </div>
-    );
-  }
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        aria-label="FurrBox öffnen"
-        onClick={() => setOpen(true)}
-        className={cn(
-          "grid h-screen w-screen place-items-center rounded-full border-4 bg-[#0b0d14]/90 text-accent hover:bg-accent hover:text-black",
-          onDuty ? "border-emerald-400" : "border-white/25",
-        )}
-        title={onDuty ? "Anwesend" : "Nicht anwesend"}
-      >
-        <PawPrint className="size-16" strokeWidth={2.2} />
-      </button>
-    );
-  }
+  // Song in the widget; battery of headset and controllers.
+  const battery = useQuery({
+    queryKey: ["furr", "vr", "battery"],
+    queryFn: async () => (await panelBridge()?.battery?.()) ?? null,
+    enabled: Boolean(panelBridge()?.battery),
+    refetchInterval: 30_000,
+  });
+  const control = (action: "toggle" | "next" | "prev") => {
+    void mediaBridge()
+      ?.control(action)
+      .then(() => window.setTimeout(() => void song.refetch(), 1200));
+  };
+
+  const mode = collapsed ? "widget" : "full";
+  useEffect(() => {
+    void panelBridge()?.setMode?.(mode);
+  }, [mode]);
+
+  const tone = notice ? { red: "border-red-400 bg-red-950/95", blue: "border-accent bg-[#0b1a26]/95", green: "border-emerald-400 bg-emerald-950/95" }[notice.tone] : "";
+  const bottomInfos = (Object.keys(info) as VrInfoId[]).filter((id) => id !== "time" && id !== "music" && infos[id] === "bottom" && info[id]);
+  const topInfos = (Object.keys(info) as VrInfoId[]).filter((id) => id !== "time" && id !== "music" && infos[id] === "top" && info[id]);
 
   return (
-    <div
-      className="relative flex h-screen w-screen select-none gap-2 overflow-hidden rounded-[24px] border-2 border-white/15 bg-[#0b0d14]/92 p-2.5 text-white"
-    >
-      {buttonMode && (
-        <button
-          type="button"
-          aria-label="Fenster schließen"
-          onClick={() => setOpen(false)}
-          className="absolute right-2 top-2 z-10 grid size-9 place-items-center rounded-full bg-white/12 hover:bg-red-500/70"
-        >
-          <X className="size-5" />
-        </button>
-      )}
-      {hasInfo && (
-        <aside className="flex w-[168px] shrink-0 flex-col justify-between gap-2 rounded-2xl bg-white/6 p-3">
-          <InfoGroup place="top" info={info} />
-          <InfoGroup place="bottom" info={info} />
-        </aside>
-      )}
+    <div className="flex h-screen w-screen select-none flex-col justify-end gap-2 overflow-hidden text-white">
+      {/* The window above the wrist (only while open). */}
+      {!collapsed && (
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[22px] border-2 border-white/15 bg-[#0b0d14]/93 p-2.5">
+          {topInfos.length > 0 && (
+            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl bg-white/6 px-3 py-1.5 text-[13px]">
+              {topInfos.map((id) => (
+                <span key={id} className={cn("flex min-w-0 items-center gap-1.5", id === "world" && "min-w-[45%] flex-1 font-semibold")}>
+                  {id === "people" && <Users className="size-3.5 shrink-0" />}
+                  <span className="truncate">{info[id]}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {widgets.votekick && vote && <VoteAlert vote={vote} onDone={voteDone} />}
+          {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
+            <p className="truncate rounded-xl bg-amber-500/12 px-3 py-1 text-[13px] text-amber-200">
+              Votekick {clock(lastVote.at)}: gegen <b>{lastVote.target}</b>
+              {lastVote.initiator ? ` – von ${lastVote.initiator}` : ""}
+              {lastVote.result === "kicked" ? " · gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
+            </p>
+          )}
 
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        {widgets.votekick && vote && <VoteAlert vote={vote} onDone={voteDone} />}
-        {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
-          <p className="truncate rounded-xl bg-amber-500/12 px-3 py-1 text-[13px] text-amber-200">
-            Votekick {clock(lastVote.at)}: gegen <b>{lastVote.target}</b>
-            {lastVote.initiator ? ` – von ${lastVote.initiator}` : ""}
-            {lastVote.result === "kicked" ? " · gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
-          </p>
-        )}
-        {chatAlert && !vote && (
-          <div className="flex items-center gap-3 rounded-2xl border-2 border-accent/70 bg-accent/15 px-3 py-2 pr-12">
-            <MessageSquare className="size-7 shrink-0 text-accent" />
-            <div className="min-w-0">
-              <p className="text-[12px] font-bold uppercase tracking-wide text-accent">Neue Nachricht · {chatAlert.senderName}</p>
-              <p className="line-clamp-2 text-[15px] leading-tight">{chatAlert.content}</p>
-            </div>
-          </div>
-        )}
-        {widgets.instanceAlert && fresh && !vote && !chatAlert && (
-          <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-400/70 bg-emerald-500/20 px-3 py-2">
-            <DoorOpen className="size-7 shrink-0 text-emerald-300" />
-            <div className="min-w-0">
-              <p className="text-[12px] font-bold uppercase tracking-wide text-emerald-200">Neue Gruppen-Instanz · {clock(fresh.openedAt)}</p>
-              <p className="truncate text-[15px] font-semibold leading-tight">{fresh.worldName}</p>
-              <p className="truncate text-[12px] text-white/70">
-                {fresh.memberCount} {fresh.memberCount === 1 ? "Person" : "Leute"} · {fresh.region} · {fresh.access}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {!me.data ? (
-          <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
-            {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
-          </p>
-        ) : pages.length === 0 ? (
-          <div className="flex-1" />
-        ) : (
-          <>
-            {/* Pages: drag sideways with the laser (hold the trigger) or use the tabs / arrows. */}
-            <div
-              className="relative min-h-0 flex-1 overflow-hidden"
-              onMouseDown={(e) => {
-                drag.current = e.clientX;
-              }}
-              onMouseUp={(e) => {
-                if (drag.current === null) return;
-                const dx = e.clientX - drag.current;
-                drag.current = null;
-                if (dx <= -SWIPE_PX) go(1);
-                else if (dx >= SWIPE_PX) go(-1);
-              }}
-              onMouseLeave={() => {
-                drag.current = null;
-              }}
-            >
-              <div className="flex h-full transition-transform duration-300 ease-out" style={{ transform: `translateX(-${current * 100}%)` }}>
-                {pages.map((id) => (
-                  <div key={id} className="flex h-full w-full shrink-0 flex-col">
-                    {id === "instance" && <InstanceList state={s} />}
-                    {id === "team" && <TeamList duty={duty.data ?? []} onDuty={onDuty} onToggle={() => void toggleDuty()} />}
-                    {id === "music" && <MusicPage song={song.data ?? null} onChanged={() => void song.refetch()} />}
-                    {id === "chatbox" && <Chatbox />}
-                    {id === "teamchat" && <TeamChat />}
-                  </div>
-                ))}
-              </div>
-            </div>
-            {pages.length > 1 && (
-              <nav className="flex items-center gap-1.5">
-                <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
-                  <ChevronLeft className="size-5" />
-                </NavButton>
-                <div className="flex flex-1 items-center justify-center gap-1.5">
-                  {pages.map((id, i) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setPage(i)}
-                      className={cn(
-                        "rounded-full px-3 py-1.5 text-[13px] font-medium",
-                        i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
-                      )}
-                    >
-                      {PAGE_TITLE[id]}
-                    </button>
+          {!me.data ? (
+            <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
+              {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
+            </p>
+          ) : pages.length === 0 ? (
+            <div className="flex-1" />
+          ) : (
+            <>
+              {/* Pages: drag sideways with the laser (hold the trigger) or use the tabs / arrows. */}
+              <div
+                className="relative min-h-0 flex-1 overflow-hidden"
+                onMouseDown={(e) => {
+                  drag.current = e.clientX;
+                }}
+                onMouseUp={(e) => {
+                  if (drag.current === null) return;
+                  const dx = e.clientX - drag.current;
+                  drag.current = null;
+                  if (dx <= -SWIPE_PX) go(1);
+                  else if (dx >= SWIPE_PX) go(-1);
+                }}
+                onMouseLeave={() => {
+                  drag.current = null;
+                }}
+              >
+                <div className="flex h-full transition-transform duration-300 ease-out" style={{ transform: `translateX(-${current * 100}%)` }}>
+                  {pages.map((id) => (
+                    <div key={id} className="flex h-full w-full shrink-0 flex-col">
+                      {id === "instance" && <InstanceList state={s} />}
+                      {id === "team" && <TeamList duty={duty.data ?? []} onDuty={onDuty} onToggle={() => void toggleDuty()} />}
+                      {id === "music" && <MusicPage song={song.data ?? null} onChanged={() => void song.refetch()} />}
+                      {id === "chatbox" && <Chatbox />}
+                      {id === "teamchat" && <TeamChat />}
+                    </div>
                   ))}
                 </div>
-                <NavButton label="Weiter" disabled={current === pages.length - 1} onClick={() => go(1)}>
-                  <ChevronRight className="size-5" />
-                </NavButton>
-              </nav>
+              </div>
+              {pages.length > 1 && (
+                <nav className="flex items-center gap-1">
+                  <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
+                    <ChevronLeft className="size-5" />
+                  </NavButton>
+                  <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
+                    {pages.map((id, i) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setPage(i)}
+                        className={cn(
+                          "rounded-full px-2.5 py-1.5 text-[13px] font-medium",
+                          i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
+                        )}
+                      >
+                        {PAGE_TITLE[id]}
+                      </button>
+                    ))}
+                  </div>
+                  <NavButton label="Weiter" disabled={current === pages.length - 1} onClick={() => go(1)}>
+                    <ChevronRight className="size-5" />
+                  </NavButton>
+                </nav>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* The widget on the wrist: always there. */}
+      <div
+        className={cn(
+          "flex h-[192px] shrink-0 flex-col gap-1.5 overflow-hidden rounded-[22px] border-2 p-2.5",
+          notice && collapsed ? cn(tone, notice.tone === "red" && "furr-vr-alert") : "border-white/15 bg-[#0b0d14]/93",
+        )}
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-[40px] font-bold tabular-nums leading-none">{info.time}</span>
+          <div className="min-w-0 flex-1 text-[13px] leading-tight text-white/70">
+            <p className="truncate">{info.date}</p>
+            <p className="flex items-center gap-1.5 truncate">
+              <span className={cn("size-2.5 shrink-0 rounded-full", onDuty ? "bg-emerald-400" : "bg-white/30")} />
+              {onDuty ? "Anwesend" : "Nicht anwesend"}
+            </p>
+          </div>
+          <BatteryChips battery={battery.data ?? null} />
+          {buttonMode && (
+            <button
+              type="button"
+              aria-label={open ? "Fenster schließen" : "Fenster öffnen"}
+              onClick={() => setOpen(!open)}
+              className={cn("grid size-12 shrink-0 place-items-center rounded-full", open ? "bg-accent text-black" : "bg-white/12 hover:bg-white/25")}
+            >
+              {open ? <X className="size-6" /> : <PawPrint className="size-6" />}
+            </button>
+          )}
+        </div>
+
+        {notice && collapsed ? (
+          <div className="flex min-h-0 flex-1 items-center gap-2">
+            {notice.tone === "red" ? (
+              <AlertTriangle className="size-9 shrink-0 text-red-300" />
+            ) : notice.tone === "blue" ? (
+              <MessageSquare className="size-9 shrink-0 text-accent" />
+            ) : (
+              <DoorOpen className="size-9 shrink-0 text-emerald-300" />
             )}
+            <button type="button" onClick={() => setOpen(true)} className="min-w-0 flex-1 text-left" aria-label="Fenster öffnen">
+              <span className="block truncate text-[19px] font-bold leading-tight">{notice.title}</span>
+              <span className="block truncate text-[14px] text-white/75">{notice.text}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => (notice.tone === "red" ? voteDone() : dismiss(notice.id))}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[14px] font-semibold hover:bg-emerald-500/60"
+            >
+              <Check className="size-5" /> Erledigt
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Music like in OVR Toolkit: title with previous / play-pause / next. */}
+            <div className="flex min-h-0 flex-1 items-center gap-2 rounded-xl bg-white/6 px-2.5">
+              <Music className="size-5 shrink-0 text-accent" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold leading-tight">{song.data?.title || "Keine Musik"}</p>
+                <p className="truncate text-[12px] text-white/55">
+                  {song.data?.title
+                    ? `${song.data.artist}${song.data.duration ? ` · ${mmss(song.data.position ?? 0)} / ${mmss(song.data.duration)}` : ""}`
+                    : "Spotify, YouTube … starten"}
+                </p>
+              </div>
+              <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/25">
+                <SkipBack className="size-5" />
+              </button>
+              <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-black">
+                {song.data?.playing ? <Pause className="size-5" /> : <Play className="size-5" />}
+              </button>
+              <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/25">
+                <SkipForward className="size-5" />
+              </button>
+            </div>
+            <p className="flex items-center gap-3 truncate px-1 text-[12px] text-white/60">
+              {bottomInfos.length ? bottomInfos.map((id) => <span key={id} className="truncate">{info[id]}</span>) : <span>FurrBox VR</span>}
+            </p>
           </>
         )}
       </div>
@@ -362,24 +387,25 @@ function VrPanel() {
   );
 }
 
-/** Info items chosen for this place ("Oben" = upper part of the left column, "Unten" = lower part). */
-function InfoGroup({ place, info }: { place: "top" | "bottom"; info: Record<VrInfoId, string | null> }) {
-  const infos = useVrSettings((s) => s.infos);
-  const ids = (Object.keys(info) as VrInfoId[]).filter((id) => infos[id] === place && info[id]);
+function BatteryChips({ battery }: { battery: { headset: number | null; left: number | null; right: number | null } | null }) {
+  if (!battery) return null;
+  const items = [
+    ["Brille", battery.headset],
+    ["L", battery.left],
+    ["R", battery.right],
+  ].filter(([, v]) => typeof v === "number") as [string, number][];
+  if (items.length === 0) return null;
   return (
-    <div className={cn("grid gap-1", place === "bottom" && "text-white/65")}>
-      {ids.map((id) => (
-        <p
-          key={id}
-          className={cn(
-            "flex items-center gap-1.5",
-            id === "time" ? "text-[34px] font-bold tabular-nums leading-none" : "text-[13px] leading-snug",
-            id === "world" && "font-semibold",
-          )}
+    <div className="flex shrink-0 gap-1">
+      {items.map(([label, value]) => (
+        <span
+          key={label}
+          className={cn("rounded-lg px-1.5 py-1 text-center text-[11px] leading-tight", value <= 0.2 ? "bg-red-500/30 text-red-200" : "bg-white/8 text-white/75")}
+          title={`Akku ${label}`}
         >
-          {id === "people" && <Users className="size-3.5 shrink-0" />}
-          <span className={cn(id === "world" || id === "music" ? "line-clamp-2" : "truncate")}>{info[id]}</span>
-        </p>
+          <span className="block text-[10px] text-white/50">{label}</span>
+          <span className="block font-semibold tabular-nums">{Math.round(value * 100)}%</span>
+        </span>
       ))}
     </div>
   );

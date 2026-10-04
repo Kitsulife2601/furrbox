@@ -307,6 +307,7 @@ ipcMain.handle("furrbox:vr-mode", (event, mode) => {
   vrOverlay.setMode(String(mode));
   return true;
 });
+ipcMain.handle("furrbox:vr-battery", (event) => (trusted(event) ? vrOverlay.battery() : null));
 ipcMain.handle("furrbox:media-state", (event) => (trusted(event) ? media.state() : null));
 ipcMain.handle("furrbox:media-control", (event, action) => (trusted(event) ? media.control(String(action)) : false));
 ipcMain.handle("furrbox:vr-enable", (event, on) => {
@@ -334,6 +335,7 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
     tilt: num(input?.tilt, -90, 90, current.tilt ?? 0),
     roll: num(input?.roll, -180, 180, current.roll ?? 0),
     turn: num(input?.turn, -180, 180, current.turn ?? 0),
+    lift: num(input?.lift, -90, 90, current.lift ?? 0),
   };
   vrOverlay.setPlacement(placement);
   try {
@@ -493,12 +495,12 @@ async function createWindow() {
     appUrl = url;
     // One-time switch to the new default position at the edge of the hand (mirrored for the right arm).
     let vr = config.vr ?? {};
-    if (vr.placementVersion !== 3) {
+    if (vr.placementVersion !== 4) {
       const hand = vr.placement?.hand === "right" ? "right" : "left";
       const side = hand === "right" ? -1 : 1;
-      const placement = { hand, width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 * side };
+      const placement = { hand, width: 0.15, x: 0, y: 0.04, z: 0.1, tilt: 0, roll: 0, turn: 90 * side, lift: 35 };
       try {
-        vr = saveVr({ placementVersion: 3, placement });
+        vr = saveVr({ placementVersion: 4, placement });
       } catch {
         vr = { ...vr, placement };
       }

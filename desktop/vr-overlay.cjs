@@ -34,11 +34,13 @@ const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
 const INPUT_MOUSE = 1;
 const EVENT_SIZE = 64;
 
-// Landscape: the panel lies along the arm. Collapsed, only a small round button is shown.
-const FULL = { width: 640, height: 400 };
-const BUTTON = { width: 128, height: 128, meters: 0.06 };
-// A short notice ("Votekick gegen …") without opening the whole panel.
-const ALERT = { width: 480, height: 128, meters: 0.17 };
+// Like OVR Toolkit: a small widget on the wrist (clock, music, battery) and – when open – a
+// window above it in the same plane. Both are one picture; the widget is its bottom part and
+// stays where it is when the window opens.
+const WIDGET = { width: 520, height: 200 };
+const FULL = { width: 520, height: 700 };
+const BATTERY_PROP = 1012; // Prop_DeviceBatteryPercentage_Float
+const PROVIDES_BATTERY_PROP = 1026; // Prop_DeviceProvidesBatteryStatus_Bool
 
 /** Where SteamVR lives (from %LOCALAPPDATA%\openvr\openvrpaths.vrpath). */
 function findOpenvrDll() {
@@ -61,9 +63,9 @@ function findOpenvrDll() {
  */
 // Default: flat on the back of the left hand up to the wrist, readable when you look at your arm
 // like at a watch (turn 90° = the long side runs along the arm).
-const DEFAULT_PLACEMENT = { hand: "left", width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 };
+const DEFAULT_PLACEMENT = { hand: "left", width: 0.15, x: 0, y: 0.04, z: 0.1, tilt: 0, roll: 0, turn: 90, lift: 35 };
 
-function matrixFor(p) {
+function matrixFor(p, raise = 0) {
   // Overlay X -> controller X, overlay up (Y) -> controller forward (-Z), overlay normal (Z) -> controller up (Y),
   // then tilted around X by `tilt` degrees towards the user.
   const rad = (v) => (Number(v) || 0) * (Math.PI / 180);
@@ -84,6 +86,14 @@ function matrixFor(p) {
     [st, ct, 0],
     [0, 0, 1],
   ]);
+  // "lift": raise the top edge towards you (the panel leans like a phone you hold up).
+  const cl = Math.cos(rad(p.lift));
+  const sl = Math.sin(rad(p.lift));
+  m = mul(m, [
+    [1, 0, 0],
+    [0, cl, -sl],
+    [0, sl, cl],
+  ]);
   // "roll": tip the whole panel sideways around the controller's forward axis (90° = edge of the hand).
   const cr = Math.cos(rad(p.roll));
   const sr = Math.sin(rad(p.roll));
@@ -95,7 +105,8 @@ function matrixFor(p) {
     ],
     m,
   );
-  return [...m[0], p.x, ...m[1], p.y, ...m[2], p.z];
+  // `raise`: move the centre along the panel's own "up" (keeps the bottom edge in place when the window opens).
+  return [...m[0], p.x + m[0][1] * raise, ...m[1], p.y + m[1][1] * raise, ...m[2], p.z + m[2][1] * raise];
 }
 
 function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
@@ -119,8 +130,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let gazing = false;
   let gazeSince = 0;
   let gazeLost = 0;
-  let mode = "full"; // full | button | alert
-  const size = () => (mode === "button" ? BUTTON : mode === "alert" ? ALERT : FULL);
+  let mode = "widget"; // widget | full
+  const size = () => (mode === "full" ? FULL : WIDGET);
+  const widthMeters = () => Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.15));
+  /** Metres the centre moves up when the window is open, so the widget stays on the wrist. */
+  const raise = () => (mode === "full" ? ((FULL.height - WIDGET.height) / 2) * (widthMeters() / FULL.width) : 0);
   const listeners = new Set();
 
   function setState(patch) {
@@ -221,12 +235,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function applyPlacement() {
     if (!api || handle === null) return;
-    api.ovr(
-      "SetOverlayWidthInMeters",
-      "int FN(uint64_t, float)",
-      handle,
-      mode === "full" ? Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.2)) : size().meters,
-    );
+    api.ovr("SetOverlayWidthInMeters", "int FN(uint64_t, float)", handle, widthMeters());
     const hands = findHands();
     const device = placement.hand === "right" ? hands.right : hands.left;
     pointerHand = placement.hand === "right" ? hands.left : hands.right;
@@ -237,7 +246,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       return;
     }
     const m = Buffer.alloc(48);
-    matrixFor(placement).forEach((v, i) => m.writeFloatLE(v, i * 4));
+    matrixFor(placement, raise()).forEach((v, i) => m.writeFloatLE(v, i * 4));
     const e = api.ovr("SetOverlayTransformTrackedDeviceRelative", "int FN(uint64_t, uint32_t, void*)", handle, device, m);
     if (e) log(`VR-Overlay: Position konnte nicht gesetzt werden (Fehler ${e}).`);
     if (attachedTo !== device) log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
@@ -302,7 +311,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       api.sys("GetDeviceToAbsoluteTrackingPose", "void FN(int, float, void*, uint32_t)", UNIVERSE_STANDING, 0, poses, count);
       const row = (device, i) => poses.readFloatLE(device * POSE_SIZE + i * 4);
       if (poses.readUInt8(76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
-        const p = matrixFor(placement);
+        const p = matrixFor(placement, raise());
         const h = (i) => row(attachedTo, i);
         // Panel centre and normal in room coordinates: hand pose × placement.
         const centre = [0, 1, 2].map((r) => h(r * 4) * p[3] + h(r * 4 + 1) * p[7] + h(r * 4 + 2) * p[11] + h(r * 4 + 3));
@@ -505,14 +514,32 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       for (const fn of listeners) fn(status());
       return placement;
     },
-    /** "button" (small paw), "alert" (short notice) or "full" (whole panel) – chosen by the /vr page. */
+    /** "widget" (wrist widget only) or "full" (widget + window above it) – chosen by the /vr page. */
     setMode(next) {
-      const wanted = next === "button" || next === "alert" ? next : "full";
+      const wanted = next === "full" ? "full" : "widget";
       if (mode === wanted) return;
       mode = wanted;
       applySize();
       attachedTo = INVALID_DEVICE;
       applyPlacement();
+    },
+    /** Battery of headset and controllers (0–1), null when a device does not report one. */
+    battery() {
+      if (!api) return null;
+      const read = (device) => {
+        if (device === INVALID_DEVICE) return null;
+        try {
+          const err = [0];
+          const has = api.sys("GetBoolTrackedDeviceProperty", "bool FN(uint32_t, int, _Out_ int*)", device, PROVIDES_BATTERY_PROP, err);
+          if (!has || err[0]) return null;
+          const value = api.sys("GetFloatTrackedDeviceProperty", "float FN(uint32_t, int, _Out_ int*)", device, BATTERY_PROP, err);
+          return err[0] ? null : Math.round(value * 100) / 100;
+        } catch {
+          return null;
+        }
+      };
+      const hands = findHands();
+      return { headset: read(0), left: read(hands.left), right: read(hands.right) };
     },
     /** Tells the /vr page something (e.g. new settings). */
     send(channel, payload) {

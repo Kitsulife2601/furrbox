@@ -10,13 +10,13 @@ import { DesktopHint } from "./VRChat";
 import { chatboxStatusBridge } from "./useChatboxStatus";
 import { Btn } from "./ui";
 
-type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number };
+type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number; lift?: number };
 
 /** Ready-made positions (for the left arm; mirrored for the right one). */
 const PRESETS: { id: string; label: string; hint: string; place: Omit<Placement, "hand"> }[] = [
-  { id: "wrist", label: "Hand bis Handgelenk", hint: "quer und flach auf dem Handrücken", place: { width: 0.2, x: 0, y: 0.05, z: 0.08, tilt: 0, roll: 0, turn: 90 } },
-  { id: "watch", label: "Unterarm", hint: "quer, weiter Richtung Ellbogen", place: { width: 0.2, x: 0, y: 0.04, z: 0.22, tilt: 0, roll: 0, turn: 90 } },
-  { id: "edge", label: "Handkante", hint: "seitlich außen an der Hand", place: { width: 0.16, x: -0.07, y: 0, z: 0.06, tilt: 0, roll: -90, turn: 0 } },
+  { id: "wrist", label: "Handgelenk", hint: "wie OVR Toolkit, zu dir geneigt", place: { width: 0.15, x: 0, y: 0.04, z: 0.1, tilt: 0, roll: 0, turn: 90, lift: 35 } },
+  { id: "watch", label: "Unterarm", hint: "weiter Richtung Ellbogen", place: { width: 0.15, x: 0, y: 0.04, z: 0.22, tilt: 0, roll: 0, turn: 90, lift: 35 } },
+  { id: "flat", label: "Flach", hint: "liegt flach auf dem Handrücken", place: { width: 0.15, x: 0, y: 0.04, z: 0.1, tilt: 0, roll: 0, turn: 90, lift: 0 } },
 ];
 type VrState = {
   status: "off" | "waiting" | "running" | "unsupported";
@@ -116,7 +116,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.20" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.21" />
       </div>
     );
   }
@@ -146,11 +146,11 @@ export function VrSettings() {
 
       <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium">Nur ein kleiner Knopf am Arm</p>
+          <p className="text-[13px] font-medium">Großes Fenster nur bei Bedarf</p>
           <p className="text-[12px] text-muted">
             {buttonMode
-              ? "Am Arm sitzt nur ein kleiner Pfoten-Knopf. Tippst du ihn an, klappt das Fenster auf. Bei Votekick, neuer Chat-Nachricht oder neuer Gruppen-Instanz erscheint statt des Knopfs ein kurzer Hinweis mit „Erledigt“ – das Fenster klappt dabei nicht auf."
-              : "Das Fenster ist dauerhaft am Arm zu sehen."}
+              ? "Am Handgelenk sitzt nur das kleine Feld mit Uhr, Musik und Akku. Das große Fenster darüber öffnest du mit dem Pfeil – oder durch Hinschauen. Hinweise (Votekick, Chat, neue Instanz) erscheinen im kleinen Feld."
+              : "Das große Fenster ist dauerhaft über dem Handgelenk zu sehen."}
           </p>
         </div>
         <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
@@ -333,6 +333,7 @@ export function VrSettings() {
           <Slider label="Höhe über Hand" value={cm(p.y)} min={-20} max={30} step={1} unit="cm" onChange={(v) => place({ y: v / 100 })} />
           <Slider label="Zum Ellbogen" value={cm(p.z)} min={-20} max={40} step={1} unit="cm" onChange={(v) => place({ z: v / 100 })} />
           <Slider label="Neigung zu dir" value={Math.round(p.tilt)} min={-60} max={90} step={5} unit="°" onChange={(v) => place({ tilt: v })} />
+          <Slider label="Aufrichten" value={Math.round(p.lift ?? 0)} min={-30} max={90} step={5} unit="°" onChange={(v) => place({ lift: v })} />
           <Slider label="Seitlich kippen" value={Math.round(p.roll ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ roll: v })} />
           <Slider label="Drehen" value={Math.round(p.turn ?? 0)} min={-180} max={180} step={5} unit="°" onChange={(v) => place({ turn: v })} />
           <p className="text-[11px] text-subtle">

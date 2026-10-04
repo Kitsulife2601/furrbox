@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-04",
+    "version": "2.0.21",
+    "title": "FurrBox VR im Stil von OVR Toolkit",
+    "items": [
+      "Am Handgelenk sitzt jetzt ein kleines Feld wie bei OVR Toolkit: große Uhr, Datum, ob du anwesend bist, Akku von Brille und Controllern und die laufende Musik mit Zurück, Pause und Weiter.",
+      "Das große Fenster (Instanz, Team, Musik, Chatbox, Chat) öffnet sich darüber und ist zu dir geneigt. Das kleine Feld bleibt dabei an seinem Platz.",
+      "Hinweise (Votekick, neue Chat-Nachricht, neue Gruppen-Instanz) erscheinen direkt im kleinen Feld, mit „Erledigt“.",
+      "Öffnen geht durch Hinschauen oder über den Pfoten-Knopf im kleinen Feld.",
+      "Neuer Regler „Aufrichten“ und neue Positionen („Handgelenk“, „Unterarm“, „Flach“) unter FurrSettings → „FurrBox VR“."
+    ]
+  },
+  {
+    "date": "2026-10-04",
     "version": "2.0.20",
     "title": "FurrBox VR: Aufklappen beim Hinschauen",
     "items": [
