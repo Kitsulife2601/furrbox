@@ -1,5 +1,6 @@
 // Replaces FurrBox's Socket.io client: heartbeat (presence), system notifications
 // and incoming chat messages are polled from server functions.
+import { playSound } from "@/lib/furr/sounds";
 import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { latestIncoming } from "@/lib/furr/api/chat";
@@ -76,6 +77,7 @@ export function useFurrSync(active: boolean) {
         if (!chatOpen) {
           useSync.getState().set({ unreadChat: useSync.getState().unreadChat + fresh.length });
           const m = fresh[0];
+          playSound("chat", { eventId: m.id });
           useNotifications.getState().notify({
             id: `chat-${m.id}`,
             version: m.channel === "team" ? "FurrChat · Team" : "FurrChat · Privat",

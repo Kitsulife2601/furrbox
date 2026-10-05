@@ -1,5 +1,15 @@
 [
   {
+    "date": "2026-10-05",
+    "title": "Eigene Töne für Chat, Update und Votekick",
+    "items": [
+      "Neue Benachrichtigungstöne: ein helles „Pling“ bei einer Chat-Nachricht, drei aufsteigende Töne bei einem Update und ein auffälliger Alarm bei einem Votekick.",
+      "Die Töne spielen auch in VR, zusammen mit dem Hinweis am Handgelenk.",
+      "Votekicks melden sich jetzt auch am Desktop mit einer Meldung, nicht nur am Arm.",
+      "Unter FurrSettings → „Töne“ kannst du jeden Ton einzeln ausschalten, probehören und die Lautstärke einstellen."
+    ]
+  },
+  {
     "date": "2026-10-04",
     "title": "Anwesend-Schalter direkt am Handgelenk",
     "items": [

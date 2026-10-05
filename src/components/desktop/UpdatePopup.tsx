@@ -1,5 +1,6 @@
 // Desktop-app updates (GitHub Releases via electron-updater in desktop/main.cjs):
 // a toast while an update downloads, then a centered popup to restart and install it.
+import { playSound } from "@/lib/furr/sounds";
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { getAppBuild } from "@/lib/furr/api/session";
@@ -209,6 +210,7 @@ export function UpdatePopup() {
     if (!pending || announced.current === pending.key) return;
     announced.current = pending.key;
     const preview = pending.items.filter((i) => !i.startsWith("– ")).slice(0, 3);
+    playSound("update", { eventId: pending.key });
     useNotifications.getState().notify({
       id: `update-${pending.key}`,
       version: "FurrBox Update",

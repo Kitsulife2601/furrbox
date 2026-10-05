@@ -32,6 +32,7 @@ import { listDuty, markVotekickDone, setDuty } from "@/lib/furr/api/duty";
 import { listPresence } from "@/lib/furr/api/presence";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
+import { playSound } from "@/lib/furr/sounds";
 import type { PresenceUser } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { syncVrSettings, useVrSettings, type VrInfoId, type VrWidgetId } from "@/store/vr";
@@ -203,6 +204,16 @@ function VrPanel() {
       ?.control(action)
       .then(() => window.setTimeout(() => void song.refetch(), 1200));
   };
+
+  // Sounds (each event only once, even with FurrBox open on the desktop too).
+  const voteSoundId = widgets.votekick ? (vote?.id ?? null) : null;
+  useEffect(() => {
+    if (voteSoundId) playSound("votekick", { eventId: voteSoundId });
+  }, [voteSoundId]);
+  const chatSoundId = chatAlert?.id ?? null;
+  useEffect(() => {
+    if (chatSoundId) playSound("chat", { eventId: chatSoundId });
+  }, [chatSoundId]);
 
   const mode = collapsed ? "widget" : "full";
   useEffect(() => {

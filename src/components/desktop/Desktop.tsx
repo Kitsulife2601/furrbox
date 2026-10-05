@@ -14,6 +14,7 @@ import { filesKey, openFurrFile, uploadBrowserFiles } from "@/components/furr/Fu
 import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { useChatboxStatus } from "@/components/furr/useChatboxStatus";
+import { useVoteWatch } from "@/components/furr/useVoteWatch";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
 import { NoAccess } from "./NoAccess";
@@ -105,6 +106,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
 
   useFurrSync(true);
   useChatboxStatus();
+  useVoteWatch();
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
