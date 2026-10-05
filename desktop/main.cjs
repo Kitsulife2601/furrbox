@@ -180,20 +180,58 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", error: undefined }));
-  autoUpdater.on("update-available", (info) => setUpdateState({ status: "downloading", newVersion: info.version, percent: 0, notes: releaseNotes(info) }));
+  autoUpdater.on("update-available", (info) => {
+    setUpdateState({ status: "downloading", newVersion: info.version, percent: 0 });
+    void releaseNotes(info).then((notes) => setUpdateState({ notes }));
+  });
   autoUpdater.on("update-not-available", () => setUpdateState({ status: "current", checkedAt: new Date().toISOString() }));
   autoUpdater.on("download-progress", (p) => setUpdateState({ status: "downloading", percent: Math.round(p.percent) }));
-  autoUpdater.on("update-downloaded", (info) => setUpdateState({ status: "ready", newVersion: info.version, notes: releaseNotes(info) }));
+  autoUpdater.on("update-downloaded", (info) => {
+    setUpdateState({ status: "ready", newVersion: info.version });
+    void releaseNotes(info).then((notes) => setUpdateState({ notes }));
+  });
   autoUpdater.on("error", (error) => setUpdateState({ status: "error", error: error?.message ?? String(error) }));
   const check = () => autoUpdater.checkForUpdates().catch(() => undefined);
   setTimeout(check, 10_000);
   setInterval(check, 30 * 60_000);
 }
 
-function releaseNotes(info) {
+async function releaseNotes(info) {
   const notes = info?.releaseNotes;
-  const text = Array.isArray(notes) ? notes.map((n) => n.note).join("\n") : String(notes ?? "");
-  return text.replace(/<[^>]+>/g, "").trim().slice(0, 1500);
+  let text = Array.isArray(notes) ? notes.map((n) => (n && n.note != null ? n.note : n)).join("\n") : String(notes ?? "");
+  text = text.replace(/<[^>]+>/g, "").trim();
+  if (text) return text.slice(0, 1500);
+  const version = String(info?.version ?? "").replace(/^v/i, "").trim();
+  if (!version) return "";
+  try {
+    const https = require("https");
+    const body = await new Promise((resolve, reject) => {
+      const req = https.get(
+        `https://api.github.com/repos/Kitsulife2601/furrbox/releases/tags/v${version}`,
+        { headers: { "user-agent": "FurrBox", accept: "application/vnd.github+json" } },
+        (res) => {
+          let data = "";
+          res.on("data", (c) => (data += c));
+          res.on("end", () => resolve({ status: res.statusCode, data }));
+        },
+      );
+      req.on("error", reject);
+      req.setTimeout(8000, () => {
+        req.destroy();
+        reject(new Error("timeout"));
+      });
+    });
+    if (body.status === 200) {
+      const json = JSON.parse(body.data);
+      return String(json.body ?? "")
+        .replace(/<[^>]+>/g, "")
+        .trim()
+        .slice(0, 1500);
+    }
+  } catch {
+    /* offline / rate limit – renderer may still fetch */
+  }
+  return "";
 }
 
 // First-run setup from the login screen: store the Discord app credentials and restart the

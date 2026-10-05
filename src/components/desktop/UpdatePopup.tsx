@@ -2,7 +2,7 @@
 // Windows-like toast + corner banner while an update downloads / is ready, then restart to install.
 import { playSound } from "@/lib/furr/sounds";
 import { MOTION } from "@/lib/furr/motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { getAppBuild } from "@/lib/furr/api/session";
 import { Download, Sparkles, X } from "lucide-react";
@@ -62,6 +62,114 @@ const entryKey = (u: UpdateEntry) => `${u.date}|${u.title}`;
 
 const GITHUB_REPO = "Kitsulife2601/furrbox";
 const SHA = /^[0-9a-f]{40}$/;
+
+/** Strip optional leading v so 2.0.27 and v2.0.27 match. */
+export function normVersion(v: string): string {
+  return String(v ?? "").trim().replace(/^v/i, "");
+}
+
+/** Markdown/HTML release body → short bullet texts. */
+export function parseReleaseBody(notes: string): string[] {
+  return String(notes ?? "")
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) =>
+      line
+        .replace(/<[^>]+>/g, "")
+        .replace(/^#{1,6}\s*/, "")
+        .replace(/^[-*•–—]\s+/, "")
+        .replace(/^\d+[.)]\s+/, "")
+        .trim(),
+    )
+    .filter((line) => line.length > 0 && !/^FurrBox Update$/i.test(line));
+}
+
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function entryFromUpdatesJson(version: string): UpdateEntry | undefined {
+  const nv = normVersion(version);
+  const raw = UPDATE_LIST.find((u) => u.version && normVersion(u.version) === nv);
+  if (!raw) return undefined;
+  return {
+    date: raw.date ?? todayDate(),
+    version: raw.version ?? nv,
+    title: raw.title ?? `Version ${nv}`,
+    items: Array.isArray(raw.items) ? raw.items : [],
+  };
+}
+
+function entryFromNotes(version: string, notes: string, titleHint?: string): UpdateEntry | null {
+  const items = parseReleaseBody(notes);
+  if (!items.length) return null;
+  const nv = normVersion(version);
+  const json = entryFromUpdatesJson(nv);
+  return {
+    date: json?.date ?? todayDate(),
+    version: nv,
+    title: titleHint || json?.title || `Version ${nv}`,
+    items,
+  };
+}
+
+/** Live GitHub release body for the target tag (vX.Y.Z). */
+export async function fetchGithubReleaseEntry(version: string): Promise<UpdateEntry | null> {
+  const nv = normVersion(version);
+  for (const tag of [`v${nv}`, nv]) {
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}`, {
+        headers: { accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { body?: string; name?: string; published_at?: string };
+      const hint = data.name?.replace(/^FurrBox\s+/i, "").trim();
+      const entry = entryFromNotes(nv, String(data.body ?? ""), hint);
+      if (entry) {
+        if (data.published_at) entry.date = data.published_at.slice(0, 10);
+        return entry;
+      }
+    } catch {
+      /* try next tag */
+    }
+  }
+  return null;
+}
+
+/**
+ * Changelog for a desktop target version.
+ * Primary: GitHub release body (via electron-updater notes); fallback: updates.json; then live GitHub API.
+ */
+export function resolveDesktopChangelogSync(version: string, notes?: string): UpdateEntry[] {
+  const fromNotes = notes?.trim() ? entryFromNotes(version, notes) : null;
+  if (fromNotes) return [fromNotes];
+  const fromJson = entryFromUpdatesJson(version);
+  return fromJson ? [fromJson] : [];
+}
+
+/** Sync notes/json first; if empty, fetch GitHub release body once. */
+export function useDesktopChangelog(version?: string, notes?: string): UpdateEntry[] {
+  const sync = useMemo(
+    () => (version ? resolveDesktopChangelogSync(version, notes) : []),
+    [version, notes],
+  );
+  const [remote, setRemote] = useState<UpdateEntry[]>([]);
+  useEffect(() => {
+    if (!version || sync.length > 0) {
+      setRemote([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchGithubReleaseEntry(version).then((entry) => {
+      if (!cancelled && entry) setRemote([entry]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [version, notes, sync.length]);
+  return sync.length > 0 ? sync : remote;
+}
+
 
 /**
  * What changed between the running build and the server's build, straight from the GitHub
@@ -246,38 +354,28 @@ const UPDATE_TOAST_MS = Math.max(MOTION.toastMs, 7800);
 export function usePendingUpdate() {
   const server = useServerUpdate();
   const desktop = useUpdateState();
-  if (desktop?.status === "ready" && desktop.newVersion) {
-    const entry = UPDATE_LIST.find((u) => u.version === desktop.newVersion) as UpdateEntry | undefined;
-    const entries: UpdateEntry[] = entry
-      ? [
-          {
-            date: entry.date ?? new Date().toISOString().slice(0, 10),
-            version: entry.version,
-            title: entry.title ?? `Version ${desktop.newVersion}`,
-            items: entry.items ?? [],
-          },
-        ]
-      : desktop.notes
-        ? [
-            {
-              date: new Date().toISOString().slice(0, 10),
-              version: desktop.newVersion,
-              title: `Version ${desktop.newVersion}`,
-              items: desktop.notes
-                .split(/\n+/)
-                .map((l) => l.replace(/^[-*•]\s*/, "").trim())
-                .filter(Boolean),
-            },
-          ]
-        : [];
+  const desktopActive =
+    !!desktop?.newVersion && (desktop.status === "ready" || desktop.status === "downloading");
+  const desktopEntries = useDesktopChangelog(
+    desktopActive ? desktop!.newVersion : undefined,
+    desktop?.notes,
+  );
+
+  if (desktopActive && desktop?.newVersion) {
+    const ready = desktop.status === "ready";
     return {
       kind: "desktop" as const,
-      key: `desktop-${desktop.newVersion}`,
-      label: "Update bereit – zum Installieren neu starten",
+      key: `desktop-${desktop.newVersion}-${desktop.status}`,
+      label: ready
+        ? "Update bereit – zum Installieren neu starten"
+        : `Update wird heruntergeladen (${desktop.percent ?? 0} %)`,
       versionLabel: desktop.newVersion,
-      entries,
-      items: newsLines(entries),
-      apply: () => void updateBridge()?.install(),
+      entries: desktopEntries,
+      items: newsLines(desktopEntries),
+      apply: () => {
+        if (ready) void updateBridge()?.install();
+      },
+      canApply: ready,
     };
   }
   if (server.status === "available") {
@@ -289,6 +387,7 @@ export function usePendingUpdate() {
       entries: server.news,
       items: newsLines(server.news),
       apply: applyServerUpdate,
+      canApply: true,
     };
   }
   return null;
@@ -339,25 +438,7 @@ export function UpdatePopup() {
     };
   }, []);
 
-  // Desktop installer download started — Windows-like notice.
-  useEffect(() => {
-    if (desktop?.status === "downloading" && desktop.newVersion && announced.current !== `dl-${desktop.newVersion}`) {
-      announced.current = `dl-${desktop.newVersion}`;
-      playSound("update", { eventId: `dl-${desktop.newVersion}` });
-      useNotifications.getState().notify({
-        id: `update-dl-${desktop.newVersion}`,
-        kind: "update",
-        version: "FurrBox Update",
-        title: `Update ${desktop.newVersion} wird heruntergeladen`,
-        description: "Wie bei Windows: Download im Hintergrund. Du wirst benachrichtigt, sobald es bereit ist.",
-        actionLabel: "Details",
-        durationMs: UPDATE_TOAST_MS,
-        tone: "info",
-      });
-    }
-  }, [desktop]);
-
-  // Update ready to apply: toast + sound (banner is separate UI).
+  // Desktop download/ready and server updates: one toast with bullets (banner is separate UI).
   useEffect(() => {
     if (!pending || announced.current === pending.key) return;
     announced.current = pending.key;
@@ -367,11 +448,16 @@ export function UpdatePopup() {
       id: `update-${pending.key}`,
       kind: "update",
       version: pending.versionLabel ? `FurrBox ${pending.versionLabel}` : "FurrBox Update",
-      title: pending.kind === "desktop" ? "Update bereit zum Installieren" : "Ein Update ist verfügbar",
+      title:
+        pending.kind === "desktop"
+          ? pending.canApply
+            ? "Update bereit zum Installieren"
+            : `Update ${pending.versionLabel ?? ""} wird heruntergeladen`.trim()
+          : "Ein Update ist verfügbar",
       description: preview.length
         ? preview.map((p) => `• ${p}`).join("\n")
         : "Klicken zum Aktualisieren – oder über das Symbol unten rechts.",
-      actionLabel: pending.kind === "desktop" ? "Neu starten" : "Aktualisieren",
+      actionLabel: pending.kind === "desktop" ? (pending.canApply ? "Neu starten" : "Details") : "Aktualisieren",
       durationMs: UPDATE_TOAST_MS,
       tone: "info",
       onClick: pending.apply,
@@ -441,13 +527,18 @@ export function UpdateBanner() {
           </button>
           <Btn
             variant="primary"
-            disabled={busy}
+            disabled={busy || pending.canApply === false}
             onClick={() => {
+              if (pending.canApply === false) return;
               setBusy(true);
               pending.apply();
             }}
           >
-            {pending.kind === "desktop" ? "Neu starten" : "Jetzt aktualisieren"}
+            {pending.kind === "desktop"
+              ? pending.canApply
+                ? "Neu starten"
+                : "Wird geladen…"
+              : "Jetzt aktualisieren"}
           </Btn>
         </div>
       </div>

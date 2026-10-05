@@ -23,6 +23,11 @@ create table if not exists mod_sanction (
   active       boolean not null default true
 );
 create index if not exists mod_sanction_active_idx on mod_sanction (active, expires_at) where active;
+-- 0016_bot_ideen.sql (sortiert davor) legt mod_sanction mit Bot-Schema an (discord_id/kind),
+-- dann greift das create table oben nicht. Spalten für die Indizes sicherstellen;
+-- Backfill/Vereinheitlichung macht 0017_unify_and_calendar.sql.
+alter table mod_sanction add column if not exists platform text not null default 'discord';
+alter table mod_sanction add column if not exists target_id text;
 create index if not exists mod_sanction_target_idx on mod_sanction (platform, target_id, active);
 create index if not exists mod_sanction_case_idx on mod_sanction (case_id) where case_id is not null;
 

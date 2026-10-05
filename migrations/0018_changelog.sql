@@ -1,4 +1,4 @@
-﻿-- Changelog-Notizen für Event-Feed
+-- Changelog-Notizen für Event-Feed
 create table if not exists furr_changelog (
   id          text primary key,
   title       text not null,

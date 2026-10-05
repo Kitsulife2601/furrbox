@@ -1,4 +1,4 @@
-﻿-- Unify mod_sanction (Bot-Schema discord_id/kind ↔ Server platform/target_id/type)
+-- Unify mod_sanction (Bot-Schema discord_id/kind ↔ Server platform/target_id/type)
 -- + Kalender-Cache für Group Calendar Bridge. Idempotent.
 
 alter table mod_sanction add column if not exists platform text;
@@ -37,6 +37,10 @@ alter table mod_sanction alter column platform set not null;
 
 update mod_sanction set created_by = 'system' where created_by is null or created_by = '';
 alter table mod_sanction alter column created_by set default 'system';
+
+-- Server-Writes setzen nur platform/target_id/type – Bot-Pflichtspalten lockern
+alter table mod_sanction alter column discord_id drop not null;
+alter table mod_sanction alter column kind drop not null;
 
 -- Kalender-Events (Bot/Mock füllt, Server liest – Idle-sparsam)
 create table if not exists group_calendar_event (

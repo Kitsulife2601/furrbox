@@ -1,4 +1,4 @@
-﻿// FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
+// FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { signOut } from "@/lib/auth/client";
@@ -22,6 +22,7 @@ import {
   applyServerUpdate,
   ChangelogEntries,
   updateBridge,
+  useDesktopChangelog,
   useServerUpdate,
   useUpdateState,
   type UpdateEntry,
@@ -784,40 +785,24 @@ function formatDay(date: string) {
 
 /** "Das ist neu" for a desktop update that is downloading or ready (like Windows Update). */
 function PendingUpdate({ version, notes }: { version: string; notes?: string }) {
-  const entry = UPDATE_LIST.find((u) => u.version === version);
-  if (entry) {
+  // Primary: GitHub release notes (via updater); fallback: updates.json; then live GitHub fetch.
+  const entries = useDesktopChangelog(version, notes);
+  if (!entries.length) {
     return (
       <div className="grid gap-2">
         <p className="text-[13px] font-medium">Das ist neu</p>
-        <ChangelogEntries entries={[entry]} maxItemsPer={8} compact />
+        <p className="text-[12px] text-muted">Erneuerungsliste wird geladen…</p>
       </div>
     );
   }
-  if (!notes) return null;
-  const items = notes
-    .split(/\n+/)
-    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
-    .filter(Boolean);
   return (
     <div className="grid gap-2">
       <p className="text-[13px] font-medium">Das ist neu</p>
-      <ChangelogEntries
-        entries={[
-          {
-            date: new Date().toISOString().slice(0, 10),
-            version,
-            title: `Version ${version}`,
-            items,
-          },
-        ]}
-        maxItemsPer={8}
-        compact
-      />
+      <ChangelogEntries entries={entries} maxItemsPer={8} compact />
     </div>
   );
 }
 
-/** Updateverlauf: Titel + kurze Punkte, aufklappbar. */
 function UpdateHistory() {
   return (
     <div className="mt-1 grid gap-2 border-t border-border pt-3">
