@@ -450,7 +450,7 @@ export function Toasts() {
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] text-subtle">{t.version}</span>
               <span className="block text-[13px] font-medium">{t.title}</span>
-              <span className="line-clamp-3 block text-[12px] text-muted">{t.description}</span>
+              <span className="line-clamp-4 block whitespace-pre-line text-[12px] text-muted">{t.description}</span>
               {t.actionLabel && (
                 <span className="mt-1.5 inline-flex rounded-md bg-accent/20 px-2 py-0.5 text-[12px] font-semibold text-accent">{t.actionLabel}</span>
               )}

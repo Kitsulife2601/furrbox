@@ -1,12 +1,13 @@
 /**
  * „Neu in dieser Version“ – Changelog-Kacheln aus updates.json.
  * Einmal pro Version anzeigen (localStorage), stilistisch wie Votekick/MOTION.
+ * Darstellung: Titel + kurze Bullet-Punkte (scannbar).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import UPDATES from "@/lib/furr/updates.json";
 import { MOTION } from "@/lib/furr/motion";
-import type { UpdateEntry } from "./UpdatePopup";
+import { shortPoint, type UpdateEntry } from "./UpdatePopup";
 
 const SEEN_KEY = "furrbox-whatsnew-seen";
 
@@ -51,6 +52,10 @@ export function WhatsNewDialog() {
     setOpen(false);
   };
 
+  const items = entry.items.filter((i) => i && i !== entry.title);
+  const shown = items.slice(0, 8);
+  const more = items.length - shown.length;
+
   return (
     <div
       className="fixed inset-0 z-[115] grid place-items-center bg-black/50 p-4 backdrop-blur-[2px]"
@@ -83,15 +88,19 @@ export function WhatsNewDialog() {
           </button>
         </header>
         <ul className="grid max-h-[min(360px,50vh)] gap-2 overflow-auto p-4">
-          {entry.items.map((item, i) => (
+          {shown.map((item, i) => (
             <li
               key={i}
-              className="furr-vr-pop rounded-xl border border-border/70 bg-elevated/40 px-3.5 py-3 text-[13px] leading-snug"
+              className="furr-vr-pop flex gap-2.5 rounded-xl border border-border/70 bg-elevated/40 px-3.5 py-3 text-[13px] leading-snug"
               style={{ animationDelay: `${Math.min(i, 6) * MOTION.noteGapMs}ms` }}
             >
-              {item}
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+              <span>{shortPoint(item, 140)}</span>
             </li>
           ))}
+          {more > 0 && (
+            <li className="px-1 text-[12px] text-subtle">+{more} weitere Punkte unter Einstellungen → System → Updates</li>
+          )}
         </ul>
         <footer className="flex justify-end border-t border-border/50 px-4 py-3">
           <button

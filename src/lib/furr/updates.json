@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.27",
+    "title": "Release-Fix, Update-Benachrichtigungen, VR Scout Phase 2",
+    "items": [
+      "Fix: Release-Build (apps.ts UTF-8) – Installer und Update-Check funktionieren wieder.",
+      "Neu: Update-Hinweis wie bei Windows – Toast, Eck-Banner und kurzer Ton, wenn ein Update kommt oder bereit ist.",
+      "Klarere Erneuerungsliste im Update-Dialog und unter Neu in dieser Version.",
+      "VR Scout Phase 2: Soft-Notify und Scout-Extras am Overlay (Wrist/Notify-Grundlagen).",
+      "Alles aus 2.0.26 bleibt: Clips, Ctrl+K, Mod-Dashboard, Duty/Votekick, Server-Kalender und mehr."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "version": "2.0.26",
     "title": "Clips, Ctrl+K, Mod-Dashboard, VR- und Server-Ausbau",
     "items": [

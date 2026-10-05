@@ -1,15 +1,16 @@
-﻿// Desktop-app updates (GitHub Releases via electron-updater in desktop/main.cjs):
-// a toast while an update downloads, then a centered popup to restart and install it.
+// Desktop-app updates (GitHub Releases via electron-updater in desktop/main.cjs):
+// Windows-like toast + corner banner while an update downloads / is ready, then restart to install.
 import { playSound } from "@/lib/furr/sounds";
+import { MOTION } from "@/lib/furr/motion";
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { getAppBuild } from "@/lib/furr/api/session";
-import { Download } from "lucide-react";
+import { Download, Sparkles, X } from "lucide-react";
 import { useNotifications } from "@/store/notifications";
 import { Btn } from "@/components/furr/ui";
 import UPDATES from "@/lib/furr/updates.json";
 
-const UPDATE_LIST = UPDATES as { version?: string; items: string[] }[];
+const UPDATE_LIST = UPDATES as { version?: string; items: string[]; date?: string; title?: string }[];
 
 export type UpdateState = {
   status: "idle" | "unsupported" | "checking" | "current" | "downloading" | "ready" | "error";
@@ -131,10 +132,105 @@ export const useServerUpdate = create<ServerUpdate>((set, get) => ({
   },
 }));
 
-/** Flat list for "Das ist neu": each change, with its details indented. */
+/** Short, scannable bullet for changelog UI (title stays full; details get trimmed). */
+export function shortPoint(text: string, max = 92): string {
+  const t = text
+    .replace(/^–\s*/, "")
+    .replace(/^-\s*/, "")
+    .replace(/^Neu:\s*/i, "")
+    .replace(/^Behoben:\s*/i, "")
+    .trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > 36 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+
+/** Flat list for tooltips / short previews. Prefer ChangelogEntries for Settings UI. */
 export function newsLines(news: UpdateEntry[]) {
   return news.flatMap((u) =>
     u.items.length === 1 && u.items[0] === u.title ? [u.title] : [u.title, ...u.items.map((i) => `– ${i}`)],
+  );
+}
+
+/** Preview bullets for toast/banner: titles first, then short item points (max N). */
+export function newsPreview(news: UpdateEntry[], max = 4): string[] {
+  const out: string[] = [];
+  for (const u of news) {
+    if (out.length >= max) break;
+    if (u.title) out.push(shortPoint(u.title, 72));
+    for (const item of u.items) {
+      if (out.length >= max) break;
+      if (item === u.title) continue;
+      out.push(shortPoint(item, 80));
+    }
+  }
+  return out;
+}
+
+type ChangelogEntriesProps = {
+  entries: UpdateEntry[];
+  /** Max bullets per entry (rest as „+N weitere“). */
+  maxItemsPer?: number;
+  /** Compact = smaller padding for Settings cards. */
+  compact?: boolean;
+  /** Only bullets (for nested history where title is already in a summary). */
+  bulletsOnly?: boolean;
+};
+
+/** Title + short bullet list — clear Windows-Update-style changelog blocks. */
+export function ChangelogEntries({
+  entries,
+  maxItemsPer = 6,
+  compact = false,
+  bulletsOnly = false,
+}: ChangelogEntriesProps) {
+  if (!entries.length) return null;
+  return (
+    <div className={`grid ${compact ? "gap-2" : "gap-3"}`}>
+      {entries.map((entry) => {
+        const items = entry.items.filter((i) => i && i !== entry.title);
+        const shown = items.slice(0, maxItemsPer);
+        const more = items.length - shown.length;
+        const list = shown.length > 0 && (
+          <ul className={`space-y-1 ${compact ? "text-[12px]" : "text-[12.5px]"} text-muted ${bulletsOnly ? "" : "mt-1.5"}`}>
+            {shown.map((item) => (
+              <li key={item} className="flex gap-2 leading-snug">
+                <span className="mt-[0.35em] size-1.5 shrink-0 rounded-full bg-accent/70" aria-hidden />
+                <span>{shortPoint(item, compact ? 100 : 120)}</span>
+              </li>
+            ))}
+            {more > 0 && <li className="pl-3.5 text-[11px] text-subtle">+{more} weitere Punkte</li>}
+          </ul>
+        );
+        if (bulletsOnly) {
+          return <div key={`${entry.date}|${entry.version ?? ""}|${entry.title}`}>{list}</div>;
+        }
+        return (
+          <article
+            key={`${entry.date}|${entry.version ?? ""}|${entry.title}`}
+            className={`rounded-xl border border-accent/35 bg-accent/8 ${compact ? "px-3 py-2.5" : "px-3.5 py-3"}`}
+          >
+            <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              {entry.version && (
+                <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                  v{entry.version}
+                </span>
+              )}
+              <h3 className={`font-semibold leading-snug ${compact ? "text-[13px]" : "text-[14px]"}`}>
+                {entry.title}
+              </h3>
+              {entry.date && (
+                <span className="text-[11px] text-subtle">
+                  {new Date(`${entry.date}T12:00:00`).toLocaleDateString("de-DE")}
+                </span>
+              )}
+            </header>
+            {list}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -144,18 +240,43 @@ export function applyServerUpdate() {
 }
 
 const SERVER_CHECK_MS = 5 * 60_000;
+const UPDATE_TOAST_MS = Math.max(MOTION.toastMs, 7800);
 
 /** One update the user can apply right now (desktop installer first, then server update). */
 export function usePendingUpdate() {
   const server = useServerUpdate();
   const desktop = useUpdateState();
   if (desktop?.status === "ready" && desktop.newVersion) {
-    const items = UPDATE_LIST.find((u) => u.version === desktop.newVersion)?.items ?? [];
+    const entry = UPDATE_LIST.find((u) => u.version === desktop.newVersion) as UpdateEntry | undefined;
+    const entries: UpdateEntry[] = entry
+      ? [
+          {
+            date: entry.date ?? new Date().toISOString().slice(0, 10),
+            version: entry.version,
+            title: entry.title ?? `Version ${desktop.newVersion}`,
+            items: entry.items ?? [],
+          },
+        ]
+      : desktop.notes
+        ? [
+            {
+              date: new Date().toISOString().slice(0, 10),
+              version: desktop.newVersion,
+              title: `Version ${desktop.newVersion}`,
+              items: desktop.notes
+                .split(/\n+/)
+                .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+                .filter(Boolean),
+            },
+          ]
+        : [];
     return {
       kind: "desktop" as const,
       key: `desktop-${desktop.newVersion}`,
       label: "Update bereit – zum Installieren neu starten",
-      items,
+      versionLabel: desktop.newVersion,
+      entries,
+      items: newsLines(entries),
       apply: () => void updateBridge()?.install(),
     };
   }
@@ -164,6 +285,8 @@ export function usePendingUpdate() {
       kind: "server" as const,
       key: `server-${server.news.map((n) => n.title).join("|")}`,
       label: "Update verfügbar – klicken zum Aktualisieren",
+      versionLabel: server.news.find((n) => n.version)?.version,
+      entries: server.news,
       items: newsLines(server.news),
       apply: applyServerUpdate,
     };
@@ -173,7 +296,7 @@ export function usePendingUpdate() {
 
 /**
  * Background update watcher: checks the server regularly and announces a new update once as a
- * notification. Applying happens via the taskbar icon (UpdateTrayButton) or the notification.
+ * Windows-like notification + corner banner. Applying via banner, tray, or toast click.
  */
 export function UpdatePopup() {
   const pending = usePendingUpdate();
@@ -216,36 +339,120 @@ export function UpdatePopup() {
     };
   }, []);
 
-  // Desktop installer download started.
+  // Desktop installer download started — Windows-like notice.
   useEffect(() => {
     if (desktop?.status === "downloading" && desktop.newVersion && announced.current !== `dl-${desktop.newVersion}`) {
       announced.current = `dl-${desktop.newVersion}`;
+      playSound("update", { eventId: `dl-${desktop.newVersion}` });
       useNotifications.getState().notify({
+        id: `update-dl-${desktop.newVersion}`,
+        kind: "update",
         version: "FurrBox Update",
-        title: "Neues Update gefunden",
-        description: "Das Update wird im Hintergrund heruntergeladen.",
+        title: `Update ${desktop.newVersion} wird heruntergeladen`,
+        description: "Wie bei Windows: Download im Hintergrund. Du wirst benachrichtigt, sobald es bereit ist.",
+        actionLabel: "Details",
+        durationMs: UPDATE_TOAST_MS,
+        tone: "info",
       });
     }
   }, [desktop]);
 
-  // Update ready to apply: one notification, clicking it applies the update.
+  // Update ready to apply: toast + sound (banner is separate UI).
   useEffect(() => {
     if (!pending || announced.current === pending.key) return;
     announced.current = pending.key;
-    const preview = pending.items.filter((i) => !i.startsWith("– ")).slice(0, 3);
+    const preview = newsPreview(pending.entries, 3);
     playSound("update", { eventId: pending.key });
     useNotifications.getState().notify({
       id: `update-${pending.key}`,
-      version: "FurrBox Update",
+      kind: "update",
+      version: pending.versionLabel ? `FurrBox ${pending.versionLabel}` : "FurrBox Update",
       title: pending.kind === "desktop" ? "Update bereit zum Installieren" : "Ein Update ist verfügbar",
       description: preview.length
-        ? `${preview.join(" · ")} – klicken zum Aktualisieren`
+        ? preview.map((p) => `• ${p}`).join("\n")
         : "Klicken zum Aktualisieren – oder über das Symbol unten rechts.",
+      actionLabel: pending.kind === "desktop" ? "Neu starten" : "Aktualisieren",
+      durationMs: UPDATE_TOAST_MS,
+      tone: "info",
       onClick: pending.apply,
     });
   }, [pending]);
 
-  return null;
+  return <UpdateBanner />;
+}
+
+/** Windows-11-like update card (bottom-right): title, short bullets, install / dismiss. */
+export function UpdateBanner() {
+  const pending = usePendingUpdate();
+  const [hiddenKey, setHiddenKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!pending || hiddenKey === pending.key) return null;
+
+  const bullets = newsPreview(pending.entries, 4);
+
+  return (
+    <div
+      className="pointer-events-none absolute bottom-14 right-2 z-[88] w-[min(360px,calc(100%-1rem))]"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="mica furr-toast-in pointer-events-auto overflow-hidden rounded-xl border border-accent/40 shadow-2xl"
+        style={{ animationDuration: `${MOTION.popMs}ms`, animationTimingFunction: MOTION.easePop }}
+      >
+        <div className="flex items-start gap-3 border-b border-border/50 px-3.5 py-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/18 text-accent">
+            <Download className="size-5 furr-update-pulse" strokeWidth={1.8} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Update verfügbar</p>
+            <p className="text-[14px] font-semibold leading-snug">
+              {pending.versionLabel ? `FurrBox ${pending.versionLabel}` : "Neues FurrBox-Update"}
+            </p>
+            <p className="mt-0.5 text-[12px] text-muted">{pending.label}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Schließen"
+            className="rounded-md p-1.5 text-muted hover:bg-fg/10 hover:text-fg"
+            onClick={() => setHiddenKey(pending.key)}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        {bullets.length > 0 && (
+          <ul className="grid gap-1.5 px-3.5 py-2.5 text-[12px] text-muted">
+            {bullets.map((b) => (
+              <li key={b} className="flex gap-2 leading-snug">
+                <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent/80" strokeWidth={1.7} />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-end gap-2 border-t border-border/50 px-3 py-2.5">
+          <button
+            type="button"
+            className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted hover:bg-fg/8"
+            onClick={() => setHiddenKey(pending.key)}
+          >
+            Später
+          </button>
+          <Btn
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              pending.apply();
+            }}
+          >
+            {pending.kind === "desktop" ? "Neu starten" : "Jetzt aktualisieren"}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Taskbar icon (bottom right) shown while an update is waiting; click applies it. */
@@ -253,7 +460,8 @@ export function UpdateTrayButton() {
   const pending = usePendingUpdate();
   const [busy, setBusy] = useState(false);
   if (!pending) return null;
-  const tooltip = [pending.label, ...pending.items.slice(0, 6)].join("\n");
+  const preview = newsPreview(pending.entries, 5);
+  const tooltip = [pending.label, ...preview].join("\n");
   return (
     <button
       type="button"

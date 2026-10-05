@@ -20,10 +20,11 @@ import {
 import { useNotifications } from "@/store/notifications";
 import {
   applyServerUpdate,
-  newsLines,
+  ChangelogEntries,
   updateBridge,
   useServerUpdate,
   useUpdateState,
+  type UpdateEntry,
   type UpdateState,
 } from "@/components/desktop/UpdatePopup";
 import UPDATES from "@/lib/furr/updates.json";
@@ -762,7 +763,12 @@ function UpdateSection({ state }: { state: UpdateState | null }) {
       {state?.newVersion && (state.status === "downloading" || state.status === "ready") ? (
         <PendingUpdate version={state.newVersion} notes={state.notes} />
       ) : (
-        server.status === "available" && <NewItems items={newsLines(server.news)} />
+        server.status === "available" && (
+          <div className="grid gap-2">
+            <p className="text-[13px] font-medium">Das ist neu</p>
+            <ChangelogEntries entries={server.news} maxItemsPer={6} compact />
+          </div>
+        )
       )}
       <UpdateHistory />
     </div>
@@ -770,66 +776,64 @@ function UpdateSection({ state }: { state: UpdateState | null }) {
   );
 }
 
-type UpdateEntry = { date: string; version?: string; title: string; items: string[] };
 const UPDATE_LIST = UPDATES as UpdateEntry[];
 
 function formatDay(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("de-DE");
 }
 
-/** "Das ist neu" box for a found update. */
-function NewItems({ items }: { items: string[] }) {
-  if (!items.length) return null;
-  return (
-    <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
-      <p className="font-medium">Das ist neu</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /** "Das ist neu" for a desktop update that is downloading or ready (like Windows Update). */
 function PendingUpdate({ version, notes }: { version: string; notes?: string }) {
   const entry = UPDATE_LIST.find((u) => u.version === version);
-  if (!entry && !notes) return null;
+  if (entry) {
+    return (
+      <div className="grid gap-2">
+        <p className="text-[13px] font-medium">Das ist neu</p>
+        <ChangelogEntries entries={[entry]} maxItemsPer={8} compact />
+      </div>
+    );
+  }
+  if (!notes) return null;
+  const items = notes
+    .split(/\n+/)
+    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+    .filter(Boolean);
   return (
-    <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
-      <p className="font-medium">Das ist neu</p>
-      {entry ? (
-        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
-          {entry.items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-1 whitespace-pre-wrap text-[12px] text-muted">{notes}</p>
-      )}
+    <div className="grid gap-2">
+      <p className="text-[13px] font-medium">Das ist neu</p>
+      <ChangelogEntries
+        entries={[
+          {
+            date: new Date().toISOString().slice(0, 10),
+            version,
+            title: `Version ${version}`,
+            items,
+          },
+        ]}
+        maxItemsPer={8}
+        compact
+      />
     </div>
   );
 }
 
-/** Update history (src/lib/furr/updates.json): every upload gets an entry here. */
+/** Updateverlauf: Titel + kurze Punkte, aufklappbar. */
 function UpdateHistory() {
   return (
-    <div className="mt-1 grid gap-1 border-t border-border pt-3">
+    <div className="mt-1 grid gap-2 border-t border-border pt-3">
       <p className="font-medium">Updateverlauf</p>
       {UPDATE_LIST.map((entry, i) => (
-        <details key={`${entry.date}-${entry.title}`} open={i === 0} className="rounded-md px-2 py-1.5 hover:bg-fg/5">
+        <details key={`${entry.date}-${entry.title}`} open={i === 0} className="group rounded-xl border border-border/60 px-3 py-2 hover:bg-fg/5">
           <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-2">
+            {entry.version && (
+              <span className="rounded-md bg-fg/8 px-1.5 py-0.5 text-[11px] font-semibold text-muted">v{entry.version}</span>
+            )}
             <span className="font-medium">{entry.title}</span>
-            <span className="text-[11px] text-subtle">
-              {formatDay(entry.date)}
-            </span>
+            <span className="text-[11px] text-subtle">{formatDay(entry.date)}</span>
           </summary>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] text-muted">
-            {entry.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+          <div className="mt-2">
+            <ChangelogEntries entries={[entry]} maxItemsPer={i === 0 ? 10 : 6} compact bulletsOnly />
+          </div>
         </details>
       ))}
     </div>

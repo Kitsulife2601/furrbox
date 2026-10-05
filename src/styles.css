@@ -483,7 +483,15 @@
   .furr-vr-notice,
   .furr-vr-pop,
   .furr-vr-ring,
-  .furr-vr-toast { animation: none; }
+  .furr-vr-toast,
+  .furr-vr-soft { animation: none; }
+}
+
+
+/* Scout Phase 2: Soft-Notify (Changelog/Event) – eigene Lage unten, Staff-Toasts oben. */
+.furr-vr-soft { animation: furr-vr-notice 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .furr-vr-soft { animation: none; }
 }
 
 /* ---- Desktop MOTION feedback (aligned with Votekick / src/lib/furr/motion.ts) ---- */

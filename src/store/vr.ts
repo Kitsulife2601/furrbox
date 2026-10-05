@@ -48,6 +48,90 @@ export const VR_MOD_TEMPLATES = [
 
 export type VrWatchEntry = { id: string; name?: string };
 
+/** Anpinnbare Wrist-Shortcuts (Shared-Icons über Lucide wie Desktop-Taskbar). */
+export const VR_SHORTCUTS = [
+  { id: "instance", label: "Instanz", appHint: "worldmap" },
+  { id: "team", label: "Team", appHint: "presence" },
+  { id: "music", label: "Musik", appHint: null },
+  { id: "chatbox", label: "Chatbox", appHint: null },
+  { id: "teamchat", label: "Chat", appHint: null },
+  { id: "staff", label: "Staff", appHint: "moddash" },
+  { id: "keyboard", label: "Tastatur", appHint: null },
+  { id: "presets", label: "Layouts", appHint: "settings" },
+  { id: "clip", label: "Clip", appHint: null },
+] as const;
+export type VrShortcutId = (typeof VR_SHORTCUTS)[number]["id"];
+
+export type VrPresetId = "streaming" | "chill" | "event";
+
+export type VrPresetSnapshot = {
+  widgets: Record<VrWidgetId, boolean>;
+  infos: Record<VrInfoId, VrInfoPlace>;
+  buttonMode: boolean;
+  gazeOpen: boolean;
+  pointOpen: boolean;
+  wristPins: VrShortcutId[];
+  keyboardDocked: boolean;
+  keyboardScale: number;
+};
+
+function defaultPreset(id: VrPresetId): VrPresetSnapshot {
+  const baseWidgets: Record<VrWidgetId, boolean> = {
+    votekick: true,
+    chatAlert: true,
+    instanceAlert: true,
+    instance: true,
+    team: true,
+    music: true,
+    chatbox: true,
+    teamchat: true,
+  };
+  const baseInfos: Record<VrInfoId, VrInfoPlace> = {
+    time: "top",
+    world: "top",
+    people: "top",
+    date: "off",
+    joined: "bottom",
+    instanceAge: "bottom",
+    music: "off",
+  };
+  if (id === "streaming") {
+    return {
+      widgets: { ...baseWidgets, music: true, teamchat: false, chatbox: true, instance: false },
+      infos: { ...baseInfos, world: "top", people: "top", music: "top", joined: "off", instanceAge: "off", date: "off" },
+      buttonMode: true,
+      gazeOpen: false,
+      pointOpen: true,
+      wristPins: ["music", "chatbox", "clip", "keyboard"],
+      keyboardDocked: true,
+      keyboardScale: 1,
+    };
+  }
+  if (id === "chill") {
+    return {
+      widgets: { ...baseWidgets, votekick: true, music: true, teamchat: true },
+      infos: { ...baseInfos, music: "bottom", date: "top" },
+      buttonMode: true,
+      gazeOpen: false,
+      pointOpen: true,
+      wristPins: ["music", "teamchat", "instance", "keyboard"],
+      keyboardDocked: true,
+      keyboardScale: 1.05,
+    };
+  }
+  // event
+  return {
+    widgets: { ...baseWidgets, votekick: true, instanceAlert: true, team: true, instance: true, chatbox: true },
+    infos: { ...baseInfos, people: "top", world: "top", instanceAge: "top", joined: "bottom" },
+    buttonMode: true,
+    gazeOpen: false,
+    pointOpen: true,
+    wristPins: ["staff", "instance", "team", "clip", "chatbox"],
+    keyboardDocked: true,
+    keyboardScale: 1,
+  };
+}
+
 type VrSettings = {
   widgets: Record<VrWidgetId, boolean>;
   infos: Record<VrInfoId, VrInfoPlace>;
@@ -76,11 +160,59 @@ type VrSettings = {
   setWidget: (id: VrWidgetId, on: boolean) => void;
   setInfo: (id: VrInfoId, place: VrInfoPlace) => void;
   setTexts: (texts: string[]) => void;
+
+  /** Scout: Wrist-Pins (max 8). */
+  wristPins: VrShortcutId[];
+  toggleWristPin: (id: VrShortcutId) => void;
+  setWristPins: (ids: VrShortcutId[]) => void;
+
+  /** Scout: Workspace-Presets. */
+  presets: Partial<Record<VrPresetId, VrPresetSnapshot>>;
+  applyPreset: (id: VrPresetId) => void;
+  savePresetFromCurrent: (id: VrPresetId) => void;
+
+  /** Scout: Overlay-Tastatur. */
+  keyboardDocked: boolean;
+  setKeyboardDocked: (on: boolean) => void;
+  keyboardLocked: boolean;
+  setKeyboardLocked: (on: boolean) => void;
+  keyboardScale: number;
+  setKeyboardScale: (n: number) => void;
+  streamerMode: boolean;
+  setStreamerMode: (on: boolean) => void;
+  keyboardPasswordMode: boolean;
+  setKeyboardPasswordMode: (on: boolean) => void;
+  keyboardHistory: string[];
+  pushKeyboardHistory: (text: string) => void;
 };
+
+const DEFAULT_PINS: VrShortcutId[] = ["instance", "team", "music", "chatbox", "keyboard"];
+
+function snapshotFrom(s: {
+  widgets: Record<VrWidgetId, boolean>;
+  infos: Record<VrInfoId, VrInfoPlace>;
+  buttonMode: boolean;
+  gazeOpen: boolean;
+  pointOpen: boolean;
+  wristPins: VrShortcutId[];
+  keyboardDocked: boolean;
+  keyboardScale: number;
+}): VrPresetSnapshot {
+  return {
+    widgets: { ...s.widgets },
+    infos: { ...s.infos },
+    buttonMode: s.buttonMode,
+    gazeOpen: s.gazeOpen,
+    pointOpen: s.pointOpen,
+    wristPins: [...s.wristPins],
+    keyboardDocked: s.keyboardDocked,
+    keyboardScale: s.keyboardScale,
+  };
+}
 
 export const useVrSettings = create<VrSettings>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       widgets: { votekick: true, chatAlert: true, instanceAlert: true, instance: true, team: true, music: true, chatbox: true, teamchat: true },
       infos: { time: "top", world: "top", people: "top", date: "off", joined: "bottom", instanceAge: "bottom", music: "off" },
       buttonMode: true,
@@ -107,13 +239,108 @@ export const useVrSettings = create<VrSettings>()(
       setWidget: (id, on) => set((s) => ({ widgets: { ...s.widgets, [id]: on } })),
       setInfo: (id, place) => set((s) => ({ infos: { ...s.infos, [id]: place } })),
       setTexts: (texts) => set({ texts: texts.map((t) => t.trim().slice(0, 144)).filter(Boolean).slice(0, 8) }),
+
+      wristPins: DEFAULT_PINS,
+      toggleWristPin: (id) =>
+        set((s) => {
+          const has = s.wristPins.includes(id);
+          const wristPins = has ? s.wristPins.filter((x) => x !== id) : [...s.wristPins, id].slice(0, 8);
+          return { wristPins };
+        }),
+      setWristPins: (ids) =>
+        set({
+          wristPins: ids.filter((id, i, a) => a.indexOf(id) === i).slice(0, 8),
+        }),
+
+      presets: {
+        streaming: defaultPreset("streaming"),
+        chill: defaultPreset("chill"),
+        event: defaultPreset("event"),
+      },
+      applyPreset: (id) => {
+        const snap = get().presets[id] ?? defaultPreset(id);
+        set({
+          widgets: { ...snap.widgets },
+          infos: { ...snap.infos },
+          buttonMode: snap.buttonMode,
+          gazeOpen: snap.gazeOpen,
+          pointOpen: snap.pointOpen,
+          wristPins: [...snap.wristPins].slice(0, 8),
+          keyboardDocked: snap.keyboardDocked,
+          keyboardScale: snap.keyboardScale,
+        });
+      },
+      savePresetFromCurrent: (id) => {
+        const s = get();
+        set({
+          presets: {
+            ...s.presets,
+            [id]: snapshotFrom(s),
+          },
+        });
+      },
+
+      keyboardDocked: true,
+      setKeyboardDocked: (keyboardDocked) => set({ keyboardDocked }),
+      keyboardLocked: false,
+      setKeyboardLocked: (keyboardLocked) => set({ keyboardLocked }),
+      keyboardScale: 1,
+      setKeyboardScale: (keyboardScale) => set({ keyboardScale: Math.min(1.3, Math.max(0.85, keyboardScale)) }),
+      streamerMode: false,
+      setStreamerMode: (streamerMode) => set({ streamerMode }),
+      keyboardPasswordMode: false,
+      setKeyboardPasswordMode: (keyboardPasswordMode) => set({ keyboardPasswordMode }),
+      keyboardHistory: [],
+      pushKeyboardHistory: (text) =>
+        set((s) => {
+          const t = text.trim().slice(0, 144);
+          if (!t) return s;
+          return { keyboardHistory: [t, ...s.keyboardHistory.filter((x) => x !== t)].slice(0, 24) };
+        }),
     }),
-    { name: "furrbox-vr", version: 4, migrate: (state, version) => {
-      const s = { ...(state as VrSettings) };
-      if (version < 3) { s.gazeOpen = false; s.pointOpen = true; }
-      if (version < 4) { s.dutyAway = false; s.muteAlerts = false; s.watchlist = s.watchlist ?? []; }
-      return s;
-    }, merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) }, watchlist: ((saved as Partial<VrSettings>)?.watchlist ?? current.watchlist) }) },
+    {
+      name: "furrbox-vr",
+      version: 5,
+      migrate: (state, version) => {
+        const s = { ...(state as VrSettings) };
+        if (version < 3) {
+          s.gazeOpen = false;
+          s.pointOpen = true;
+        }
+        if (version < 4) {
+          s.dutyAway = false;
+          s.muteAlerts = false;
+          s.watchlist = s.watchlist ?? [];
+        }
+        if (version < 5) {
+          s.wristPins = s.wristPins?.length ? s.wristPins : DEFAULT_PINS;
+          s.presets = {
+            streaming: defaultPreset("streaming"),
+            chill: defaultPreset("chill"),
+            event: defaultPreset("event"),
+            ...(s.presets ?? {}),
+          };
+          s.keyboardDocked = s.keyboardDocked ?? true;
+          s.keyboardLocked = s.keyboardLocked ?? false;
+          s.keyboardScale = s.keyboardScale ?? 1;
+          s.streamerMode = s.streamerMode ?? false;
+          s.keyboardPasswordMode = s.keyboardPasswordMode ?? false;
+          s.keyboardHistory = s.keyboardHistory ?? [];
+        }
+        return s;
+      },
+      merge: (saved, current) => ({
+        ...current,
+        ...(saved as object),
+        infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) },
+        widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) },
+        status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) },
+        watchlist: (saved as Partial<VrSettings>)?.watchlist ?? current.watchlist,
+        wristPins: (saved as Partial<VrSettings>)?.wristPins ?? current.wristPins,
+        presets: { ...current.presets, ...((saved as Partial<VrSettings>)?.presets ?? {}) },
+        keyboardHistory: (saved as Partial<VrSettings>)?.keyboardHistory ?? current.keyboardHistory,
+      }),
+    },
   ),
 );
 

@@ -213,3 +213,22 @@ Ziel: Weniger Dauerlast im Idle und bei verstecktem Fenster – **ohne** Icons/S
 ### Kein Push / kein Commit
 
 Änderungen liegen lokal im Workspace; Push nur über Grok Bot nach Freigabe.
+
+## Update-UI (2026-10-05, nach v2.0.26)
+
+Ziel: Changelog klar lesbar (Titel + kurze Punkte) und neues Update spürbar wie bei Windows.
+
+### Änderungen
+
+- `UpdatePopup.tsx`: `ChangelogEntries` / `shortPoint` / `newsPreview`; Windows-ähnliche **UpdateBanner**-Karte unten rechts; Toast mit `kind: "update"`, Action-Button, ~7,8 s, `playSound("update")` bei Download und Ready.
+- `Settings.tsx` (System → Updates): „Das ist neu“ und Updateverlauf mit Titel + kurzen Bullets statt flacher Langtexte.
+- `WhatsNew.tsx`: kurze Bullet-Kacheln (max. 8), Verweis auf Settings für Rest.
+- `Flyouts.tsx`: Toast-Beschreibung mehrzeilig (`whitespace-pre-line`).
+
+### Backup
+
+`C:\Users\denni\Downloads\FurrBox_Verbesserung\backup_desktop\update_ui_2026-10-05_224003\`
+
+### Fertig zum Push
+
+Ja – kein eigener Commit/Push durch Desktop-Agent; Erneuerungsliste an Grok Bot.

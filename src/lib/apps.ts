@@ -51,7 +51,7 @@ export type AppDef = {
   icon: LucideIcon;
   group: AppGroup;
   pinned: boolean;
-  /** On the desktop until the user changes it (right-click ? Zum Desktop hinzufügen / Vom Desktop entfernen). */
+  /** On the desktop until the user changes it (right-click ? Zum Desktop hinzufÃ¼gen / Vom Desktop entfernen). */
   desktop: boolean;
   /** Hidden from start menu / search (opened by other apps only). */
   hidden?: boolean;
@@ -111,7 +111,7 @@ export const APPS: AppDef[] = [
   {
     id: "browser",
     name: "Browser",
-    subtitle: "Webseiten öffnen",
+    subtitle: "Webseiten Ã¶ffnen",
     icon: Globe,
     group: "tools",
     pinned: true,
@@ -122,7 +122,7 @@ export const APPS: AppDef[] = [
   {
     id: "terminal",
     name: "Terminal",
-    subtitle: "FurrShell für FurrFS",
+    subtitle: "FurrShell fÃ¼r FurrFS",
     icon: TerminalSquare,
     group: "tools",
     pinned: false,

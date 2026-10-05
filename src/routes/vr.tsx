@@ -40,6 +40,13 @@ import {
   useWatchlistJoinToasts,
   CHATBOX_RATE_MS,
 } from "@/components/furr/VrOverlayExtras";
+import {
+  OverlayKeyboard,
+  VrSoftToasts,
+  WristTaskbar,
+  WorkspacePresetsBar,
+  useVrSoftEventHooks,
+} from "@/components/furr/VrScoutExtras";
 import { listChatMessages } from "@/lib/furr/api/chat";
 import { listDuty, markVotekickDone } from "@/lib/furr/api/duty";
 import { listPresence } from "@/lib/furr/api/presence";
@@ -153,6 +160,9 @@ function VrPanel() {
   const [done, setDone] = useState<string[]>([]);
   const dismiss = (id: string) => setDone((d) => [...d.slice(-40), id]);
 
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+
   useEffect(() => {
     // The page floats in VR: no page background, only the panel itself.
     document.documentElement.style.background = "transparent";
@@ -225,6 +235,7 @@ function VrPanel() {
 
   useWatchlistJoinToasts({ events: s?.events, watchlist, mute: muteAlerts, boost: boostFrames });
   useVoteResultToasts({ votes: s?.votes, mute: muteAlerts, boost: boostFrames });
+  useVrSoftEventHooks({ enabled: Boolean(me.data), mute: muteAlerts, boost: boostFrames, collapsed });
 
   // What to announce while the panel is closed
   const notice = widgets.votekick && vote
@@ -258,6 +269,12 @@ function VrPanel() {
   const pages = PAGES.filter((id) => (id === "staff" ? onDuty : Boolean(widgets[id as VrWidgetId])));
   const current = Math.min(page, Math.max(0, pages.length - 1));
   const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
+  const jumpPage = (id: "instance" | "team" | "music" | "chatbox" | "teamchat" | "staff") => {
+    setOpen(true);
+    const idx = pages.indexOf(id);
+    if (idx >= 0) setPage(idx);
+    boostFrames(600);
+  };
   // Seitenwechsel (Wischen / Tabs): die 300-ms-Schiebe-Animation flÃ¼ssig zeigen.
   const pageId = pages[current] ?? null;
   useEffect(() => {
@@ -339,6 +356,32 @@ function VrPanel() {
               }}
             />
           )}
+
+          <WorkspacePresetsBar open={presetsOpen} onClose={() => setPresetsOpen(false)} boost={boostFrames} />
+          <WristTaskbar
+            collapsed={false}
+            boost={boostFrames}
+            onJump={jumpPage}
+            onOpenKeyboard={() => {
+              setKeyboardOpen(true);
+              boostFrames(450);
+            }}
+            onOpenPresets={() => {
+              setPresetsOpen(true);
+              boostFrames(450);
+            }}
+          />
+          <OverlayKeyboard
+            open={keyboardOpen}
+            boost={boostFrames}
+            onClose={() => setKeyboardOpen(false)}
+            sendOsc={async (text) => {
+              const bridge = osc();
+              if (!bridge) throw new Error("Geht nur in der FurrBox-Desktop-App.");
+              const r = await bridge.chatbox(text);
+              if (!r.ok) throw new Error(r.error);
+            }}
+          />
 
           {!me.data ? (
             <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
@@ -436,6 +479,7 @@ function VrPanel() {
         )}
       >
         <VrAlertToasts mute={muteAlerts} />
+        <VrSoftToasts mute={muteAlerts} />
         {/* Neuer Hinweis: leuchtet einmal in seiner Farbe auf (kein Dauerblinken). */}
         {notice && collapsed && <span key={notice.id} aria-hidden className={cn("furr-vr-ring pointer-events-none absolute inset-0 rounded-[20px]", `furr-vr-ring-${notice.tone}`)} />}
         <div className="flex items-center gap-2.5">
@@ -467,6 +511,23 @@ function VrPanel() {
             </button>
           )}
         </div>
+        {collapsed && (
+          <WristTaskbar
+            collapsed
+            boost={boostFrames}
+            onJump={jumpPage}
+            onOpenKeyboard={() => {
+              setKeyboardOpen(true);
+              setOpen(true);
+              boostFrames(450);
+            }}
+            onOpenPresets={() => {
+              setPresetsOpen(true);
+              setOpen(true);
+              boostFrames(450);
+            }}
+          />
+        )}
 
         {notice && collapsed ? (
           <div key={notice.id} className="furr-vr-notice flex min-h-0 flex-1 items-center gap-2">
