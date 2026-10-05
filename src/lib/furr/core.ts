@@ -4,6 +4,7 @@ import { getSql, type Sql } from "@/lib/db";
 import { effectiveRole, permissionsFor, ROLE_LABEL, type Permissions, type Role } from "./roles";
 import { syncDiscordLogin } from "./discord-staff";
 import { joinPath, normalizePath, PRIVATE_DEFAULT_FOLDERS } from "./paths";
+import { TtlCache } from "./cache";
 import type { FurrFile, Me, Scope } from "./types";
 
 export { getSql };
@@ -112,8 +113,50 @@ function discordPrivilege(row: ProfileRow) {
   return row.highest_privilege;
 }
 
-/** `bearerToken` identifies the login session for the whitelist name/password step. */
+// ---------- Me-Cache (Ressourcen) ----------
+// accessMiddleware ruft requireAccess auf, der Handler danach oft requirePermission/loadMe:
+// ohne Cache = 2x komplette Profil-/Whitelist-Abfrage pro Server-Funktion. Sehr kurze TTL,
+// damit Rollen-/Whitelist-Änderungen praktisch sofort greifen. Fehler werden nicht gecacht.
+const ME_TTL_MS = 2_000;
+/** Key = userId + Session (hasAccess hängt an der Login-Session). */
+const meAccessCache = new TtlCache<Me>(ME_TTL_MS, 1_000);
+/** Key = userId – nur für Rollen/Rechte (unabhängig von der Session). */
+const mePermissionCache = new TtlCache<Me>(ME_TTL_MS, 1_000);
+const accessKey = (userId: string, bearerToken?: string) => `${userId}\u0000${bearerToken ?? ""}`;
+
+/** Verwirft gecachte Profile (z. B. nach Whitelist-Änderungen). Ohne userId: alle. */
+export function forgetMe(userId?: string) {
+  if (!userId) {
+    meAccessCache.clear();
+    mePermissionCache.clear();
+    return;
+  }
+  mePermissionCache.delete(userId);
+  // Access-Keys enthalten die Session – im Zweifel alles verwerfen (billig, TTL 2 s).
+  meAccessCache.clear();
+}
+
+/**
+ * Immer frisch aus der DB (getMe, Whitelist-Login, Profil-Update) – aktualisiert
+ * dabei den kurzen Cache, damit direkt folgende Rechte-Checks davon profitieren.
+ * `bearerToken` identifies the login session for the whitelist name/password step.
+ */
 export async function loadMe(userId: string, bearerToken?: string): Promise<Me> {
+  const me = await loadMeFromDb(userId, bearerToken);
+  meAccessCache.set(accessKey(userId, bearerToken), me);
+  mePermissionCache.set(userId, me);
+  return me;
+}
+
+/**
+ * Für reine Rollen-/Rechte-Prüfungen in Handlern (nach accessMiddleware): nutzt das
+ * Profil aus demselben Request (≤ 2 s alt) statt erneut 4–6 Queries.
+ */
+export function loadMeCached(userId: string): Promise<Me> {
+  return mePermissionCache.get(userId, () => loadMe(userId));
+}
+
+async function loadMeFromDb(userId: string, bearerToken?: string): Promise<Me> {
   const sql = await getSql();
   await syncDiscordLogin(sql, userId, (discordId) => createProfile(sql, userId, { discordId }));
   let row = await readProfile(sql, userId);
@@ -184,13 +227,13 @@ const ACCESS_ERRORS: Record<Me["accessReason"], string> = {
 };
 
 export async function requireAccess(userId: string, bearerToken?: string) {
-  const me = await loadMe(userId, bearerToken);
+  const me = await meAccessCache.get(accessKey(userId, bearerToken), () => loadMe(userId, bearerToken));
   if (!me.hasAccess) throw new Error(ACCESS_ERRORS[me.accessReason]);
   return me;
 }
 
 export async function requirePermission(userId: string, key: keyof Omit<Permissions, "moderationActions">) {
-  const me = await loadMe(userId);
+  const me = await loadMeCached(userId);
   if (!me.permissions[key]) throw new Error("Dafür fehlt dir die Berechtigung.");
   return me;
 }
@@ -200,10 +243,29 @@ export async function notify(title: string, description: string, audience: "team
   await sql`insert into furr_notification (audience, title, description) values (${audience}, ${title}, ${description})`;
 }
 
-export async function getSetting(key: string, fallback: string) {
+/**
+ * Settings, die selten wechseln, kurz im Speicher halten (whitelist_enabled wird bei JEDEM
+ * Zugriffs-Check gelesen). setSetting aktualisiert den lokalen Cache sofort; andere
+ * Instanzen sehen die Änderung spätestens nach Ablauf der TTL. Nicht aufgeführte Keys
+ * (z. B. bot_last_seen) werden nie gecacht.
+ */
+const SETTING_TTL_MS: Record<string, number> = {
+  whitelist_enabled: 5_000,
+  duty_channel_id: 30_000,
+  chat_retention_days: 60_000,
+};
+const settingCache = new TtlCache<string | null>(60_000, 50);
+
+async function readSetting(key: string): Promise<string | null> {
   const sql = await getSql();
   const rows = await sql<{ value: string }>`select value from furr_setting where key = ${key}`;
-  return rows[0]?.value ?? fallback;
+  return rows[0]?.value ?? null;
+}
+
+export async function getSetting(key: string, fallback: string) {
+  const ttl = SETTING_TTL_MS[key];
+  const value = ttl ? await settingCache.get(key, () => readSetting(key), ttl) : await readSetting(key);
+  return value ?? fallback;
 }
 
 export async function setSetting(key: string, value: string) {
@@ -211,6 +273,8 @@ export async function setSetting(key: string, value: string) {
   await sql`
     insert into furr_setting (key, value, updated_at) values (${key}, ${value}, now())
     on conflict (key) do update set value = excluded.value, updated_at = now()`;
+  if (SETTING_TTL_MS[key]) settingCache.set(key, value);
+  if (key === "whitelist_enabled") forgetMe();
 }
 
 // ---------- FurrFS ----------
@@ -341,11 +405,26 @@ function splitFolder(path: string) {
 
 // ---------- Discord bridge ----------
 
-export async function bridgeStatus() {
+type BridgeStatusValue = { connected: boolean; lastSeenAt: string | null; configured: boolean };
+
+/** Max. Alter für UI-Polls (Statusanzeige). Job-Enqueue nutzt weiterhin frische Werte. */
+export const BRIDGE_STATUS_CACHE_MS = 5_000;
+const bridgeStatusCache = new TtlCache<BridgeStatusValue>(BRIDGE_STATUS_CACHE_MS, 1);
+
+async function readBridgeStatus(): Promise<BridgeStatusValue> {
   const lastSeen = await getSetting("bot_last_seen", "");
   const lastSeenAt = lastSeen ? iso(lastSeen) : null;
   const connected = Boolean(lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < 60_000);
   return { connected, lastSeenAt, configured: Boolean(process.env.BOT_BRIDGE_TOKEN) };
+}
+
+/**
+ * `maxAgeMs > 0`: Ergebnis darf so alt sein (UI-Polling vieler Clients → 1 Query statt N).
+ * Ohne Argument immer frisch (Enqueue-/Upload-Fail-fast bleibt exakt).
+ */
+export async function bridgeStatus(maxAgeMs = 0): Promise<BridgeStatusValue> {
+  if (maxAgeMs <= 0) return readBridgeStatus();
+  return bridgeStatusCache.get("status", readBridgeStatus, maxAgeMs);
 }
 
 export async function discordName(discordId: string) {

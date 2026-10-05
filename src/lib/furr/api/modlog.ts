@@ -8,11 +8,11 @@ import { MOD_ACTION_LABEL, vrchatAuditKind } from "../vrchat-location";
 export type ModLogEntry = {
   id: string;
   at: string;
-  platform: "Discord" | "VRChat";
-  /** warn | mute | timeout | kick | remove | ban | unban */
+  platform: "Discord" | "VRChat" | "FurrBox";
+  /** warn | mute | timeout | kick | remove | ban | unban | audit.* */
   kind: string;
   label: string;
-  source: "FurrBox" | "VRChat";
+  source: "FurrBox" | "VRChat" | "Discord" | "Desktop" | "Bot";
   moderator: string;
   target: string;
   targetId: string | null;
@@ -21,14 +21,19 @@ export type ModLogEntry = {
   status: "success" | "failed" | "pending";
   error: string | null;
   details: string | null;
+  caseId?: string | null;
 };
 
-type Filter = { platform: "all" | "Discord" | "VRChat"; days: number };
+type Filter = { platform: "all" | "Discord" | "VRChat" | "FurrBox"; days: number; caseId?: string | null };
 
 export const listModerationLog = createServerFn({ method: "GET" })
   .validator((input: Partial<Filter>): Filter => ({
-    platform: input.platform === "Discord" || input.platform === "VRChat" ? input.platform : "all",
+    platform:
+      input.platform === "Discord" || input.platform === "VRChat" || input.platform === "FurrBox"
+        ? input.platform
+        : "all",
     days: [1, 7, 30, 365].includes(Number(input.days)) ? Number(input.days) : 30,
+    caseId: input.caseId ? String(input.caseId).trim().slice(0, 80) : null,
   }))
   .middleware([accessMiddleware])
   .handler(async ({ context, data }): Promise<ModLogEntry[]> => {
@@ -164,7 +169,56 @@ export const listModerationLog = createServerFn({ method: "GET" })
       }
     }
 
-    return entries.sort((a, b) => b.at.localeCompare(a.at));
+    // Gemeinsames furr_audit (Duty, Whitelist, Votekick, Sanctions, …)
+    if (data.platform === "all" || data.platform === "FurrBox") {
+      const audit = await sql.query<{
+        id: string;
+        at: unknown;
+        source: string;
+        actor_name: string | null;
+        action: string;
+        target_id: string | null;
+        target_name: string | null;
+        case_id: string | null;
+        detail: string | null;
+      }>(
+        `select id, at, source, actor_name, action, target_id, target_name, case_id, detail
+         from furr_audit
+         where at > now() - ($1::int * interval '1 day')
+           and ($2::text is null or case_id = $2)
+         order by at desc limit 500`,
+        [data.days, data.caseId],
+      );
+      const sourceLabel: Record<string, ModLogEntry["source"]> = {
+        furrbox: "FurrBox",
+        desktop: "Desktop",
+        bot: "Bot",
+        discord: "Discord",
+        vrchat: "VRChat",
+      };
+      for (const r of audit) {
+        entries.push({
+          id: `fa-${r.id}`,
+          at: iso(r.at) ?? "",
+          platform: "FurrBox",
+          kind: r.action,
+          label: r.action,
+          source: sourceLabel[r.source] ?? "FurrBox",
+          moderator: r.actor_name ?? "System",
+          target: r.target_name ?? r.target_id ?? "—",
+          targetId: r.target_id,
+          reason: r.detail,
+          durationMs: null,
+          status: "success",
+          error: null,
+          details: r.case_id ? `Fall: ${r.case_id}` : null,
+          caseId: r.case_id,
+        });
+      }
+    }
+
+    const out = data.caseId ? entries.filter((e) => e.caseId === data.caseId) : entries;
+    return out.sort((a, b) => b.at.localeCompare(a.at));
   });
 
 /** VRChat descriptions look like "Moderator warned Target." / "User Target was banned …". */

@@ -181,14 +181,37 @@ export function UpdatePopup() {
   const announced = useRef<string | null>(null);
 
   useEffect(() => {
-    const check = () => void useServerUpdate.getState().check();
-    const first = window.setTimeout(check, 15_000);
-    const timer = window.setInterval(check, SERVER_CHECK_MS);
-    const onVisible = () => document.visibilityState === "visible" && check();
+    let first: number | undefined;
+    let timer: number | undefined;
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      void useServerUpdate.getState().check();
+    };
+    const arm = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (document.visibilityState !== "visible") return;
+      timer = window.setTimeout(() => {
+        check();
+        arm();
+      }, SERVER_CHECK_MS);
+    };
+    first = window.setTimeout(() => {
+      check();
+      arm();
+    }, 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        check();
+        arm();
+      } else if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.clearTimeout(first);
-      window.clearInterval(timer);
+      if (first !== undefined) window.clearTimeout(first);
+      if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

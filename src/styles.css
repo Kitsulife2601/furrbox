@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 
 @theme {
   --color-bg: var(--os-bg);
@@ -474,12 +474,16 @@
   from { background-color: rgb(var(--furr-ring) / 0.38); box-shadow: inset 0 0 0 3px rgb(var(--furr-ring) / 0.9); }
   to { background-color: rgb(var(--furr-ring) / 0); box-shadow: inset 0 0 0 12px rgb(var(--furr-ring) / 0); }
 }
+/* VR Alert-Toast (Queue max. 2) – gleiche Pop-Sprache wie Hinweise. */
+.furr-vr-toast { animation: furr-vr-notice 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .furr-vr-window,
   .furr-vr-window-out,
   .furr-vr-notice,
   .furr-vr-pop,
-  .furr-vr-ring { animation: none; }
+  .furr-vr-ring,
+  .furr-vr-toast { animation: none; }
 }
 
 /* ---- Desktop MOTION feedback (aligned with Votekick / src/lib/furr/motion.ts) ---- */
@@ -625,5 +629,25 @@
   .furr-snap-preview,
   .furr-alttab {
     animation: none !important;
+  }
+}
+
+/* ---- Ideen-Features: Undo-Countdown im Toast (10 s), linear wie ein Fortschrittsbalken ---- */
+.furr-toast-timer {
+  animation-name: furr-toast-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes furr-toast-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .furr-toast-timer {
+    animation: none;
   }
 }

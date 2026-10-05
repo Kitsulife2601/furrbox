@@ -26,3 +26,4 @@ bot/bot.log
 
 # Big evidence files stored on the bot PC
 bot/beweise/
+bot/bot.ready

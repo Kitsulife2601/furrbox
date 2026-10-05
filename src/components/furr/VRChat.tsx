@@ -1,6 +1,7 @@
 // FurrEvidence → VRChat: group link (owner), open group instances, group moderation.
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import {
   Ban,
   ExternalLink,
@@ -35,6 +36,9 @@ import { updateBridge } from "@/components/desktop/UpdatePopup";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
+import { BAN_REASON_MIN, CaseRefSelect, NO_CASE, UndoBanner } from "./BanSafety";
+import { withCaseRef } from "@/lib/furr/case-draft";
+import { scheduleWithUndo } from "@/lib/furr/undo";
 
 const STATUS_KEY = ["furr", "vrchat", "status"];
 const MY_KEY = ["furr", "vrchat", "mine"];
@@ -177,11 +181,12 @@ function Card({
 }
 
 export function VRChatPanel() {
+  const live60 = useLiveInterval(60_000);
   const me = useMe();
   const status = useQuery({
     queryKey: STATUS_KEY,
     queryFn: () => getVrchatStatus(),
-    refetchInterval: 60_000,
+    refetchInterval: live60,
   });
   const canManage = Boolean(me.data?.permissions.canManageVrchat);
   const s = status.data;
@@ -465,13 +470,14 @@ export function GroupHeader({ status, canManage }: { status: VrchatStatus; canMa
 }
 
 function Instances() {
+  const live45 = useLiveInterval(45_000);
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => getVrchatStatus() });
   const live = Boolean(status.data?.botOnline);
   const q = useQuery({
     queryKey: ["furr", "vrchat", "instances"],
     queryFn: () => listVrchatInstances(),
-    refetchInterval: 45_000,
+    refetchInterval: live45,
   });
   const list = q.data?.instances ?? [];
   const total = list.reduce((sum, i) => sum + i.memberCount, 0);
@@ -583,6 +589,7 @@ export function InstanceRow({ instance: i }: { instance: VrchatInstance }) {
 }
 
 function Moderation({ groupId }: { groupId: string }) {
+  const live20 = useLiveInterval(20_000);
   const me = useMe();
   const mine = useMyVrchat();
   const membership = useMembership(mine.data?.loggedIn ? mine.data.userId : null);
@@ -591,7 +598,7 @@ function Moderation({ groupId }: { groupId: string }) {
   const log = useQuery({
     queryKey: ["furr", "vrchat", "moderation"],
     queryFn: () => listVrchatModeration(),
-    refetchInterval: 20_000,
+    refetchInterval: live20,
   });
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<
@@ -605,6 +612,8 @@ function Moderation({ groupId }: { groupId: string }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [caseRef, setCaseRef] = useState("");
+  const [pending, setPending] = useState<{ id: string; cancel: () => boolean } | null>(null);
 
   async function search(e: FormEvent) {
     e.preventDefault();
@@ -619,7 +628,25 @@ function Moderation({ groupId }: { groupId: string }) {
     }
   }
 
-  async function act(action: "kick" | "ban" | "unban") {
+  /** Bann: Pflicht-Begründung + Fall-Bezug, Ausführung erst nach 10 s (Rückgängig im Banner/Toast). */
+  function banWithUndo() {
+    if (!target) return;
+    const who = target;
+    const finalReason = withCaseRef(reason, caseRef && caseRef !== NO_CASE ? caseRef : null);
+    const job = scheduleWithUndo({
+      label: `Bann gegen ${who.displayName}`,
+      description: finalReason,
+      run: () => act("ban", who, finalReason),
+      onDone: () => setPending(null),
+      onError: () => setPending(null),
+      onCancel: () => setPending(null),
+    });
+    setPending(job);
+  }
+
+  async function act(action: "kick" | "ban" | "unban", who = target, why = reason) {
+    const target = who;
+    const reason = why;
     if (!target) return;
     setError("");
     setBusy(true);
@@ -648,6 +675,7 @@ function Moderation({ groupId }: { groupId: string }) {
         description: `${target.displayName} wurde in der VRChat-Gruppe moderiert.`,
       });
       setReason("");
+      setCaseRef("");
       setTarget(null);
       await queryClient.invalidateQueries({ queryKey: ["furr", "vrchat", "moderation"] });
     } catch (err) {
@@ -700,14 +728,17 @@ function Moderation({ groupId }: { groupId: string }) {
             placeholder="Grund (landet im Audit-Log)"
             className="rounded-lg border border-border bg-bg/60 p-2.5 text-[13px] outline-none placeholder:text-subtle focus:border-accent"
           />
+          <CaseRefSelect value={caseRef} onChange={setCaseRef} platform="VRChat" allowNone />
+          {pending && <UndoBanner pendingId={pending.id} onUndo={() => pending.cancel()} />}
           <div className="grid grid-cols-3 gap-2">
             <Btn disabled={busy || reason.trim().length < 3} onClick={() => void act("kick")}>
               <UserMinus className="size-3.5" /> Kick
             </Btn>
             <Btn
               variant="danger"
-              disabled={busy || reason.trim().length < 3}
-              onClick={() => void act("ban")}
+              disabled={busy || Boolean(pending) || reason.trim().length < BAN_REASON_MIN || !caseRef}
+              onClick={banWithUndo}
+              title={`Bann braucht ${BAN_REASON_MIN}+ Zeichen Begründung und einen Fall-Bezug – 10 s Rückgängig`}
             >
               <Ban className="size-3.5" /> Bann
             </Btn>

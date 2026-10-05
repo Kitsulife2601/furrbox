@@ -1,5 +1,6 @@
 // FurrFS Explorer: private home + Shared Network, folders, upload, text docs, cut/copy/paste.
 import { useMemo, useRef, useState, type DragEvent } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 import {
@@ -91,12 +92,13 @@ export function FurrFS({ payload, startAtPc }: { payload?: WindowPayload; startA
   const uploadRef = useRef<HTMLInputElement>(null);
   const clipboard = useFurrClipboard();
 
+  const live5 = useLiveInterval(5_000);
   const scope = loc.scope === "pc" ? null : loc.scope;
   const query = useQuery({
     queryKey: scope ? filesKey(scope, loc.folder) : ["furr", "files", "pc"],
     queryFn: () => listFiles({ data: { scope: scope!, folder: loc.folder } }),
     enabled: Boolean(scope),
-    refetchInterval: 5_000,
+    refetchInterval: live5,
   });
 
   const files = useMemo(() => {

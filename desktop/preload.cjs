@@ -59,6 +59,26 @@ contextBridge.exposeInMainWorld("furrbox", {
     state: () => ipcRenderer.invoke("furrbox:media-state"),
     control: (action) => ipcRenderer.invoke("furrbox:media-control", action),
   },
+  // Evidence clips (ring buffer) – only present in the desktop app.
+  clips: {
+    status: () => ipcRenderer.invoke("furrbox:clips-status"),
+    config: () => ipcRenderer.invoke("furrbox:clips-config"),
+    setConfig: (patch) => ipcRenderer.invoke("furrbox:clips-set-config", patch),
+    list: () => ipcRenderer.invoke("furrbox:clips-list"),
+    save: (input) => ipcRenderer.invoke("furrbox:clips-save", input),
+    request: (input) => ipcRenderer.invoke("furrbox:clips-request", input),
+    attachToCase: (input) => ipcRenderer.invoke("furrbox:clips-attach-to-case", input),
+    markIn: () => ipcRenderer.invoke("furrbox:clips-mark-in"),
+    markOut: (meta) => ipcRenderer.invoke("furrbox:clips-mark-out", meta),
+    delete: (id) => ipcRenderer.invoke("furrbox:clips-delete", id),
+    read: (id) => ipcRenderer.invoke("furrbox:clips-read", id),
+    openFolder: () => ipcRenderer.invoke("furrbox:clips-open-folder"),
+    onSaved: (callback) => {
+      const listener = (_event, info) => callback(info);
+      ipcRenderer.on("furrbox:clips-saved", listener);
+      return () => ipcRenderer.removeListener("furrbox:clips-saved", listener);
+    },
+  },
   osc: {
     chatbox: (text) => ipcRenderer.invoke("furrbox:osc-chatbox", text),
     // Permanent status in the chatbox: { enabled, items, text, opened }.

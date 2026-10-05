@@ -8,8 +8,10 @@
 // except the password in a login job, which is removed the moment the bot picks the job up.
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
-import { appendTextFile, bridgeStatus, getSql, iso, newId, notify, requirePermission } from "../core";
+import { BRIDGE_STATUS_CACHE_MS, appendTextFile, bridgeStatus, getSql, iso, newId, notify, requirePermission } from "../core";
 import { BOT_JOB_STALE_MS, BOT_JOB_STALE_MSG, runSideEffect, safeJsonParse } from "../http";
+import { appendAuditLater } from "../audit";
+import { publishAlertLater } from "../alerts";
 import { AUDIT_LOG_NAME, VRCHAT_LOGS } from "../paths";
 import { VRC_ACCESS, VRC_REGION } from "../vrchat-location";
 
@@ -94,7 +96,8 @@ export const getVrchatStatus = createServerFn({ method: "GET" })
   .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<VrchatStatus> => {
     await requirePermission(context.userId, "canUseEvidence");
-    const [c, bot] = await Promise.all([conn(), bridgeStatus()]);
+    // Status-Anzeige darf ≤ 5 s alt sein; enqueue() prüft weiterhin frisch.
+    const [c, bot] = await Promise.all([conn(), bridgeStatus(BRIDGE_STATUS_CACHE_MS)]);
     let group: VrchatGroupInfo | null = null;
     if (c?.group_json) {
       const g = safeJsonParse<Record<string, unknown> | null>(c.group_json, null);
@@ -250,20 +253,109 @@ export const checkVrchatMembership = createServerFn({ method: "POST" })
     return enqueue("member-check", { userId }, context.userId);
   });
 
-/** Moderator+: kick / ban / unban someone in the VRChat group (logged when the bot reports back). */
+/** Moderator+: kick / ban / unban. Ban braucht Pflicht-Reason + caseId + 10 s Undo-Token. */
 export const vrchatModerate = createServerFn({ method: "POST" })
-  .validator((input: { action: "kick" | "ban" | "unban"; userId: string; userName?: string; reason: string }) => ({
+  .validator((input: { action: "kick" | "ban" | "unban"; userId: string; userName?: string; reason: string; caseId?: string }) => ({
     action: (["kick", "ban", "unban"].includes(input.action) ? input.action : "kick") as "kick" | "ban" | "unban",
     userId: String(input.userId ?? "").trim(),
     userName: String(input.userName ?? "").trim().slice(0, 100),
     reason: String(input.reason ?? "").trim(),
+    caseId: input.caseId ? String(input.caseId).trim().slice(0, 80) : null,
   }))
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
-    await requirePermission(context.userId, "canModerateVrchat");
+    const me = await requirePermission(context.userId, "canModerateVrchat");
     if (!USER_ID.test(data.userId)) throw new Error("Bitte eine VRChat-Person auswählen (ID beginnt mit usr_).");
     if (data.reason.length < 3) throw new Error("Bitte einen Grund angeben (mindestens 3 Zeichen).");
-    return enqueue("moderate", data, context.userId);
+    if (data.action === "ban") {
+      if (!data.caseId) throw new Error("Bann braucht eine Fall-ID (caseId).");
+      if (data.reason.length < 5) throw new Error("Bann-Begründung mindestens 5 Zeichen.");
+    }
+    const job = await enqueue("moderate", {
+      action: data.action,
+      userId: data.userId,
+      userName: data.userName,
+      reason: data.reason,
+      caseId: data.caseId,
+    }, context.userId);
+    let undoToken: string | null = null;
+    let undoExpiresAt: string | null = null;
+    if (data.action === "ban") {
+      const sql = await getSql();
+      undoToken = newId();
+      const expires = new Date(Date.now() + 10_000).toISOString();
+      await sql`
+        insert into ban_undo (token, platform, target_id, target_name, reason, case_id, moderator_id, job_or_req, expires_at)
+        values (${undoToken}, 'vrchat', ${data.userId}, ${data.userName || null}, ${data.reason}, ${data.caseId}, ${context.userId}, ${job.jobId}, ${expires})`;
+      undoExpiresAt = expires;
+      publishAlertLater({
+        kind: "ban.applied",
+        severity: "critical",
+        title: "VRChat-Bann (Undo 10 s)",
+        body: `${data.userName || data.userId} – ${data.reason}`,
+        dedupKey: `ban:vr:${job.jobId}`,
+        payload: { undoToken, jobId: job.jobId, caseId: data.caseId, targetId: data.userId },
+      });
+      appendAuditLater({
+        source: "furrbox",
+        action: "vrchat.ban",
+        actorId: context.userId,
+        actorName: me.displayName,
+        targetId: data.userId,
+        targetName: data.userName,
+        caseId: data.caseId,
+        detail: data.reason,
+      });
+    }
+    return { ...job, undoToken, undoExpiresAt };
+  });
+
+/** 10 s Undo: queued Unban-Job, sofern Token noch gültig. */
+export const undoVrchatBan = createServerFn({ method: "POST" })
+  .validator((token: string) => String(token ?? "").trim())
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data: token }) => {
+    await requirePermission(context.userId, "canModerateVrchat");
+    if (!token) throw new Error("Undo-Token fehlt.");
+    const sql = await getSql();
+    const rows = await sql<{
+      token: string;
+      target_id: string;
+      target_name: string | null;
+      reason: string;
+      case_id: string;
+      moderator_id: string;
+      expires_at: unknown;
+      used_at: unknown;
+    }>`select * from ban_undo where token = ${token} and platform = 'vrchat'`;
+    const row = rows[0];
+    if (!row) throw new Error("Undo-Token unbekannt.");
+    if (row.used_at) throw new Error("Undo schon benutzt.");
+    if (new Date(String(row.expires_at)).getTime() < Date.now()) throw new Error("Undo-Fenster (10 s) abgelaufen.");
+    if (row.moderator_id !== context.userId) throw new Error("Nur der ausstellende Moderator darf undoen.");
+    await sql`update ban_undo set used_at = now() where token = ${token}`;
+    const job = await enqueue(
+      "moderate",
+      { action: "unban", userId: row.target_id, userName: row.target_name ?? "", reason: `Undo: ${row.reason}`, caseId: row.case_id },
+      context.userId,
+    );
+    publishAlertLater({
+      kind: "ban.undo",
+      severity: "warn",
+      title: "VRChat-Bann rückgängig",
+      body: row.target_name || row.target_id,
+      dedupKey: `banundo:${token}`,
+      payload: { token, jobId: job.jobId, caseId: row.case_id },
+    });
+    appendAuditLater({
+      source: "furrbox",
+      action: "vrchat.ban.undo",
+      actorId: context.userId,
+      targetId: row.target_id,
+      targetName: row.target_name,
+      caseId: row.case_id,
+    });
+    return { ok: true as const, ...job };
   });
 
 export const listVrchatModeration = createServerFn({ method: "GET" })

@@ -1,21 +1,41 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useNow } from "@/lib/furr/live-interval";
 import { useDesktop } from "@/store/desktop";
+import { DUTY_DOT, DUTY_LABEL, useDuty } from "@/components/furr/useDuty";
+
+/** Sperrbildschirm-sichere Mini-Statuszeile: nur der eigene Anwesenheits-Status, keine Namen/Inhalte. */
+function LockDutyLine() {
+  const duty = useDuty();
+  if (!duty.allowed || duty.loading) return null;
+  return (
+    <p className="furr-flyout-in flex items-center gap-2 rounded-full bg-bg/45 px-3 py-1 text-[12px] font-medium text-fg/85 backdrop-blur-sm">
+      <span className={`size-2 rounded-full ${DUTY_DOT[duty.status]}`} />
+      {DUTY_LABEL[duty.status]}
+    </p>
+  );
+}
+
+function LockClock() {
+  // Nur HH:mm – 30s-Tick, isoliert vom Rest des Lockscreens.
+  const now = useNow(30_000);
+  return (
+    <>
+      <p className="text-7xl font-medium tracking-tight tabular-nums md:text-8xl">{format(now, "HH:mm")}</p>
+      <p className="mt-2 text-lg font-medium capitalize text-fg/85">{format(now, "EEEE, d. MMMM", { locale: de })}</p>
+    </>
+  );
+}
 
 export function LockScreen({ userName, style }: { userName: string | null; style?: React.CSSProperties }) {
   const unlock = useDesktop((s) => s.unlock);
   const wallpaper = useDesktop((s) => s.wallpaper);
-  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
     const onKey = () => unlock();
     window.addEventListener("keydown", onKey);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [unlock]);
 
   return (
@@ -27,8 +47,13 @@ export function LockScreen({ userName, style }: { userName: string | null; style
     >
       <div className="pointer-events-none absolute inset-0 bg-bg/25" />
       <div className="relative mb-auto mt-[18vh] flex flex-col items-center text-center">
-        <p className="text-7xl font-medium tracking-tight tabular-nums md:text-8xl">{format(now, "HH:mm")}</p>
-        <p className="mt-2 text-lg font-medium capitalize text-fg/85">{format(now, "EEEE, d. MMMM", { locale: de })}</p>
+        <LockClock />
+        {/* Nur mit bestehender Sitzung – vor dem Login keine Server-Abfragen. */}
+        {userName && (
+          <div className="mt-4">
+            <LockDutyLine />
+          </div>
+        )}
       </div>
       <div className="relative mb-16 flex flex-col items-center gap-3">
         <div className="flex size-16 items-center justify-center rounded-full bg-elevated/80 text-lg font-semibold">

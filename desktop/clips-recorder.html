@@ -1,0 +1,78 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>FurrBox Clips</title>
+<style>html,body{margin:0;background:#000;color:#666;font:12px sans-serif}#s{padding:8px}</style>
+</head>
+<body>
+<div id="s">Clip-Recorder</div>
+<script>
+const statusEl = document.getElementById("s");
+let stream = null;
+let recorder = null;
+let seq = 0;
+function setStatus(t) { statusEl.textContent = t; }
+window.clipsRecorder = {
+  async start(sourceId, opts) {
+    await window.clipsRecorder.stop();
+    seq = 0;
+    const fps = Math.max(5, Math.min(30, Number(opts && opts.fps) || 15));
+    const bitrate = Math.max(200000, Math.min(4000000, Number(opts && opts.bitrate) || 800000));
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId,
+          maxFrameRate: fps,
+          maxWidth: 1280,
+          maxHeight: 720
+        }
+      }
+    });
+    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+        ? "video/webm;codecs=vp8"
+        : "video/webm";
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
+    recorder.ondataavailable = async (ev) => {
+      if (!ev.data || !ev.data.size) return;
+      const buf = await ev.data.arrayBuffer();
+      window.furrboxClips.sendChunk(buf, ++seq, ev.data.type || mime);
+    };
+    recorder.onerror = (e) => window.furrboxClips.sendError(String((e && e.error) || e.message || "recorder"));
+    recorder.start(1000);
+    setStatus("recording " + mime);
+    return { mime };
+  },
+  async stop() {
+    const rec = recorder;
+    recorder = null;
+    if (rec && rec.state !== "inactive") {
+      await new Promise((resolve) => {
+        rec.onstop = resolve;
+        try { rec.stop(); } catch (e) { resolve(); }
+      });
+    }
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+      stream = null;
+    }
+    setStatus("idle");
+  }
+};
+window.furrboxClips.onCommand((cmd, payload) => {
+  if (cmd === "start") {
+    window.clipsRecorder.start(payload.sourceId, payload.opts || {}).catch((e) =>
+      window.furrboxClips.sendError(String((e && e.message) || e))
+    );
+  }
+  if (cmd === "stop") window.clipsRecorder.stop().catch(function () {});
+});
+setStatus("ready");
+window.furrboxClips.sendReady();
+</script>
+</body>
+</html>

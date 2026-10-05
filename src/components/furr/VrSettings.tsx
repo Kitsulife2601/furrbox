@@ -1,6 +1,7 @@
 // FurrSettings → FurrBox VR: the panel on your arm in SteamVR – on/off, what it shows, where it sits.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { listDutyLog } from "@/lib/furr/api/duty";
 import { useMe } from "@/lib/furr/client";
 import { Glasses } from "lucide-react";
@@ -98,7 +99,10 @@ export function VrSettings() {
   const setInfo = useVrSettings((s) => s.setInfo);
   const texts = useVrSettings((s) => s.texts);
   const setTexts = useVrSettings((s) => s.setTexts);
+  const watchlist = useVrSettings((s) => s.watchlist);
+  const setWatchlist = useVrSettings((s) => s.setWatchlist);
   const [draft, setDraft] = useState(texts.join("\n"));
+  const [watchDraft, setWatchDraft] = useState(watchlist.map((w) => (w.name ? `${w.id} ${w.name}` : w.id)).join("\n"));
   const buttonMode = useVrSettings((s) => s.buttonMode);
   const setButtonMode = useVrSettings((s) => s.setButtonMode);
   const gazeOpen = useVrSettings((s) => s.gazeOpen);
@@ -305,6 +309,38 @@ export function VrSettings() {
         </section>
       )}
 
+      <section className="grid gap-2">
+        <h3 className="text-[13px] font-semibold">Watchlist (VR-Joins)</h3>
+        <p className="text-[11px] text-muted">
+          Ein Eintrag pro Zeile: <span className="font-mono">usr_…</span> oder <span className="font-mono">usr_… Anzeigename</span> bzw. nur der Name.
+          Join-Toast am Handgelenk (lokal, bis Server-Watchlist kommt). Max. 40.
+        </p>
+        <textarea
+          value={watchDraft}
+          onChange={(e) => setWatchDraft(e.target.value)}
+          rows={4}
+          className="rounded-lg border border-border bg-bg/60 p-2.5 font-mono text-[12px] outline-none focus:border-accent"
+        />
+        <Btn
+          variant="primary"
+          onClick={() => {
+            const entries = watchDraft
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => {
+                const m = /^(usr_[0-9a-f-]{36})\s*(.*)$/i.exec(line);
+                if (m) return { id: m[1], name: m[2].trim() || undefined };
+                return { id: line, name: line };
+              });
+            setWatchlist(entries);
+            setWatchDraft(entries.map((w) => (w.name && w.name !== w.id ? `${w.id} ${w.name}` : w.id)).join("\n"));
+          }}
+        >
+          Watchlist speichern
+        </Btn>
+      </section>
+
       {p && (
         <section className="grid gap-2.5">
           <h3 className="text-[13px] font-semibold">Position am Arm</h3>
@@ -362,11 +398,13 @@ export function VrSettings() {
 
 /** Anwesenheits-Protokoll. The switch itself lives in the VR panel (wrist widget and page "Team"). */
 function DutySection() {
+  const live30 = useLiveInterval(30_000);
   const me = useMe();
   const allowed = Boolean(me.data?.permissions.canUseEvidence);
-  const log = useQuery({ queryKey: ["furr", "duty", "log"], queryFn: () => listDutyLog(), enabled: allowed, refetchInterval: 30_000 });
+  const log = useQuery({ queryKey: ["furr", "duty", "log"], queryFn: () => listDutyLog(), enabled: allowed, refetchInterval: live30 });
   if (!allowed) return null;
-  const KIND = { on: "ist anwesend", off: "ist nicht mehr anwesend", votekick: "Votekick erledigt" } as const;
+  const KIND = { on: "ist anwesend", off: "ist nicht mehr anwesend", away: "ist kurz weg",
+  votekick: "Votekick erledigt" } as const;
   return (
     <section className="grid gap-2">
       <h3 className="text-[13px] font-semibold">Anwesenheit</h3>

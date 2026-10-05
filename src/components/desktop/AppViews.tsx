@@ -14,6 +14,7 @@ import { Whitelist } from "@/components/furr/Whitelist";
 import { ModLog } from "@/components/furr/ModLog";
 import { InstanceTracker } from "@/components/furr/InstanceTracker";
 import { Empty } from "@/components/furr/ui";
+import { ModDashboard } from "./ModDashboard";
 
 export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId: string; payload?: WindowPayload }) {
   const me = useMe();
@@ -49,6 +50,8 @@ export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId:
       return <FileViewer payload={payload} />;
     case "taskmgr":
       return <TaskManager windowId={windowId} />;
+    case "moddash":
+      return <ModDashboard />;
     default:
       return null;
   }

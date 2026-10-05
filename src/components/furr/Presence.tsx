@@ -1,5 +1,6 @@
 // FurrPresence: network monitor with team matrix / global registry, dual status and Discord logs.
 import { useMemo, useState } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery } from "@tanstack/react-query";
 import { listPresence, listPresenceLogs } from "@/lib/furr/api/presence";
 import { getBridgeStatus } from "@/lib/furr/api/session";
@@ -21,12 +22,14 @@ function Dot({ on, className }: { on: boolean; className?: string }) {
 }
 
 export function Presence() {
+  const live5 = useLiveInterval(5_000);
+  const live15 = useLiveInterval(15_000);
   const [view, setView] = useState<"team" | "global">("team");
   const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const connected = useSync((s) => s.connected);
-  const users = useQuery({ queryKey: ["furr", "presence", view], queryFn: () => listPresence({ data: view }), refetchInterval: 5_000 });
-  const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: 15_000 });
+  const users = useQuery({ queryKey: ["furr", "presence", view], queryFn: () => listPresence({ data: view }), refetchInterval: live5 });
+  const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: live15 });
 
   const list = useMemo(
     () =>

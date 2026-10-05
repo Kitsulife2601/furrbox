@@ -1,6 +1,7 @@
 // Permanent status in the VRChat chatbox: hands the settings (FurrSettings → FurrBox VR) to the
 // desktop app, which writes the text into the chatbox every few seconds via OSC.
 import { useEffect } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery } from "@tanstack/react-query";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { useVrSettings, type VrInfoId } from "@/store/vr";
@@ -14,6 +15,7 @@ export function chatboxStatusBridge() {
 }
 
 export function useChatboxStatus() {
+  const live = useLiveInterval(60_000);
   const status = useVrSettings((s) => s.status);
   const bridge = chatboxStatusBridge();
   // Since when the instances of our group are open (for "Instanz offen: …").
@@ -21,7 +23,7 @@ export function useChatboxStatus() {
     queryKey: ["furr", "vrchat", "instances"],
     queryFn: () => listVrchatInstances(),
     enabled: Boolean(bridge) && status.enabled && status.items.includes("instanceAge"),
-    refetchInterval: 60_000,
+    refetchInterval: live,
     retry: false,
   });
   const opened = JSON.stringify(Object.fromEntries((group.data?.instances ?? []).map((i) => [i.location, i.openedAt])));

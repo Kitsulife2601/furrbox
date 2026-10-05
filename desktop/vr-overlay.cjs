@@ -29,19 +29,23 @@ const GAZE_FACING = 0.2;
 const GAZE_DISTANCE = 0.9;
 const GAZE_ON_MS = 250;
 const POINT_ON_MS = 120;
-const FRAME_GAP_MS = 1200;
+const FRAME_GAP_MS = 2000; // Idle: max. 0,5 Bilder/s an SteamVR (vorher ~0,83/s)
 const POINT_OFF_MS = 2500;
 const GAZE_OFF_MS = 2500;
 // Kurze Aussetzer des Lasers (Zittern am Rand) setzen das Aufklappen nicht gleich zurück.
 const POINT_GRACE_MS = 90;
-// Bildrate: im Ruhezustand sparsam (weniger Bildwechsel = weniger Flackern), während einer
-// Animation (Auf-/Zuklappen, Hinweis, Klick) kurz flüssig – wie beim Votekick-Hinweis.
-const IDLE_FPS = 10;
+// Bildrate: Idle sehr sparsam; Animation (Auf-/Zuklappen, Hinweis, Klick) kurz Boost.
+const IDLE_FPS = 2; // Electron-Paint zugeklappt (vorher 10)
 const ANIM_FPS = 24;
 const BOOST_MAX_MS = 1500;
 const BOOST_OPEN_MS = 450; // Auf-/Zuklappen (Animation 260 ms + Puffer)
 const BOOST_CLICK_MS = 600; // Klick-Feedback („Pop“ 450 ms) und Seitenwechsel (300 ms)
-// So viele Fehler hintereinander (à 40 ms) gelten als „SteamVR ist weg“ → neu verbinden.
+// Pump: Idle ~2,5 Hz (Gaze/Point); bei Laser/offen 25 Hz für weiche Maus.
+const PUMP_IDLE_MS = 400; // Idle: Gaze/Point ~2,5 Hz (Brief 250–500 ms; aktiv bleibt 40 ms)
+const PUMP_ACTIVE_MS = 40;
+const PLACEMENT_TICK_MS = 8000; // Controller-Suche / Placement (vorher 5000)
+// So viele Fehler hintereinander gelten als „SteamVR ist weg“ → neu verbinden.
+// Bei Idle-Pump (~400 ms) ≈ 20 s, bei Active (~40 ms) ≈ 2 s.
 const MAX_PUMP_ERRORS = 50;
 const EVENT = {
   mouseMove: 300,
@@ -51,8 +55,11 @@ const EVENT = {
   scrollSmooth: 309,
   quit: 700,
 };
-const FLAG_INTERACTIVE = 65536; // MakeOverlaysInteractiveIfVisible
-const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
+const FLAG_INTERACTIVE = 65536; // MakeOverlaysInteractiveIfVisible (1<<16)
+const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents (1<<17)
+// OpenVR SDK 2.15.6 headers/openvr.h: VROverlayFlags_NoBackside = 1 << 29
+// Without this, overlays built against SDK 2.15+ get a translucent grey backside by default.
+const FLAG_NO_BACKSIDE = 536870912; // VROverlayFlags_NoBackside (1<<29)
 const INPUT_MOUSE = 1;
 const EVENT_SIZE = 64;
 
@@ -190,6 +197,10 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let pumpErrors = 0;
   let lastPumpError = "";
   let appliedKey = ""; // zuletzt gesetzte Position – nur bei Änderung neu an SteamVR geben
+  let pumpMs = PUMP_IDLE_MS;
+  let pumpTimer = null;
+  const eventBuf = Buffer.alloc(EVENT_SIZE); // wiederverwendet statt jedes Pump neu
+  let poseBuf = Buffer.alloc(0); // Pose-Puffer, wächst bei Bedarf
   // The picture always has the full size; with the window closed its upper part is simply empty.
   // (Changing the size on every open / close made the panel flicker.)
   const size = () => FULL;
@@ -288,6 +299,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       // the whole time. updatePointer() switches the laser on only while you point at the panel.
       api.ovr("SetOverlayFlag", "int FN(uint64_t, int, bool)", handle, FLAG_INTERACTIVE, false);
       api.ovr("SetOverlayFlag", "int FN(uint64_t, int, bool)", handle, FLAG_SCROLL, true);
+      // SDK 2.15+: only draw the front face (no grey translucent backside)
+      api.ovr("SetOverlayFlag", "int FN(uint64_t, int, bool)", handle, FLAG_NO_BACKSIDE, true);
       visible = false;
       interactive = false;
       applySize();
@@ -366,6 +379,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     if (!api || handle === null || interactive === on) return;
     api.ovr("SetOverlayFlag", "int FN(uint64_t, int, bool)", handle, FLAG_INTERACTIVE, on);
     interactive = on;
+    ensurePumpRate();
     if (!on && mouseDown) {
       mouseDown = false;
       mouse("mouseUp", -1, -1, { button: "left", clickCount: 1 });
@@ -396,22 +410,30 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     return { left, right };
   }
 
+  /** Liest Tracking-Posen einmal; Puffer wird wiederverwendet (weniger GC/CPU). */
+  function readPoses(maxDevice) {
+    const count = Math.max(0, maxDevice) + 1;
+    const need = POSE_SIZE * count;
+    if (poseBuf.length < need) poseBuf = Buffer.alloc(need);
+    api.sys(
+      "GetDeviceToAbsoluteTrackingPose",
+      "void FN(int, float, void*, uint32_t)",
+      UNIVERSE_STANDING,
+      0,
+      poseBuf,
+      count,
+    );
+    return poseBuf;
+  }
+
   /** Are you looking at the panel (like at a watch)? Tells the page, which then opens / closes. */
-  function updateGaze() {
+  function updateGaze(poses) {
     let looking = false;
     if (attachedTo !== INVALID_DEVICE) {
-      const count = attachedTo + 1;
-      const poses = Buffer.alloc(POSE_SIZE * count);
-      api.sys(
-        "GetDeviceToAbsoluteTrackingPose",
-        "void FN(int, float, void*, uint32_t)",
-        UNIVERSE_STANDING,
-        0,
-        poses,
-        count,
-      );
-      const row = (device, i) => poses.readFloatLE(device * POSE_SIZE + i * 4);
-      if (poses.readUInt8(76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
+      const buf =
+        poses && poses.length >= POSE_SIZE * (attachedTo + 1) ? poses : readPoses(attachedTo);
+      const row = (device, i) => buf.readFloatLE(device * POSE_SIZE + i * 4);
+      if (buf.readUInt8(76) && buf.readUInt8(attachedTo * POSE_SIZE + 76)) {
         const p = matrixFor(placement, 0);
         const h = (i) => row(attachedTo, i);
         // Panel centre and normal in room coordinates: hand pose × placement.
@@ -449,6 +471,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   function setGazing(on) {
     gazing = on;
     boost(BOOST_OPEN_MS);
+    ensurePumpRate();
     if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-gaze", on);
   }
 
@@ -456,17 +479,10 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   function updatePointer() {
     if (!api || handle === null || !visible) return;
     let hit = false;
+    let sharedPoses = null;
     if (pointerHand !== INVALID_DEVICE && attachedTo !== INVALID_DEVICE) {
-      const count = Math.max(pointerHand, attachedTo) + 1;
-      const poses = Buffer.alloc(POSE_SIZE * count);
-      api.sys(
-        "GetDeviceToAbsoluteTrackingPose",
-        "void FN(int, float, void*, uint32_t)",
-        UNIVERSE_STANDING,
-        0,
-        poses,
-        count,
-      );
+      const poses = readPoses(Math.max(pointerHand, attachedTo));
+      sharedPoses = poses;
       const o = pointerHand * POSE_SIZE;
       if (poses.readUInt8(o + 76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
         const f = (i) => poses.readFloatLE(o + i * 4);
@@ -523,12 +539,16 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       if (now - lastHit > POINT_GRACE_MS) pointSince = 0;
       if (pointing && now - lastHit >= POINT_OFF_MS) setPointing(false);
     }
-    updateGaze();
+    // Eine Pose-Abfrage für Laser + Gaze (vorher zwei pro Pump).
+    if (!sharedPoses && attachedTo !== INVALID_DEVICE) sharedPoses = readPoses(attachedTo);
+    updateGaze(sharedPoses);
+    ensurePumpRate();
   }
 
   function setPointing(on) {
     pointing = on;
     boost(BOOST_OPEN_MS);
+    ensurePumpRate();
     if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-point", on);
   }
 
@@ -635,6 +655,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     if (until <= boostUntil) return;
     if (boostUntil <= now) win.webContents.setFrameRate(ANIM_FPS);
     boostUntil = until;
+    ensurePumpRate();
     // Ein gedrosselt wartendes Bild sofort zeigen – der erste Animationsschritt soll nicht hängen.
     if (pendingFrame) sendFrame(pendingFrame);
     if (boostTimer) clearTimeout(boostTimer);
@@ -646,6 +667,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     boostTimer = null;
     boostUntil = 0;
     if (win && !win.isDestroyed()) win.webContents.setFrameRate(IDLE_FPS);
+    ensurePumpRate();
   }
 
   function mouse(type, x, y, extra = {}) {
@@ -658,11 +680,25 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     });
   }
 
+  /** Schneller Pump wenn Laser/offen/Boost, sonst Idle – spart CPU für Pose+Intersection. */
+  function wantFastPump() {
+    return interactive || pointing || gazing || mode === "full" || Date.now() < boostUntil;
+  }
+
+  function ensurePumpRate() {
+    if (!pumpTimer) return;
+    const next = wantFastPump() ? PUMP_ACTIVE_MS : PUMP_IDLE_MS;
+    if (next === pumpMs) return;
+    pumpMs = next;
+    clearInterval(pumpTimer);
+    pumpTimer = setInterval(pump, pumpMs);
+  }
+
   function pump() {
     if (!api || handle === null) return;
     try {
       updatePointer();
-      const event = Buffer.alloc(EVENT_SIZE);
+      const event = eventBuf;
       // Laser pointer -> mouse input for the page. (Event data starts at byte 16.)
       while (
         api.ovr(
@@ -686,7 +722,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           boost(BOOST_CLICK_MS);
           mouse("mouseUp", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.scrollSmooth || type === EVENT.scroll) {
-          // Scroll data: xdelta, ydelta (floats) – position is unknown, scroll the middle of the page.
+          // Scroll data: xdelta, ydelta (floats) - position is unknown, scroll the middle of the page.
           win?.webContents.sendInputEvent({
             type: "mouseWheel",
             x: size().width / 2,
@@ -707,12 +743,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       }
       pumpErrors = 0;
     } catch (error) {
-      // Gleiche Meldung nicht 25× pro Sekunde ins Log schreiben.
+      // Gleiche Meldung nicht spamartig ins Log schreiben.
       if (error.message !== lastPumpError) log("VR-Overlay:", error.message);
       lastPumpError = error.message;
       pumpErrors += 1;
-      // SteamVR ist abgestürzt (ohne „wird beendet“-Meldung): sauber trennen, der 5-s-Takt
-      // verbindet neu, sobald SteamVR wieder läuft.
+      // SteamVR ist abgestürzt (ohne Quit-Event): sauber trennen, Placement-Takt verbindet neu.
       if (pumpErrors >= MAX_PUMP_ERRORS) {
         log("VR-Overlay: SteamVR antwortet nicht mehr – verbinde neu.");
         disconnect();
@@ -783,11 +818,15 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         else applyPlacement(); // controllers may be switched on later, or change hands
       };
       tick();
-      timers = [setInterval(tick, 5000), setInterval(pump, 40)];
+      pumpMs = PUMP_IDLE_MS;
+      pumpTimer = setInterval(pump, pumpMs);
+      timers = [setInterval(tick, PLACEMENT_TICK_MS)];
     },
     stop() {
       timers.forEach(clearInterval);
       timers = [];
+      if (pumpTimer) clearInterval(pumpTimer);
+      pumpTimer = null;
       disconnect();
       setState({ status: "off", error: null });
     },
@@ -805,6 +844,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       if (mode === wanted) return;
       mode = wanted;
       boost(BOOST_OPEN_MS);
+      ensurePumpRate();
       log(`VR-Overlay: Fenster ${mode === "full" ? "offen" : "zu"}.`);
     },
     /** Battery of headset and controllers (0–1), null when a device does not report one. */

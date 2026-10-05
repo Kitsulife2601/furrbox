@@ -13,12 +13,19 @@ const API = "https://api.vrchat.cloud/api/1";
 // VRChat asks API users to identify themselves with a descriptive User-Agent.
 const USER_AGENT = "FurrBox/2.0 (+https://github.com/Kitsulife2601/furrbox)";
 const SESSION_FILE = join(dirname(fileURLToPath(import.meta.url)), "vrchat-session.json");
+// Intervals while someone has FurrBox open (active) / while nobody does (idle, set by index.mjs).
+// New instances are still detected while idle (Discord announcement), just a bit later.
 const WATCH_MS = 60_000;
+const IDLE_WATCH_MS = 2 * 60_000;
 const GROUP_REFRESH_MS = 5 * 60_000;
+const IDLE_GROUP_REFRESH_MS = 15 * 60_000;
 const STATE_HEARTBEAT_MS = 10 * 60_000;
+const IDLE_STATE_HEARTBEAT_MS = 30 * 60_000;
 // Moderation done in VRChat should show up in FurrBox right away – the audit log is cheap to read
-// and FurrBox is only contacted when there is something new.
+// and FurrBox is only contacted when there is something new. While idle nobody looks, and nothing
+// is lost (auditSince), so it is read less often.
 const AUDIT_MS = 10_000;
+const IDLE_AUDIT_MS = 5 * 60_000;
 
 class VrcError extends Error {
   constructor(message, status) {
@@ -39,6 +46,12 @@ let auditAt = 0;
 let auditError = null;
 const auditSeen = new Set();
 let log = console.log;
+let active = false;
+let started = false;
+let watchTimer = null;
+let watchBusy = false;
+let auditTimer = null;
+let auditBusy = false;
 
 function loadSession() {
   try {
@@ -175,15 +188,18 @@ async function fetchInstances() {
 /** Sends the current state to FurrBox – only when something changed (lets the database sleep). */
 async function pushState(force = false, instances = null) {
   if (!bridge) return;
+  // While idle only real changes count (instance opened/closed, login, errors) – player counts are
+  // refreshed as soon as someone opens FurrBox again.
   const signature = JSON.stringify([
     session.accountName ?? null,
     session.groupId ?? null,
-    group?.memberCount,
-    group?.onlineMemberCount,
+    active ? group?.memberCount : null,
+    active ? group?.onlineMemberCount : null,
     lastError,
-    instances?.map((i) => `${i.instanceId}:${i.memberCount}`).sort() ?? null,
+    instances?.map((i) => (active ? `${i.instanceId}:${i.memberCount}` : i.instanceId)).sort() ?? null,
   ]);
-  if (!force && signature === lastSignature && Date.now() - lastPushAt < STATE_HEARTBEAT_MS) return;
+  const heartbeat = active ? STATE_HEARTBEAT_MS : IDLE_STATE_HEARTBEAT_MS;
+  if (!force && signature === lastSignature && Date.now() - lastPushAt < heartbeat) return;
   await bridge("vrchat-state", {
     account: session.auth ? { id: session.accountId, displayName: session.accountName } : null,
     groupId: session.groupId ?? null,
@@ -201,7 +217,7 @@ async function refresh(force = false) {
     return;
   }
   try {
-    if (force || !group || Date.now() - groupFetchedAt > GROUP_REFRESH_MS) {
+    if (force || !group || Date.now() - groupFetchedAt > (active ? GROUP_REFRESH_MS : IDLE_GROUP_REFRESH_MS)) {
       const { json } = await authed(`/groups/${encodeURIComponent(session.groupId)}`);
       group = mapGroup(json);
       groupFetchedAt = Date.now();
@@ -357,16 +373,50 @@ export async function handleVrchatJobs(jobs) {
   }
 }
 
+function tick() {
+  clearTimeout(watchTimer);
+  watchTimer = null;
+  if (watchBusy) return; // the running refresh schedules the next one
+  watchBusy = true;
+  refresh()
+    .catch((err) => log("VRChat-Fehler:", err.message))
+    .finally(() => {
+      watchBusy = false;
+      watchTimer = setTimeout(tick, active ? WATCH_MS : IDLE_WATCH_MS);
+    });
+}
+
+function auditTick() {
+  clearTimeout(auditTimer);
+  auditTimer = null;
+  if (auditBusy) return;
+  auditBusy = true;
+  (session.auth && session.groupId ? syncAudit() : Promise.resolve())
+    .catch((err) => log("VRChat-Protokoll-Fehler:", err.message))
+    .finally(() => {
+      auditBusy = false;
+      auditTimer = setTimeout(auditTick, active ? AUDIT_MS : IDLE_AUDIT_MS);
+    });
+}
+
+/** Called by index.mjs on every bridge poll: is someone using FurrBox right now? */
+export function setVrchatActive(value) {
+  const next = Boolean(value);
+  if (next === active) return;
+  active = next;
+  // Someone just opened FurrBox: fresh instances / player counts / audit entries right away.
+  if (active && started) {
+    tick();
+    auditTick();
+  }
+}
+
 /** Starts the instance watcher. */
 export function startVrchat(bridgeFn, logFn) {
   bridge = bridgeFn;
   log = logFn;
+  started = true;
   if (session.auth) log(`VRChat: gespeicherte Anmeldung als ${session.accountName ?? "?"} gefunden.`);
-  const tick = () => refresh().catch((err) => log("VRChat-Fehler:", err.message)).finally(() => setTimeout(tick, WATCH_MS));
   tick();
-  const auditTick = () =>
-    (session.auth && session.groupId ? syncAudit() : Promise.resolve())
-      .catch((err) => log("VRChat-Protokoll-Fehler:", err.message))
-      .finally(() => setTimeout(auditTick, AUDIT_MS));
-  setTimeout(auditTick, 5_000);
+  auditTimer = setTimeout(auditTick, 5_000);
 }

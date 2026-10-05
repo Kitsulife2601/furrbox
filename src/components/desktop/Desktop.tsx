@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -15,6 +16,7 @@ import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { useChatboxStatus } from "@/components/furr/useChatboxStatus";
 import { useVoteWatch } from "@/components/furr/useVoteWatch";
+import { ClipSavedListener } from "@/components/furr/ClipSettings";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
 import { NoAccess } from "./NoAccess";
@@ -26,6 +28,10 @@ import { Taskbar } from "./Taskbar";
 import { SnapAssistPreview, WindowFrame } from "./WindowFrame";
 import { AltTabSwitcher } from "./AltTab";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
+import { StaffFlyout } from "./StaffTray";
+import { VoteKickPanel } from "./VoteKickPanel";
+import { CommandPalette } from "./CommandPalette";
+import { WhatsNewDialog } from "./WhatsNew";
 
 export function Desktop() {
   const { user, isPending } = useCurrentUserState();
@@ -82,6 +88,7 @@ function AccessGate({ backgroundStyle, wallpaper }: { backgroundStyle?: CSSPrope
 }
 
 function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) {
+  const liveDesktop = useLiveInterval(10_000);
   const queryClient = useQueryClient();
   const me = useMe();
   const wallpaper = useDesktop((s) => s.wallpaper);
@@ -96,7 +103,6 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const selectIcon = useDesktop((s) => s.selectIcon);
   const openApp = useDesktop((s) => s.openApp);
   const closeMenus = useDesktop((s) => s.closeMenus);
-  const [now, setNow] = useState(() => new Date());
   const [menu, setMenu] = useState<{ x: number; y: number; file?: FurrFile; app?: AppId } | null>(null);
   const savedDesktopApps = useDesktop((s) => s.desktopApps);
   const setOnDesktop = useDesktop((s) => s.setOnDesktop);
@@ -111,7 +117,6 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   useVoteWatch();
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         closeMenus();
@@ -119,17 +124,14 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [closeMenus]);
 
   // Desktop items live in the private FurrFS "Desktop" folder, so they sync across devices.
   const desktopFiles = useQuery({
     queryKey: filesKey("private", "Desktop"),
     queryFn: () => listFiles({ data: { scope: "private", folder: "Desktop" } }),
-    refetchInterval: 10_000,
+    refetchInterval: liveDesktop,
   });
   const refreshDesktop = () => queryClient.invalidateQueries({ queryKey: ["furr", "files"] });
   const desktopApps = desktopAppIds(savedDesktopApps)
@@ -236,15 +238,20 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         <WindowFrame key={win.id} win={win} />
       ))}
       <AltTabSwitcher />
+      <VoteKickPanel />
+      <CommandPalette />
+      <WhatsNewDialog />
 
       <div onMouseDown={(e) => e.stopPropagation()}>
         {startOpen && <StartMenu />}
         {searchOpen && <SearchPanel />}
         {tray === "info" && <InfoCenter />}
-        {tray === "clock" && <ClockFlyout now={now} />}
+        {tray === "clock" && <ClockFlyout />}
+        {tray === "staff" && <StaffFlyout />}
         {chatOpen && <ChatPanel />}
-        <Toasts />
-        <Taskbar now={now} />
+        <ClipSavedListener />
+      <Toasts />
+        <Taskbar />
       </div>
       <UpdatePopup />
       <PowerOverlay />

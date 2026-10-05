@@ -1,12 +1,13 @@
 // FurrPresence: dual presence (App heartbeat + Discord status) for accounts and Discord members.
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
-import { FILE_COLUMNS, base64ToText, getSql, iso, loadMe, requirePermission, toFileDto, type FileRow } from "../core";
+import { FILE_COLUMNS, base64ToText, getSql, iso, loadMeCached, requirePermission, toFileDto, type FileRow } from "../core";
+import { presenceCache } from "../presence-cache";
 import { DISCORD_LOGS, sanitizeSegment } from "../paths";
 import { ROLE_LABEL, effectiveRole, isRole } from "../roles";
 import type { DiscordMemberOption, DiscordStatus, PresenceLog, PresenceUser } from "../types";
 
-const ONLINE_WINDOW = "90 seconds";
+const ONLINE_WINDOW = "120 seconds"; // Grace für 60 s Heartbeat bei Minimieren
 
 type Row = {
   id: string;
@@ -83,8 +84,10 @@ export const listPresence = createServerFn({ method: "GET" })
   .validator((view: "team" | "global") => (view === "global" ? "global" : "team"))
   .middleware([accessMiddleware])
   .handler(async ({ context, data: view }) => {
-    const me = await loadMe(context.userId);
-    const users = await queryPresence(me.permissions.canManageAccounts);
+    const me = await loadMeCached(context.userId);
+    // Ressourcen: alle Viewer teilen sich max. 1 Presence-Query pro 4 s (statt 1 pro Client-Poll).
+    const showEmail = me.permissions.canManageAccounts;
+    const users = await presenceCache.get(showEmail ? "email" : "plain", () => queryPresence(showEmail));
     if (view === "team") return users.filter((u) => isRole(u.role) && u.role !== "member");
     if (!me.permissions.canViewPresence) return users.filter((u) => u.hasAccount);
     return users;

@@ -1,6 +1,24 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.26",
+    "title": "Clips, Ctrl+K, Mod-Dashboard, VR- und Server-Ausbau",
+    "items": [
+      "Neu: Befehlspalette mit Ctrl+K – Staff, Fälle, Watchlist und Befehle (Duty, Settings) schnell finden.",
+      "Neu: „Neu in dieser Version“ erscheint einmal nach einem Update als Kachel-Dialog.",
+      "Neu: In den Einstellungen → System kannst du Alerts optional an XSOverlay senden (Standard: aus).",
+      "Neu: Schmales Mod-Dashboard mit drei Widgets – Alerts, Duty und Instanz.",
+      "Staff-Tray, Votekick-Panel und Ressourcen-Optimierung aus den vorherigen Desktop-Passes bleiben.",
+      "Neu: Clips – kurze Aufnahmen speichern oder anfordern und direkt an einen Fall hängen.",
+      "VR: Duty-Badge, Votekick-Assistent, Alert-Toasts (max. 2 gleichzeitig), Staff-Schnellaktionen mit Audit-Ticker und Hinweise, wenn jemand von der Watchlist joint.",
+      "VR: Overlay ohne Rückseite (NoBackside) und weniger Ressourcen im Leerlauf.",
+      "Server: Duty an/aus/abwesend mit 60-Sekunden-Heartbeat und Alert, wenn niemand anwesend ist.",
+      "Server: Votekick, Bann mit Grund, Fall-ID und 10 Sekunden Rückgängig, Watchlist und aktive Sanktionen im Bot.",
+      "Server: Kalender-Bridge mit „startet bald“, Event-Feed und Whitelist-Check."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "version": "2.0.25",
     "title": "Desktop fühlt sich mehr wie Windows an",
     "items": [

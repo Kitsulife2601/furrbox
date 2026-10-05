@@ -1,6 +1,7 @@
-ï»¿import type { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  LayoutDashboard,
   FileText,
   Folder,
   Globe,
@@ -31,7 +32,8 @@ export type AppId =
   | "worldmap"
   | "notepad"
   | "viewer"
-  | "taskmgr";
+  | "taskmgr"
+  | "moddash";
 
 /** Start-menu / catalog groups (Windows-style sections). */
 export type AppGroup = "system" | "tools" | "moderation";
@@ -49,7 +51,7 @@ export type AppDef = {
   icon: LucideIcon;
   group: AppGroup;
   pinned: boolean;
-  /** On the desktop until the user changes it (right-click â†’ Zum Desktop hinzufÃ¼gen / Vom Desktop entfernen). */
+  /** On the desktop until the user changes it (right-click ? Zum Desktop hinzufügen / Vom Desktop entfernen). */
   desktop: boolean;
   /** Hidden from start menu / search (opened by other apps only). */
   hidden?: boolean;
@@ -109,7 +111,7 @@ export const APPS: AppDef[] = [
   {
     id: "browser",
     name: "Browser",
-    subtitle: "Webseiten Ã¶ffnen",
+    subtitle: "Webseiten öffnen",
     icon: Globe,
     group: "tools",
     pinned: true,
@@ -120,7 +122,7 @@ export const APPS: AppDef[] = [
   {
     id: "terminal",
     name: "Terminal",
-    subtitle: "FurrShell fÃ¼r FurrFS",
+    subtitle: "FurrShell für FurrFS",
     icon: TerminalSquare,
     group: "tools",
     pinned: false,
@@ -212,6 +214,18 @@ export const APPS: AppDef[] = [
     requires: "canUseEvidence",
     defaultSize: { w: 1080, h: 680 },
     minSize: { w: 520, h: 420 },
+  },
+  {
+    id: "moddash",
+    name: "Mod-Dashboard",
+    subtitle: "Alerts, Duty, Instanz",
+    icon: LayoutDashboard,
+    group: "moderation",
+    pinned: false,
+    desktop: false,
+    requires: "canUseEvidence",
+    defaultSize: { w: 920, h: 520 },
+    minSize: { w: 560, h: 360 },
   },
   {
     id: "accounts",

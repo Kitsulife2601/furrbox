@@ -2,6 +2,7 @@
 // VRChat log on this PC (joins / leaves with time) and, with your VRChat login, adds pictures and –
 // for your friends – where people went after leaving. VRChat does not reveal positions inside a world.
 import { useMemo, useState } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Clock, Copy, ExternalLink, Globe2, LogIn, LogOut, Map as MapIcon, Radar, Search, Users } from "lucide-react";
 import { getVrchatStatus } from "@/lib/furr/api/vrchat";
@@ -25,6 +26,8 @@ function duration(from: string | null, to: string | number = Date.now()) {
 }
 
 export function InstanceTracker() {
+  const liveMap = useLiveInterval(2_000);
+  const live60 = useLiveInterval(60_000);
   const bridge = desktopVrchat();
   const mine = useMyVrchat();
   const loggedIn = Boolean(mine.data?.loggedIn);
@@ -34,8 +37,11 @@ export function InstanceTracker() {
     queryKey: ["furr", "tracker", "instance"],
     queryFn: () => unwrap(desktopVrchat()!.instance!()),
     enabled: Boolean(bridge?.instance),
-    // Faster while the world sends live positions.
-    refetchInterval: (query) => (query.state.data?.map ? 2_000 : 4_000),
+    // Faster while the world sends live positions; stop when tab hidden.
+    refetchInterval: (query) => {
+      if (liveMap === false) return false;
+      return query.state.data?.map ? 2_000 : 4_000;
+    },
   });
   const s = inst.data;
   const worldId = s?.location ? parseLocation(s.location).worldId : null;
@@ -55,7 +61,7 @@ export function InstanceTracker() {
     queryKey: ["furr", "tracker", "people", ids.join(",")],
     queryFn: () => unwrap(desktopVrchat()!.people!(ids)),
     enabled: Boolean(ids.length && loggedIn && bridge?.people),
-    refetchInterval: 60_000,
+    refetchInterval: live60,
     placeholderData: keepPreviousData,
     retry: false,
   });

@@ -1,4 +1,4 @@
-// FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
+﻿// FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { signOut } from "@/lib/auth/client";
@@ -27,6 +27,7 @@ import {
   type UpdateState,
 } from "@/components/desktop/UpdatePopup";
 import UPDATES from "@/lib/furr/updates.json";
+import { isXsoAlertsEnabled, setXsoAlertsEnabled } from "@/lib/furr/xsoverlay";
 import {
   ChevronRight,
   Headset,
@@ -36,10 +37,12 @@ import {
   User,
   Volume2,
   MessageSquare,
+  Film,
 } from "lucide-react";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 import { VrSettings } from "./VrSettings";
 import { SoundSettings } from "./SoundSettings";
+import { ClipSettings } from "./ClipSettings";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
 const WALLS: { id: WallpaperId; label: string }[] = [
@@ -57,7 +60,7 @@ const FITS: { id: WallpaperFit; label: string }[] = [
   { id: "tile", label: "Kacheln" },
 ];
 
-type Section = "home" | "personal" | "account" | "chat" | "sounds" | "vr" | "system";
+type Section = "home" | "personal" | "account" | "chat" | "sounds" | "vr" | "clips" | "system";
 
 function SettingCard({
   title,
@@ -94,6 +97,7 @@ function SettingsHome({
       : []),
     { id: "sounds", title: "Töne", desc: "Chat, Update, Votekick", icon: Volume2 },
     { id: "vr", title: "FurrBox VR", desc: "Overlay und Arm-Panel", icon: Headset },
+    { id: "clips", title: "Beweis-Clips", desc: "Aufnahme, Puffer, Ordner", icon: Film },
     { id: "system", title: "System", desc: "Updates und Gerät", icon: Monitor },
   ];
   return (
@@ -139,6 +143,7 @@ export function Settings() {
     ...(showChat ? [{ id: "chat" as const, label: "FurrChat", icon: MessageSquare }] : []),
     { id: "sounds", label: "Töne", icon: Volume2 },
     { id: "vr", label: "FurrBox VR", icon: Headset },
+    { id: "clips", label: "Beweis-Clips", icon: Film },
     { id: "system", label: "System", icon: Monitor },
   ];
   return (
@@ -176,6 +181,13 @@ export function Settings() {
           <div className="mx-auto max-w-2xl">
             <SettingCard title="FurrBox VR" hint="Overlay und Arm-Panel.">
               <VrSettings />
+            </SettingCard>
+          </div>
+        )}
+        {section === "clips" && (
+          <div className="mx-auto max-w-2xl">
+            <SettingCard title="Beweis-Clips" hint="Lokale Kurzclips bei Votekick oder Hotkey – kein Upload ohne Klick.">
+              <ClipSettings />
             </SettingCard>
           </div>
         )}
@@ -632,6 +644,7 @@ function SystemInfo() {
         <p className="mt-1 text-[13px] text-muted">Updates und Geräteinformationen getrennt.</p>
       </div>
       <UpdateSection state={update} />
+      <XsoOverlaySection />
       <SettingCard title="Gerät" hint="Was dieses Gerät über sich selbst meldet.">
         <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-[13px]">
           {rows.map(([k, v]) => (
@@ -657,6 +670,38 @@ const UPDATE_TEXT: Record<UpdateState["status"], string> = {
   error: "Update-Prüfung fehlgeschlagen.",
 };
 
+
+function XsoOverlaySection() {
+  const [on, setOn] = useState(() => isXsoAlertsEnabled());
+  return (
+    <SettingCard
+      title="XSOverlay"
+      hint="Alerts optional an XSOverlay senden (lokal ws://127.0.0.1:42070). Default aus. Wenn XSOverlay nicht läuft, passiert nichts."
+    >
+      <label className="flex cursor-pointer items-center justify-between gap-3 text-[13px]">
+        <span>
+          Alerts an XSOverlay senden
+          <span className="mt-0.5 block text-[12px] text-muted">Nur Client, kein eigener Hub. Fail-silent.</span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={() => {
+            const next = !on;
+            setXsoAlertsEnabled(next);
+            setOn(next);
+          }}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-[180ms] ${on ? "bg-accent" : "bg-fg/20"}`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform duration-[180ms] ease-out ${on ? "translate-x-5" : ""}`}
+          />
+        </button>
+      </label>
+    </SettingCard>
+  );
+}
 function UpdateSection({ state }: { state: UpdateState | null }) {
   const server = useServerUpdate();
   const [busy, setBusy] = useState(false);

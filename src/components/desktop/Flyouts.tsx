@@ -1,15 +1,32 @@
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { useNow } from "@/lib/furr/live-interval";
 import { de } from "date-fns/locale";
-import { Moon, Search, Settings2, Sun, Volume2 } from "lucide-react";
-import { useState } from "react";
+import {
+  AlertTriangle,
+  Download,
+  FileWarning,
+  Info,
+  MessageSquare,
+  Moon,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Sun,
+  UserCheck,
+  Video,
+  Volume2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { APPS, canLaunch, desktopAppIds, groupApps, type AppId } from "@/lib/apps";
 import { PopupMenu } from "@/components/furr/ui";
 import { recentFiles, searchFiles } from "@/lib/furr/api/files";
 import { timeAgo, useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
-import { useNotifications } from "@/store/notifications";
+import { NOTIFY_KIND_LABEL, kindOf, useNotifications, type NotifyKind } from "@/store/notifications";
 import { openFurrFile } from "@/components/furr/FurrFS";
 import { useSync } from "@/components/furr/useFurrSync";
 import { PowerButton } from "./Power";
@@ -224,15 +241,59 @@ export function SearchPanel() {
   );
 }
 
-/** Info-Center: sync status, quick sliders, notification history. */
+const KIND_ICON: Record<NotifyKind, LucideIcon> = {
+  vote: AlertTriangle,
+  whitelist: ShieldCheck,
+  incident: FileWarning,
+  duty: UserCheck,
+  chat: MessageSquare,
+  clip: Video,
+  update: Download,
+  system: Info,
+};
+
+const KIND_TINT: Record<NotifyKind, string> = {
+  vote: "text-red-300",
+  whitelist: "text-emerald-300",
+  incident: "text-amber-300",
+  duty: "text-emerald-300",
+  chat: "text-accent",
+  clip: "text-violet-300",
+  update: "text-accent",
+  system: "text-muted",
+};
+
+/** Info-Center: Sync-Status, Schnellregler, Benachrichtigungen gruppiert/filterbar (wie Windows). */
 export function InfoCenter() {
   const s = useDesktop();
   const sync = useSync();
   const history = useNotifications((n) => n.history);
   const clearHistory = useNotifications((n) => n.clearHistory);
+  const removeHistory = useNotifications((n) => n.removeHistory);
+  const markSeen = useNotifications((n) => n.markSeen);
+  const [filter, setFilter] = useState<NotifyKind | "all">("all");
+
+  // Beim Öffnen + Schließen als gelesen markieren (Badge in der Taskleiste).
+  useEffect(() => {
+    markSeen();
+    return () => markSeen();
+  }, [markSeen]);
+
+  const counts = useMemo(() => {
+    const c: Partial<Record<NotifyKind, number>> = {};
+    for (const n of history) c[kindOf(n)] = (c[kindOf(n)] ?? 0) + 1;
+    return c;
+  }, [history]);
+  const kinds = (Object.keys(NOTIFY_KIND_LABEL) as NotifyKind[]).filter((k) => counts[k]);
+  const shown = filter === "all" ? history : history.filter((n) => kindOf(n) === filter);
+  const startOfDay = new Date().setHours(0, 0, 0, 0);
+  const groups = [
+    { label: "Heute", items: shown.filter((n) => n.createdAt >= startOfDay) },
+    { label: "Früher", items: shown.filter((n) => n.createdAt < startOfDay) },
+  ].filter((g) => g.items.length);
 
   return (
-    <div className="mica furr-flyout-in absolute bottom-14 right-2 z-[80] flex max-h-[calc(100%-4.5rem)] w-[min(360px,calc(100%-1rem))] flex-col rounded-xl p-3">
+    <div className="mica furr-flyout-in absolute bottom-14 right-2 z-[80] flex max-h-[calc(100%-4.5rem)] w-[min(380px,calc(100%-1rem))] flex-col rounded-xl p-3">
       <div className="flex items-center justify-between rounded-md bg-elevated/60 px-3 py-2 text-[12px]">
         <span className="flex items-center gap-2">
           <span className={cn("size-2 rounded-full", sync.connected ? "bg-emerald-400" : "bg-danger")} />
@@ -262,31 +323,79 @@ export function InfoCenter() {
       </label>
       <div className="mt-3 flex items-center justify-between">
         <p className="text-[12px] font-medium text-muted">Benachrichtigungen</p>
-        {history.length > 0 && (
-          <button type="button" className="text-[11px] text-muted hover:text-fg" onClick={clearHistory}>
-            Alle löschen
+        {shown.length > 0 && (
+          <button type="button" className="text-[11px] text-muted hover:text-fg" onClick={() => clearHistory(filter === "all" ? undefined : filter)}>
+            {filter === "all" ? "Alle löschen" : `${NOTIFY_KIND_LABEL[filter]} löschen`}
           </button>
         )}
       </div>
-      <ul className="mt-1 min-h-0 flex-1 space-y-1 overflow-auto">
-        {!history.length && <li className="px-1 py-3 text-[12px] text-subtle">Keine Benachrichtigungen.</li>}
-        {history.map((n) => (
-          <li key={n.id}>
-            <button type="button" onClick={() => n.onClick?.()} className="w-full rounded-md bg-elevated/50 px-3 py-2 text-left">
-              <p className="text-[11px] text-subtle">
-                {n.version} · {format(n.createdAt, "HH:mm")}
-              </p>
-              <p className="text-[13px] font-medium">{n.title}</p>
-              <p className="text-[12px] text-muted">{n.description}</p>
+      {kinds.length > 1 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {(["all", ...kinds] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                filter === k ? "border-accent bg-accent/15 text-fg" : "border-border text-muted hover:text-fg",
+              )}
+            >
+              {k === "all" ? `Alle ${history.length}` : `${NOTIFY_KIND_LABEL[k]} ${counts[k]}`}
             </button>
-          </li>
+          ))}
+        </div>
+      )}
+      <div className="mt-1.5 min-h-0 flex-1 space-y-2 overflow-auto">
+        {!shown.length && <p className="px-1 py-3 text-[12px] text-subtle">Keine Benachrichtigungen.</p>}
+        {groups.map((g) => (
+          <div key={g.label}>
+            <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-subtle">{g.label}</p>
+            <ul className="space-y-1">
+              {g.items.map((n) => {
+                const kind = kindOf(n);
+                const Icon = KIND_ICON[kind];
+                return (
+                  <li key={n.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => n.onClick?.()}
+                      className={cn(
+                        "flex w-full gap-2.5 rounded-md bg-elevated/50 px-3 py-2 text-left transition-colors hover:bg-elevated",
+                        n.tone === "error" && "border-l-2 border-danger",
+                        n.tone === "alert" && "border-l-2 border-red-400",
+                      )}
+                    >
+                      <Icon className={cn("mt-0.5 size-4 shrink-0", KIND_TINT[kind])} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[11px] text-subtle">
+                          {n.version} · {format(n.createdAt, "HH:mm")}
+                        </span>
+                        <span className="block text-[13px] font-medium">{n.title}</span>
+                        <span className="block text-[12px] text-muted">{n.description}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Benachrichtigung entfernen"
+                      onClick={() => removeHistory(n.id)}
+                      className="absolute right-1.5 top-1.5 hidden size-6 place-items-center rounded text-muted hover:bg-fg/10 hover:text-fg group-hover:grid"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
 
-export function ClockFlyout({ now }: { now: Date }) {
+export function ClockFlyout() {
+  const now = useNow(1_000);
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
   const offset = (first.getDay() + 6) % 7;
   const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -317,22 +426,45 @@ export function Toasts() {
   const dismiss = useNotifications((n) => n.dismiss);
   return (
     <div className="pointer-events-none absolute bottom-14 right-2 z-[90] grid w-[min(340px,calc(100%-1rem))] gap-2">
-      {toasts.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => {
-            if (t.exiting) return;
-            t.onClick?.();
-            dismiss(t.id);
-          }}
-          className={cn("mica pointer-events-auto rounded-lg px-3 py-2.5 text-left", t.exiting ? "furr-toast-out" : "furr-toast-in")}
-        >
-          <p className="text-[11px] text-subtle">{t.version}</p>
-          <p className="text-[13px] font-medium">{t.title}</p>
-          <p className="line-clamp-3 text-[12px] text-muted">{t.description}</p>
-        </button>
-      ))}
+      {toasts.map((t) => {
+        const kind = kindOf(t);
+        const Icon = KIND_ICON[kind];
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => {
+              if (t.exiting) return;
+              t.onClick?.();
+              dismiss(t.id);
+            }}
+            className={cn(
+              "mica pointer-events-auto relative flex gap-2.5 overflow-hidden rounded-lg px-3 py-2.5 text-left",
+              t.exiting ? "furr-toast-out" : "furr-toast-in",
+              t.tone === "error" && "border-l-2 border-danger",
+              t.tone === "success" && "border-l-2 border-emerald-400",
+              t.tone === "alert" && "border-l-2 border-red-400",
+            )}
+          >
+            <Icon className={cn("mt-0.5 size-4 shrink-0", t.tone === "error" ? "text-red-300" : KIND_TINT[kind])} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] text-subtle">{t.version}</span>
+              <span className="block text-[13px] font-medium">{t.title}</span>
+              <span className="line-clamp-3 block text-[12px] text-muted">{t.description}</span>
+              {t.actionLabel && (
+                <span className="mt-1.5 inline-flex rounded-md bg-accent/20 px-2 py-0.5 text-[12px] font-semibold text-accent">{t.actionLabel}</span>
+              )}
+            </span>
+            {t.durationMs && t.actionLabel && !t.exiting && (
+              <span
+                aria-hidden
+                className="furr-toast-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-accent/70"
+                style={{ animationDuration: `${t.durationMs}ms` }}
+              />
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

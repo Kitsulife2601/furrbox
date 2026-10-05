@@ -1,4 +1,7 @@
-﻿import { UpdateTrayButton } from "./UpdatePopup";
+import { UpdateTrayButton } from "./UpdatePopup";
+import { StaffTrayButton } from "./StaffTray";
+import { useNotifications } from "@/store/notifications";
+import { useNow } from "@/lib/furr/live-interval";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Bell, MessageSquare, Search, Wifi, WifiOff } from "lucide-react";
@@ -29,7 +32,9 @@ function RunningDot({ focused, count }: { focused: boolean; count: number }) {
   );
 }
 
-export function Taskbar({ now }: { now: Date }) {
+export function Taskbar() {
+  // HH:mm braucht keine Sekunden – isolierter Tick, kein Shell-Rerender.
+  const now = useNow(30_000);
   const me = useMe();
   const windows = useDesktop((s) => s.windows);
   const focusedId = useDesktop((s) => s.focusedId);
@@ -48,6 +53,8 @@ export function Taskbar({ now }: { now: Date }) {
   const toggleShowDesktop = useDesktop((s) => s.toggleShowDesktop);
   const connected = useSync((s) => s.connected);
   const unread = useSync((s) => s.unreadChat);
+  // Neue Benachrichtigungen seit dem letzten Öffnen des Info-Centers (Windows-Badge).
+  const newNotes = useNotifications((n) => n.history.filter((h) => h.createdAt > n.seenAt).length);
 
   const pinned = APPS.filter((a) => a.pinned && canLaunch(a, me.data?.permissions));
   // Running windows of apps that aren't pinned (viewer, editor, task manager) get their own buttons.
@@ -112,6 +119,7 @@ export function Taskbar({ now }: { now: Date }) {
         })}
       </nav>
       <div className="flex items-center gap-0.5 pr-0">
+        <StaffTrayButton />
         <UpdateTrayButton />
         <button
           type="button"
@@ -130,11 +138,16 @@ export function Taskbar({ now }: { now: Date }) {
           type="button"
           aria-label="Info-Center öffnen"
           onClick={() => setTray("info")}
-          className={cn("flex h-10 items-center gap-2 rounded-md px-2 hover:bg-fg/8", tray === "info" && "bg-fg/10")}
+          className={cn("relative flex h-10 items-center gap-2 rounded-md px-2 hover:bg-fg/8", tray === "info" && "bg-fg/10")}
           title={connected ? "Secure Sync online" : "Nicht verbunden"}
         >
           {connected ? <Wifi className="size-4" /> : <WifiOff className="size-4 text-red-300" />}
           <Bell className="size-4" />
+          {newNotes > 0 && tray !== "info" && (
+            <span key={newNotes} className="furr-vr-pop absolute right-0.5 top-1 grid min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
+              {newNotes > 9 ? "9+" : newNotes}
+            </span>
+          )}
         </button>
         <button
           type="button"

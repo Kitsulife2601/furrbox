@@ -1,7 +1,8 @@
 // FurrEvidence: evidence case intake (Discord/VRChat), message proof via bot, moderation queue.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, FolderOpen, Globe2, Image as ImageIcon, MessagesSquare, Save, Search, UploadCloud, X } from "lucide-react";
+import { FileText, FolderOpen, Globe2, Image as ImageIcon, MessagesSquare, Paperclip, Save, Search, UploadCloud, X } from "lucide-react";
 import {
   VIOLATION_CATEGORIES,
   getMessageInspect,
@@ -23,6 +24,14 @@ import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 import { VRChatPanel } from "./VRChat";
+import { AttachClipDialog } from "./AttachClipDialog";
+import { BAN_REASON_MIN, CaseRefSelect, UndoBanner } from "./BanSafety";
+import { useCaseDraft, withCaseRef } from "@/lib/furr/case-draft";
+import { scheduleWithUndo } from "@/lib/furr/undo";
+import type { EvidenceCase } from "@/lib/furr/types";
+import { ClipCaptureButton } from "./ClipSettings";
+import { takeClipEvidenceDraft } from "@/lib/furr/clip-draft";
+import { attachClipToCase, hasDesktopClips, loadClipFile } from "@/lib/furr/clips-client";
 
 const DURATIONS = [
   { label: "10 Minuten", ms: 10 * 60_000 },
@@ -45,8 +54,14 @@ async function waitForInspect(requestId: string): Promise<MessageProof> {
 }
 
 export function Evidence() {
+  const live15 = useLiveInterval(15_000);
   const [tab, setTab] = useState<"case" | "cases" | "moderation" | "vrchat">("case");
-  const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: 15_000 });
+  const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: live15 });
+  // „Fall anlegen“ aus Votekick-Panel / Staff-Tools: direkt zum Formular springen.
+  const draftAt = useCaseDraft((s) => s.draft?.at ?? null);
+  useEffect(() => {
+    if (draftAt) setTab("case");
+  }, [draftAt]);
 
   return (
     <div className="flex h-full flex-col bg-bg/40">
@@ -73,7 +88,9 @@ export function Evidence() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[11px] text-muted">
+        <div className="ml-auto flex items-center gap-2">
+          <ClipCaptureButton />
+          <span className="text-[11px] text-muted">
           Discord-Bot:{" "}
           {bridge.data?.connected ? (
             <Badge tone="good">verbunden</Badge>
@@ -81,6 +98,7 @@ export function Evidence() {
             <Badge tone="warn">{bridge.data?.configured ? "nicht verbunden" : "nicht eingerichtet"}</Badge>
           )}
         </span>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "case" && <CaseForm onSaved={() => setTab("cases")} />}
@@ -112,6 +130,45 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState("");
   const [manual, setManual] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pendingClipId, setPendingClipId] = useState<string | null>(null);
+  const [attachingClip, setAttachingClip] = useState(false);
+
+  // Vorbefüllung aus Votekick-Panel / Staff-Tools (Fall-Entwurf) – greift auch bei schon offenem Fenster.
+  const caseDraftAt = useCaseDraft((s) => s.draft?.at ?? null);
+  useEffect(() => {
+    const d = useCaseDraft.getState().take();
+    if (!d) return;
+    setPlatform(d.platform);
+    if (d.targetPrimary) {
+      setTargetPrimary(d.targetPrimary);
+      setManual(true);
+    }
+    if (d.targetSecondary) setTargetSecondary(d.targetSecondary);
+    if (d.category) setCategory(d.category);
+    setNotes(d.notes);
+    if (d.clipId) {
+      const clipId = d.clipId;
+      setPendingClipId(clipId);
+      void loadClipFile(clipId)
+        .then((file) => setFiles((prev) => [...prev.filter((f) => f.name !== file.name), file]))
+        .catch((e) => setError(`Clip konnte nicht geladen werden: ${errorMessage(e)}`));
+    }
+  }, [caseDraftAt]);
+
+  useEffect(() => {
+    const draft = takeClipEvidenceDraft();
+    if (!draft) return;
+    setPlatform("VRChat");
+    if (draft.targetDisplayName) {
+      setTargetPrimary(draft.targetDisplayName);
+      setManual(true);
+    }
+    if (draft.notes) setNotes(draft.notes);
+    setPendingClipId(draft.clipId);
+    void loadClipFile(draft.clipId)
+      .then((file) => setFiles((prev) => [...prev.filter((f) => f.name !== file.name), file]))
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
 
   const filteredMembers = useMemo(
     () =>
@@ -134,6 +191,31 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
       setError(errorMessage(e));
     } finally {
       setInspecting(false);
+    }
+  }
+
+  async function attachPendingDirectly() {
+    if (!pendingClipId || !hasDesktopClips()) return;
+    setAttachingClip(true);
+    setError("");
+    try {
+      const res = await attachClipToCase(pendingClipId, "new", {
+        targetDisplayName: targetPrimary || null,
+        notes,
+        violationCategory: category,
+      });
+      useNotifications.getState().notify({
+        version: "FurrEvidence",
+        title: "Fall gespeichert",
+        description: res.casePath,
+      });
+      setPendingClipId(null);
+      await queryClient.invalidateQueries({ queryKey: ["furr"] });
+      onSaved();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setAttachingClip(false);
     }
   }
 
@@ -181,6 +263,19 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
         }
       }
       useNotifications.getState().notify({ version: "FurrEvidence", title: "Fall gespeichert", description: res.casePath });
+      if (pendingClipId && hasDesktopClips()) {
+        try {
+          await (window as unknown as { furrbox?: { clips?: { attachToCase: (i: Record<string, unknown>) => Promise<unknown> } } }).furrbox?.clips?.attachToCase?.({
+            clipId: pendingClipId,
+            caseId: res.caseId,
+            phase: "complete",
+            casePath: res.casePath,
+          });
+        } catch {
+          // Sidecar-Update optional
+        }
+        setPendingClipId(null);
+      }
       await queryClient.invalidateQueries({ queryKey: ["furr"] });
       setFiles([]);
       setNotes("");
@@ -463,6 +558,14 @@ function CaseForm({ onSaved }: { onSaved: () => void }) {
               "Wähle zuerst die Zielperson aus."
             )}
             {error && <p className="mt-1 text-red-300">{error}</p>}
+            {pendingClipId && hasDesktopClips() && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[12px]">
+                <span className="text-fg">Desktop-Clip bereit</span>
+                <Btn variant="primary" disabled={attachingClip || saving} onClick={() => void attachPendingDirectly()}>
+                  Als Beweis anlegen
+                </Btn>
+              </div>
+            )}
           </div>
           <Btn variant="primary" className="h-10 px-5" disabled={saving || !ready} onClick={() => void submit()}>
             <Save className="size-4" /> {progress ? `Hochladen ${Math.round((progress.sent / Math.max(1, progress.total)) * 100)} %` : saving ? "Wird gespeichert…" : "Fall speichern"}
@@ -518,12 +621,16 @@ function Card({ step, title, subtitle, children }: { step: number; title: string
 }
 
 function CaseList() {
-  const cases = useQuery({ queryKey: ["furr", "evidence-cases"], queryFn: () => listEvidenceCases(), refetchInterval: 15_000 });
+  const live15 = useLiveInterval(15_000);
+  const cases = useQuery({ queryKey: ["furr", "evidence-cases"], queryFn: () => listEvidenceCases(), refetchInterval: live15 });
   const openApp = useDesktop((s) => s.openApp);
+  const [attaching, setAttaching] = useState<EvidenceCase | null>(null);
   if (cases.isError) return <Empty>{errorMessage(cases.error)}</Empty>;
   if (!cases.data) return <Empty>Lade Fallakten…</Empty>;
   if (!cases.data.length) return <Empty>Noch keine Fälle gespeichert.</Empty>;
   return (
+    <div className="relative min-h-full">
+    {attaching && <AttachClipDialog target={attaching} onClose={() => setAttaching(null)} />}
     <table className="w-full text-left text-[13px]">
       <thead className="bg-elevated/60 text-muted">
         <tr>
@@ -542,21 +649,28 @@ function CaseList() {
             <td className="px-3 py-2">{c.fileCount}</td>
             <td className="px-3 py-2 text-muted">{c.createdAt ? new Date(c.createdAt).toLocaleString("de-DE") : ""}</td>
             <td className="px-3 py-2 text-right">
-              <Btn variant="ghost" onClick={() => openApp("explorer", { payload: { scope: "public", folder: c.path } })}>
-                <FolderOpen className="size-3.5" /> Öffnen
-              </Btn>
+              <div className="flex justify-end gap-1">
+                <Btn variant="ghost" onClick={() => setAttaching(c)} title="Clip oder Datei an diesen Fall hängen (mit Audit-Bezug)">
+                  <Paperclip className="size-3.5" /> Clip anhängen
+                </Btn>
+                <Btn variant="ghost" onClick={() => openApp("explorer", { payload: { scope: "public", folder: c.path } })}>
+                  <FolderOpen className="size-3.5" /> Öffnen
+                </Btn>
+              </div>
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
 function ModerationPanel() {
+  const live5 = useLiveInterval(5_000);
   const me = useMe();
   const queryClient = useQueryClient();
-  const entries = useQuery({ queryKey: ["furr", "moderation"], queryFn: () => listModeration(), refetchInterval: 5_000 });
+  const entries = useQuery({ queryKey: ["furr", "moderation"], queryFn: () => listModeration(), refetchInterval: live5 });
   const allowed = me.data?.permissions.moderationActions ?? [];
   const [action, setAction] = useState<ModerationAction>("warn");
   const [target, setTarget] = useState("");
@@ -564,10 +678,49 @@ function ModerationPanel() {
   const [duration, setDuration] = useState(DURATIONS[1].ms);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [caseRef, setCaseRef] = useState("");
+  const [pending, setPending] = useState<{ id: string; cancel: () => boolean } | null>(null);
   const needsDuration = action === "timeout" || action === "mute";
+  const isBan = action === "ban";
+  const banBlocked = isBan && (reason.trim().length < BAN_REASON_MIN || !caseRef);
 
   async function submit() {
     setError("");
+    if (isBan) {
+      // Bann: Pflicht-Begründung + Fall-Bezug. Erst nach 10 s geht der Auftrag an den Bot –
+      // vorher „Rückgängig“ (Banner/Toast), es wird also nie gebannt-und-wieder-entbannt.
+      const targetId = target;
+      const caseId = caseRef;
+      const finalReason = withCaseRef(reason, caseId);
+      const job = scheduleWithUndo({
+        label: `Bann gegen ${targetId}`,
+        description: finalReason,
+        run: async () => {
+          await queueModeration({ data: { action: "ban", targetDiscordId: targetId, reason: finalReason, caseId } });
+        },
+        onDone: () => {
+          setPending(null);
+          useNotifications.getState().notify({
+            version: "FurrEvidence · Moderation",
+            kind: "incident",
+            tone: "success",
+            title: "Bann an den Bot übergeben",
+            description: `${targetId} · Fall ${caseId} – Ergebnis erscheint im Modlog.`,
+          });
+          void queryClient.invalidateQueries({ queryKey: ["furr", "moderation"] });
+        },
+        onError: (e) => {
+          setPending(null);
+          setError(errorMessage(e));
+          useNotifications.getState().notify({ version: "FurrEvidence · Moderation", kind: "incident", tone: "error", title: "Bann fehlgeschlagen", description: errorMessage(e) });
+        },
+        onCancel: () => setPending(null),
+      });
+      setPending(job);
+      setReason("");
+      setCaseRef("");
+      return;
+    }
     setBusy(true);
     try {
       await queueModeration({ data: { action, targetDiscordId: target, reason, durationMs: needsDuration ? duration : undefined } });
@@ -620,9 +773,14 @@ function ModerationPanel() {
             className="rounded-md border border-border bg-bg/60 p-2 text-[13px] text-fg outline-none focus:border-accent"
           />
         </Field>
+        {isBan && <CaseRefSelect value={caseRef} onChange={setCaseRef} platform="Discord" />}
+        {isBan && reason.trim().length < BAN_REASON_MIN && (
+          <p className="text-[11px] text-amber-300">Begründung für einen Bann: mindestens {BAN_REASON_MIN} Zeichen.</p>
+        )}
         <ErrorText>{error}</ErrorText>
-        <Btn variant="danger" disabled={busy || !allowed.includes(action)} onClick={() => void submit()}>
-          {ACTION_LABEL[action]} ausführen
+        {pending && <UndoBanner pendingId={pending.id} onUndo={() => pending.cancel()} />}
+        <Btn variant="danger" disabled={busy || !allowed.includes(action) || banBlocked || !target} onClick={() => void submit()}>
+          {ACTION_LABEL[action]} ausführen{isBan ? " (10 s Rückgängig)" : ""}
         </Btn>
       </div>
       <div className="min-w-0">

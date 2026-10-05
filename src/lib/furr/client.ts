@@ -1,5 +1,6 @@
 // Browser-side helpers and React Query hooks for FurrBox.
 import { useQuery } from "@tanstack/react-query";
+import { useLiveInterval } from "./live-interval";
 import { getMe } from "./api/session";
 import type { Me, Platform } from "./types";
 
@@ -49,7 +50,8 @@ export const ME_KEY = ["furr", "me"] as const;
 
 /** The signed-in FurrBox profile (role + permissions). */
 export function useMe(enabled = true) {
-  return useQuery<Me>({ queryKey: ME_KEY, queryFn: () => getMe(), enabled, staleTime: 30_000, refetchInterval: 60_000 });
+  const live = useLiveInterval(60_000, enabled);
+  return useQuery<Me>({ queryKey: ME_KEY, queryFn: () => getMe(), enabled, staleTime: 30_000, refetchInterval: live });
 }
 
 export function errorMessage(error: unknown) {

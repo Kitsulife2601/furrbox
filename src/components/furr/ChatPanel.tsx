@@ -1,6 +1,7 @@
 // FurrChat: team channel + private messages (taskbar panel) with emojis, stickers, evidence-case
 // links and files from the PC.
 import { useEffect, useRef, useState } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileText, FolderLock, Paperclip, Send, Smile, X } from "lucide-react";
 import { listChatMessages, readChatAttachment, sendChatMessage } from "@/lib/furr/api/chat";
@@ -58,10 +59,12 @@ export function ChatPanel() {
     useSync.getState().set({ unreadChat: 0 });
   }, []);
 
+  const live10 = useLiveInterval(10_000);
+  const live3 = useLiveInterval(3_000);
   const users = useQuery({
     queryKey: ["furr", "presence", "global"],
     queryFn: () => listPresence({ data: "global" }),
-    refetchInterval: 10_000,
+    refetchInterval: live10,
   });
   const contacts = (users.data ?? []).filter((u) => u.hasAccount && u.id !== me.data?.userId);
   const partner = contacts.find((c) => c.id === partnerId) ?? null;
@@ -72,7 +75,7 @@ export function ChatPanel() {
     queryKey: key,
     queryFn: () => listChatMessages({ data: { channel, partnerId: partnerId ?? undefined } }),
     enabled: channel === "team" || Boolean(partnerId),
-    refetchInterval: 3_000,
+    refetchInterval: live3,
   });
 
   useEffect(() => {

@@ -15,6 +15,7 @@ const { createLogWatcher } = require("./vrchat-log.cjs");
 const { createVrOverlay } = require("./vr-overlay.cjs");
 const { sendChatbox, clearChatbox } = require("./osc.cjs");
 const { createMedia } = require("./media.cjs");
+const { createClips } = require("./clips.cjs");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -37,6 +38,11 @@ function serverUrlFor(config) {
   const value = String(config.serverUrl || "").trim();
   if (value === "local") return "";
   return (value || DEFAULT_SERVER_URL).replace(/\/+$/, "");
+}
+
+function writeConfig(config) {
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
 }
 
 function readConfig() {
@@ -255,6 +261,32 @@ const vrOverlay = createVrOverlay({
 let appUrl = null;
 // Current song (Spotify, YouTube, …) for the VR panel and the chatbox status.
 const media = createMedia((...args) => console.log("[media]", ...args));
+const clips = createClips({
+  userData,
+  BrowserWindow,
+  readConfig,
+  writeConfig,
+  log: (...args) => console.log("[clips]", ...args),
+  getAppVersion: () => app.getVersion(),
+  onClipSaved: (info) => {
+    const payload = {
+      id: info.id,
+      name: info.name,
+      path: info.path,
+      size: info.size,
+      reason: info.reason,
+      meta: info.meta,
+      createdAt: info.createdAt,
+      sha256: info.sha256 || null,
+    };
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:clips-saved", payload);
+    try {
+      const vrWc = vrOverlay.webContents && vrOverlay.webContents();
+      if (vrWc && !vrWc.isDestroyed()) vrWc.send("furrbox:clips-saved", payload);
+    } catch {}
+  },
+});
+clips.attachIpc(ipcMain);
 
 /** Only the FurrBox page itself (main window or the VR panel) may call the bridges. */
 function trusted(event) {
@@ -281,7 +313,16 @@ vrchatHandler("cancel", () => vrchat.cancelLogin());
 vrchatHandler("logout", () => vrchat.logout());
 vrchatHandler("search", (query) => vrchat.search(String(query ?? "")));
 const vrchatLog = createLogWatcher();
-vrchatHandler("instance", () => vrchatLog.poll());
+vrchatHandler("instance", () => {
+  const snap = vrchatLog.poll();
+  try {
+    clips.setInstanceSnapshot(snap);
+    clips.noteVotes(snap && snap.votes);
+  } catch (e) {
+    console.log("[clips] instance hook:", e && e.message ? e.message : e);
+  }
+  return snap;
+});
 vrchatHandler("people", (ids) => vrchat.people(ids));
 vrchatHandler("world", (worldId) => vrchat.world(String(worldId ?? "")));
 vrchatHandler("moderate", (action, groupId, userId) => vrchat.moderate(String(action), String(groupId), String(userId)));
@@ -355,8 +396,13 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
 // every few seconds – VRChat hides a chatbox text after a while, so it has to be sent again.
 const STATUS_ITEMS = ["time", "date", "world", "people", "joined", "instanceAge", "music"];
 const STATUS_EVERY_MS = 5000;
+/** Idle/Backoff: VRChat nicht in Instanz oder Fenster minimiert/unfokussiert. */
+const STATUS_IDLE_MS = 30_000;
+const STATUS_BLUR_MS = 15_000;
 let chatStatus = { enabled: false, items: [], text: "", opened: {} };
 let chatStatusPausedUntil = 0;
+let chatStatusDelayMs = STATUS_EVERY_MS;
+let chatStatusTimer = null;
 
 function duration(fromIso) {
   const min = Math.max(0, Math.floor((Date.now() - new Date(fromIso).getTime()) / 60_000));
@@ -400,15 +446,44 @@ ${"▰".repeat(filled)}${"▱".repeat(10 - filled)} ${time(song.position)} / ${t
   return [chatStatus.text, short, ...long].filter(Boolean).join("\n") || null;
 }
 
-setInterval(() => {
-  if (!chatStatus.enabled || Date.now() < chatStatusPausedUntil) return;
+function windowQuiet() {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return true;
+    return mainWindow.isMinimized() || !mainWindow.isFocused();
+  } catch {
+    return false;
+  }
+}
+
+function runChatStatusTick() {
+  if (!chatStatus.enabled || Date.now() < chatStatusPausedUntil) {
+    chatStatusDelayMs = STATUS_IDLE_MS;
+    return;
+  }
   try {
     const text = statusText();
-    if (text) sendChatbox(text).catch(() => undefined);
+    if (text) {
+      sendChatbox(text).catch(() => undefined);
+      chatStatusDelayMs = windowQuiet() ? STATUS_BLUR_MS : STATUS_EVERY_MS;
+    } else {
+      // VRChat inaktiv / nicht in Instanz → Log seltener pollen.
+      chatStatusDelayMs = STATUS_IDLE_MS;
+    }
   } catch {
     // The VRChat log is not readable right now – try again next time.
+    chatStatusDelayMs = STATUS_IDLE_MS;
   }
-}, STATUS_EVERY_MS).unref();
+}
+
+function scheduleChatStatus() {
+  if (chatStatusTimer) clearTimeout(chatStatusTimer);
+  chatStatusTimer = setTimeout(() => {
+    runChatStatusTick();
+    scheduleChatStatus();
+  }, chatStatusDelayMs);
+  if (typeof chatStatusTimer.unref === "function") chatStatusTimer.unref();
+}
+scheduleChatStatus();
 
 ipcMain.handle("furrbox:osc-status", (event, input) => {
   if (!trusted(event)) return false;
@@ -439,6 +514,124 @@ ipcMain.handle("furrbox:osc-chatbox", async (event, text) => {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
+
+
+ipcMain.handle("furrbox:clips-status", (event) => (trusted(event) ? clips.status() : null));
+ipcMain.handle("furrbox:clips-config", (event) => (trusted(event) ? clips.cfg() : null));
+ipcMain.handle("furrbox:clips-set-config", (event, patch) => {
+  if (!trusted(event)) return null;
+  return clips.saveCfg(patch && typeof patch === "object" ? patch : {});
+});
+ipcMain.handle("furrbox:clips-list", (event) => (trusted(event) ? clips.listClips() : []));
+ipcMain.handle("furrbox:clips-save", async (event, input) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    const info = await clips.requestClip({
+      source: String(input?.source || input?.meta?.source || "desktop"),
+      reason: String(input?.reason || "manual"),
+      preSeconds: input?.preSeconds,
+      postSeconds: input?.postSeconds,
+      meta: input?.meta && typeof input.meta === "object" ? input.meta : null,
+      waitPostRoll: input?.waitPostRoll !== false,
+    });
+    return { ok: true, value: info };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-delete", (event, id) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    clips.deleteClip(id);
+    return { ok: true, value: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-read", (event, id) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    return { ok: true, value: clips.readClip(id) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-open-folder", (event) => {
+  if (!trusted(event)) return null;
+  return clips.openFolder();
+});
+
+ipcMain.handle("furrbox:clips-request", async (event, input) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    const info = await clips.requestClip({
+      source: String(input?.source || "desktop"),
+      reason: String(input?.reason || input?.source || "manual"),
+      preSeconds: input?.preSeconds,
+      postSeconds: input?.postSeconds,
+      meta: input?.meta && typeof input.meta === "object" ? input.meta : null,
+      waitPostRoll: input?.waitPostRoll !== false,
+    });
+    return { ok: true, value: info };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-attach-to-case", async (event, input) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    const clipId = String(input?.clipId || "");
+    const caseId = input?.caseId;
+    const phase = String(input?.phase || "prepare");
+    if (!clipId) throw new Error("clipId fehlt.");
+    if (phase === "complete") {
+      if (!caseId || caseId === "new") throw new Error("caseId fehlt für complete.");
+      const incident = clips.setCaseLink(clipId, {
+        caseId: String(caseId),
+        auditId: input?.auditId != null ? String(input.auditId) : null,
+        casePath: input?.casePath != null ? String(input.casePath) : null,
+      });
+      return { ok: true, value: { incident, caseId: String(caseId) } };
+    }
+    // prepare: return clip bytes so the renderer can run saveEvidenceCase / uploadFile (auth lives there).
+    const file = clips.readClip(clipId);
+    let incident = null;
+    try {
+      incident = clips.readIncident(clipId).incident;
+    } catch {
+      incident = null;
+    }
+    return {
+      ok: true,
+      value: {
+        phase: "prepare",
+        clip: file,
+        incident,
+        caseId: caseId === "new" || caseId == null ? "new" : String(caseId),
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-mark-in", async (event) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    return { ok: true, value: await clips.markIn() };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle("furrbox:clips-mark-out", async (event, meta) => {
+  if (!trusted(event)) return { ok: false, error: "Nicht erlaubt." };
+  try {
+    const info = await clips.markOut(meta && typeof meta === "object" ? meta : null);
+    return { ok: true, value: info };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
 
 function setStatus(text, isError = false) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:status", text, isError);
@@ -551,6 +744,20 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null);
     globalShortcut.register("F11", () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
     globalShortcut.register("CommandOrControl+Shift+I", () => mainWindow?.webContents.toggleDevTools());
+    const clipHotkeyOk = globalShortcut.register("CommandOrControl+Shift+C", () => {
+      clips
+        .requestClip({ source: "hotkey", reason: "hotkey", meta: { source: "globalShortcut" } })
+        .catch((e) => console.log("[clips] hotkey:", e && e.message ? e.message : e));
+    });
+    console.log("[clips] Hotkey Ctrl+Shift+C:", clipHotkeyOk ? "registriert" : "FEHLGESCHLAGEN (Konflikt?)");
+    const markHotkeyOk = globalShortcut.register("CommandOrControl+Shift+M", () => {
+      const st = clips.status();
+      const run = st.markInAt
+        ? clips.markOut({ source: "hotkey-mark" })
+        : clips.markIn();
+      Promise.resolve(run).catch((e) => console.log("[clips] mark hotkey:", e && e.message ? e.message : e));
+    });
+    console.log("[clips] Hotkey Ctrl+Shift+M (Mark In/Out):", markHotkeyOk ? "registriert" : "FEHLGESCHLAGEN");
     globalShortcut.register("CommandOrControl+Shift+Q", () => {
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: "question",
@@ -569,6 +776,7 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll();
     vrOverlay.stop();
     media.stop();
+    clips.stop();
     if (serverProcess) serverProcess.kill();
   });
 

@@ -1,5 +1,6 @@
 // FurrAccountManager (Dev only): accounts come from Discord logins; set roles, delete.
 import { useState } from "react";
+import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { deleteAccount, listAccounts, updateAccount } from "@/lib/furr/api/accounts";
@@ -10,9 +11,10 @@ import { dualLabel } from "./Presence";
 import { Btn, ConfirmDialog, Empty } from "./ui";
 
 export function Accounts() {
+  const live = useLiveInterval(10_000);
   const me = useMe();
   const queryClient = useQueryClient();
-  const accounts = useQuery({ queryKey: ["furr", "accounts"], queryFn: () => listAccounts(), refetchInterval: 10_000 });
+  const accounts = useQuery({ queryKey: ["furr", "accounts"], queryFn: () => listAccounts(), refetchInterval: live });
   const [removeId, setRemoveId] = useState<string | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["furr"] });

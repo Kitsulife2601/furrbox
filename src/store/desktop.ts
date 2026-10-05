@@ -95,7 +95,7 @@ type DesktopState = {
   startOpen: boolean;
   searchOpen: boolean;
   chatOpen: boolean;
-  tray: "none" | "quick" | "clock" | "info";
+  tray: "none" | "quick" | "clock" | "info" | "staff";
   searchQuery: string;
   /** Window ids minimized by Show Desktop; null when not peeking. */
   desktopPeek: string[] | null;

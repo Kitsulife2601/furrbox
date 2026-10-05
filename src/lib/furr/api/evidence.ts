@@ -15,6 +15,9 @@ import {
   writeTextFile,
 } from "../core";
 import { BOT_JOB_STALE_MS, BOT_JOB_STALE_MSG } from "../http";
+import { appendAuditLater } from "../audit";
+import { publishAlertLater } from "../alerts";
+import { upsertSanctionFromBot } from "./sanctions";
 import { DISCORD_LOGS, EVIDENCE_ROOT, MAX_UPLOAD_BYTES, formatSize, sanitizeName, sanitizeSegment } from "../paths";
 import { MODERATION_ACTIONS, type ModerationAction } from "../roles";
 import type { EvidenceCase, Me, MessageProof, ModerationEntry } from "../types";
@@ -264,11 +267,12 @@ export const getMessageInspect = createServerFn({ method: "GET" })
 // ---------- Moderation (ban / warn / timeout / mute), executed by the Discord bot ----------
 
 export const queueModeration = createServerFn({ method: "POST" })
-  .validator((input: { action: ModerationAction; targetDiscordId: string; reason: string; durationMs?: number }) => ({
+  .validator((input: { action: ModerationAction; targetDiscordId: string; reason: string; durationMs?: number; caseId?: string }) => ({
     action: String(input.action ?? "").toLowerCase() as ModerationAction,
     targetDiscordId: String(input.targetDiscordId ?? "").trim(),
     reason: String(input.reason ?? "").trim(),
     durationMs: input.durationMs === undefined ? undefined : Number(input.durationMs),
+    caseId: input.caseId ? String(input.caseId).trim().slice(0, 80) : null,
   }))
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
@@ -280,6 +284,10 @@ export const queueModeration = createServerFn({ method: "POST" })
     if (!me.discordId) throw new Error("Hinterlege zuerst deine Discord-ID (Kontoverwaltung), damit der Bot dich zuordnen kann.");
     if (!/^\d{17,22}$/.test(data.targetDiscordId)) throw new Error("Ziel muss eine Discord-Snowflake sein.");
     if (data.reason.length < 3 || data.reason.length > 512) throw new Error("Begründung muss 3-512 Zeichen lang sein.");
+    if (data.action === "ban") {
+      if (!data.caseId) throw new Error("Bann braucht eine Fall-ID (caseId).");
+      if (data.reason.length < 5) throw new Error("Bann-Begründung mindestens 5 Zeichen.");
+    }
     const needsDuration = data.action === "timeout" || data.action === "mute";
     if (needsDuration && (!data.durationMs || data.durationMs < 60_000 || data.durationMs > 2_419_200_000)) {
       throw new Error("Dauer muss zwischen 1 Minute und 28 Tagen liegen.");
@@ -292,7 +300,97 @@ export const queueModeration = createServerFn({ method: "POST" })
       insert into moderation_request (id, action, moderator_user_id, moderator_discord_id, target_discord_id, reason, duration_ms)
       values (${id}, ${data.action}, ${context.userId}, ${me.discordId}, ${data.targetDiscordId}, ${data.reason},
               ${needsDuration ? Math.trunc(data.durationMs!) : null})`;
-    return { requestId: id };
+
+    // Persistente Sanktion für Mute/Timeout/Ban (Bot-Reconcile).
+    if (data.action === "mute" || data.action === "timeout" || data.action === "ban") {
+      const expiresAt =
+        needsDuration && data.durationMs ? new Date(Date.now() + data.durationMs).toISOString() : null;
+      await upsertSanctionFromBot({
+        platform: "discord",
+        targetId: data.targetDiscordId,
+        type: data.action,
+        reason: data.reason,
+        caseId: data.caseId,
+        expiresAt,
+        createdBy: context.userId,
+      });
+    }
+
+    let undoToken: string | null = null;
+    let undoExpiresAt: string | null = null;
+    if (data.action === "ban") {
+      undoToken = newId();
+      undoExpiresAt = new Date(Date.now() + 10_000).toISOString();
+      await sql`
+        insert into ban_undo (token, platform, target_id, reason, case_id, moderator_id, job_or_req, expires_at)
+        values (${undoToken}, 'discord', ${data.targetDiscordId}, ${data.reason}, ${data.caseId}, ${context.userId}, ${id}, ${undoExpiresAt})`;
+      publishAlertLater({
+        kind: "ban.applied",
+        severity: "critical",
+        title: "Discord-Bann (Undo 10 s)",
+        body: `${data.targetDiscordId} – ${data.reason}`,
+        dedupKey: `ban:dc:${id}`,
+        payload: { undoToken, requestId: id, caseId: data.caseId },
+      });
+      appendAuditLater({
+        source: "furrbox",
+        action: "discord.ban",
+        actorId: context.userId,
+        actorName: me.displayName,
+        targetId: data.targetDiscordId,
+        caseId: data.caseId,
+        detail: data.reason,
+      });
+    }
+    return { requestId: id, undoToken, undoExpiresAt };
+  });
+
+/** 10 s Undo für Discord-Bann: queued Unban. */
+export const undoDiscordBan = createServerFn({ method: "POST" })
+  .validator((token: string) => String(token ?? "").trim())
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data: token }) => {
+    const me = await loadMe(context.userId);
+    if (!me.permissions.moderationActions.includes("ban")) throw new Error("Keine Bann-Rechte.");
+    if (!me.discordId) throw new Error("Discord-ID fehlt.");
+    const sql = await getSql();
+    const rows = await sql<{
+      token: string;
+      target_id: string;
+      reason: string;
+      case_id: string;
+      moderator_id: string;
+      expires_at: unknown;
+      used_at: unknown;
+    }>`select * from ban_undo where token = ${token} and platform = 'discord'`;
+    const row = rows[0];
+    if (!row) throw new Error("Undo-Token unbekannt.");
+    if (row.used_at) throw new Error("Undo schon benutzt.");
+    if (new Date(String(row.expires_at)).getTime() < Date.now()) throw new Error("Undo-Fenster (10 s) abgelaufen.");
+    if (row.moderator_id !== context.userId) throw new Error("Nur der ausstellende Moderator darf undoen.");
+    await sql`update ban_undo set used_at = now() where token = ${token}`;
+    const bot = await bridgeStatus();
+    if (!bot.connected) throw new Error(BOT_JOB_STALE_MSG);
+    const id = newId();
+    await sql`
+      insert into moderation_request (id, action, moderator_user_id, moderator_discord_id, target_discord_id, reason, duration_ms)
+      values (${id}, 'unban', ${context.userId}, ${me.discordId}, ${row.target_id}, ${"Undo: " + row.reason}, null)`;
+    publishAlertLater({
+      kind: "ban.undo",
+      severity: "warn",
+      title: "Discord-Bann rückgängig",
+      body: row.target_id,
+      dedupKey: `banundo:${token}`,
+      payload: { token, requestId: id, caseId: row.case_id },
+    });
+    appendAuditLater({
+      source: "furrbox",
+      action: "discord.ban.undo",
+      actorId: context.userId,
+      targetId: row.target_id,
+      caseId: row.case_id,
+    });
+    return { ok: true as const, requestId: id };
   });
 
 export const listModeration = createServerFn({ method: "GET" })

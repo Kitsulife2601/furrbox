@@ -29,12 +29,38 @@ export const VR_WIDGETS = [
 
 export type VrWidgetId = (typeof VR_WIDGETS)[number]["id"];
 
-const DEFAULT_TEXTS = ["Bin gleich zurück", "Mod im Dienst 🛡️", "Bitte an die Regeln halten", "Brauchst du Hilfe?"];
+const DEFAULT_TEXTS = [
+  "Bin gleich zurück",
+  "Moderation anwesend",
+  "Mod im Dienst 🛡️",
+  "Bitte an die Regeln halten",
+  "Brauchst du Hilfe?",
+  "Kurz AFK – gleich zurück",
+];
+
+/** Moderation-Schnelltexte (Chatbox); Rate-Limit liegt in der VR-UI (OSC pausiert Status 10 s). */
+export const VR_MOD_TEMPLATES = [
+  "Moderation anwesend",
+  "Bitte an die Regeln halten",
+  "Votekick läuft – bitte abstimmen",
+  "Incident wird dokumentiert",
+] as const;
+
+export type VrWatchEntry = { id: string; name?: string };
 
 type VrSettings = {
   widgets: Record<VrWidgetId, boolean>;
   infos: Record<VrInfoId, VrInfoPlace>;
   texts: string[];
+  /** Lokale Watchlist (usr_… / Name) bis Server-Watchlist liefert. */
+  watchlist: VrWatchEntry[];
+  setWatchlist: (entries: VrWatchEntry[]) => void;
+  /** Away = nicht im Dienst, aber sichtbar als Pause (nur lokal; Server kennt nur on/off). */
+  dutyAway: boolean;
+  setDutyAway: (on: boolean) => void;
+  /** Hinweise/Toasts am Overlay stumm (Quick-Action). */
+  muteAlerts: boolean;
+  setMuteAlerts: (on: boolean) => void;
   /** true = only a small button on the arm; the panel opens on a tap or when something happens. */
   buttonMode: boolean;
   setButtonMode: (on: boolean) => void;
@@ -64,13 +90,30 @@ export const useVrSettings = create<VrSettings>()(
       pointOpen: true,
       setPointOpen: (pointOpen) => set({ pointOpen }),
       texts: DEFAULT_TEXTS,
+      watchlist: [],
+      setWatchlist: (watchlist) =>
+        set({
+          watchlist: watchlist
+            .map((e) => ({ id: String(e.id ?? "").trim(), name: e.name ? String(e.name).trim().slice(0, 80) : undefined }))
+            .filter((e) => e.id)
+            .slice(0, 40),
+        }),
+      dutyAway: false,
+      setDutyAway: (dutyAway) => set({ dutyAway }),
+      muteAlerts: false,
+      setMuteAlerts: (muteAlerts) => set({ muteAlerts }),
       status: { enabled: false, items: ["time", "people", "joined"], text: "" },
       setStatus: (patch) => set((s) => ({ status: { ...s.status, ...patch } })),
       setWidget: (id, on) => set((s) => ({ widgets: { ...s.widgets, [id]: on } })),
       setInfo: (id, place) => set((s) => ({ infos: { ...s.infos, [id]: place } })),
       setTexts: (texts) => set({ texts: texts.map((t) => t.trim().slice(0, 144)).filter(Boolean).slice(0, 8) }),
     }),
-    { name: "furrbox-vr", version: 3, migrate: (state, version) => (version < 3 ? { ...(state as VrSettings), gazeOpen: false, pointOpen: true } : (state as VrSettings)), merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) } }) },
+    { name: "furrbox-vr", version: 4, migrate: (state, version) => {
+      const s = { ...(state as VrSettings) };
+      if (version < 3) { s.gazeOpen = false; s.pointOpen = true; }
+      if (version < 4) { s.dutyAway = false; s.muteAlerts = false; s.watchlist = s.watchlist ?? []; }
+      return s;
+    }, merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) }, watchlist: ((saved as Partial<VrSettings>)?.watchlist ?? current.watchlist) }) },
   ),
 );
 
