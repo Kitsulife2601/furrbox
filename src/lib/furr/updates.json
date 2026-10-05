@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.23",
+    "title": "FurrBox VR: Flackern behoben",
+    "items": [
+      "Behoben: Das Fenster am Arm hat beim Auf- und Zuklappen geflackert und gesprungen. Es blendet jetzt ruhig ein und aus, ohne dass sich das Bild neu aufbaut.",
+      "Das Fenster bleibt nach dem Wegschauen etwas länger offen (2,5 Sekunden), damit es nicht ständig auf- und zugeht."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "version": "2.0.22",
     "title": "FurrBox VR: Overlay nach SteamVR-Neustart wieder da",
     "items": [

@@ -228,7 +228,7 @@ function VrPanel() {
     <div className="flex h-screen w-screen select-none flex-col justify-end gap-2 overflow-hidden text-white">
       {/* The window above the wrist (only while open). */}
       {!collapsed && (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[22px] border-2 border-white/15 bg-[#0b0d14]/93 p-2.5">
+        <div className="furr-vr-window flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[22px] border-2 border-white/15 bg-[#0b0d14]/93 p-2.5">
           {topInfos.length > 0 && (
             <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl bg-white/6 px-3 py-1.5 text-[13px]">
               {topInfos.map((id) => (

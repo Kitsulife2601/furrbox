@@ -28,7 +28,7 @@ const GAZE_COS_OPEN = Math.cos((40 * Math.PI) / 180);
 const GAZE_FACING = 0.2;
 const GAZE_DISTANCE = 0.9;
 const GAZE_ON_MS = 250;
-const GAZE_OFF_MS = 1800;
+const GAZE_OFF_MS = 2500;
 const EVENT = { mouseMove: 300, mouseDown: 301, mouseUp: 302, scroll: 305, scrollSmooth: 309, quit: 700 };
 const FLAG_INTERACTIVE = 65536; // MakeOverlaysInteractiveIfVisible
 const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
@@ -137,10 +137,12 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let gazeSince = 0;
   let gazeLost = 0;
   let mode = "widget"; // widget | full
-  const size = () => (mode === "full" ? FULL : WIDGET);
+  // The picture always has the full size; with the window closed its upper part is simply empty.
+  // (Changing the size on every open / close made the panel flicker.)
+  const size = () => FULL;
   const widthMeters = () => Math.min(0.6, Math.max(0.08, Number(placement.width) || 0.15));
-  /** Metres the centre moves up when the window is open, so the widget stays on the wrist. */
-  const raise = () => (mode === "full" ? ((FULL.height - WIDGET.height) / 2) * (widthMeters() / FULL.width) : 0);
+  /** Metres the centre sits above the placement point, so the widget (bottom part) is on the wrist. */
+  const raise = () => ((FULL.height - WIDGET.height) / 2) * (widthMeters() / FULL.width);
   const listeners = new Set();
 
   function setState(patch) {
@@ -396,7 +398,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       transparent: true,
       webPreferences: { offscreen: true, preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
-    win.webContents.setFrameRate(15);
+    win.webContents.setFrameRate(10);
     win.webContents.on("paint", (_event, _dirty, image) => pushFrame(image));
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.loadURL(`${url}/vr`).catch((error) => log("VR-Overlay: Seite lädt nicht:", error.message));
@@ -529,9 +531,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       const wanted = next === "full" ? "full" : "widget";
       if (mode === wanted) return;
       mode = wanted;
-      applySize();
-      attachedTo = INVALID_DEVICE;
-      applyPlacement();
+      log(`VR-Overlay: Fenster ${mode === "full" ? "offen" : "zu"}.`);
     },
     /** Battery of headset and controllers (0–1), null when a device does not report one. */
     battery() {
