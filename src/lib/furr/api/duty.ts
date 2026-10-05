@@ -3,6 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
 import { appendTextFile, getSetting, getSql, iso, newId, requirePermission, setSetting } from "../core";
+import { runSideEffect } from "../http";
 import { VRCHAT_LOGS } from "../paths";
 
 export const DUTY_LOG_NAME = "Anwesenheit.txt";
@@ -16,11 +17,23 @@ function stamp() {
   return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" });
 }
 
+/**
+ * DB-Eintrag zuerst (schnell), Datei-Append mit Timeout – damit Votekick-„Erledigt“
+ * und Duty-Toggles nie auf einen hängenden Log-Write warten.
+ */
 async function writeLog(userId: string, name: string, kind: DutyLogEntry["kind"], detail: string | null) {
   const sql = await getSql();
   await sql`insert into mod_duty_log (id, user_id, kind, detail) values (${newId()}, ${userId}, ${kind}, ${detail})`;
-  const text = kind === "on" ? "ist anwesend (kann moderieren)" : kind === "off" ? "ist nicht mehr anwesend" : `hat einen Votekick als erledigt markiert: ${detail ?? ""}`;
-  await appendTextFile("public", `${VRCHAT_LOGS}/${DUTY_LOG_NAME}`, `[${stamp()}] ${name} ${text}\r\n`, userId);
+  const text =
+    kind === "on"
+      ? "ist anwesend (kann moderieren)"
+      : kind === "off"
+        ? "ist nicht mehr anwesend"
+        : `hat einen Votekick als erledigt markiert: ${detail ?? ""}`;
+  await runSideEffect(
+    () => appendTextFile("public", `${VRCHAT_LOGS}/${DUTY_LOG_NAME}`, `[${stamp()}] ${name} ${text}\r\n`, userId),
+    "duty-log-append",
+  );
 }
 
 /** Everyone's duty status (only "anwesend" while their FurrBox was seen in the last minutes). */

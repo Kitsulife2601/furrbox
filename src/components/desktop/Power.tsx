@@ -1,4 +1,4 @@
-// Power menu: lock, sign out, restart, shut down – with FurrBox's own shutdown animation (the paw
+﻿// Power menu: lock, sign out, restart, shut down – with FurrBox's own shutdown animation (the paw
 // goes to sleep: toes fade out one by one, the ring unwinds, the screen fades to night).
 // Shutting down closes the desktop app (window.close() ends Electron); in a normal browser tab,
 // which may not close itself, a "FurrBox wurde heruntergefahren" screen remains.
@@ -47,7 +47,7 @@ export function PowerButton() {
   return (
     <div ref={ref} className="relative">
       {open && (
-        <div className="mica absolute bottom-12 right-0 z-10 w-48 overflow-hidden rounded-lg py-1 text-[13px] win-shadow">
+        <div className="mica furr-flyout-in absolute bottom-12 right-0 z-10 w-48 overflow-hidden rounded-lg py-1 text-[13px] win-shadow">
           {items.map(({ label, icon: Icon, run }) => (
             <button
               key={label}

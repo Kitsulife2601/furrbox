@@ -1,5 +1,5 @@
 // FurrSettings: personalization, account (name/password/sign-out), chat retention, device monitor.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
@@ -27,6 +27,16 @@ import {
   type UpdateState,
 } from "@/components/desktop/UpdatePopup";
 import UPDATES from "@/lib/furr/updates.json";
+import {
+  ChevronRight,
+  Headset,
+  Home,
+  Monitor,
+  Palette,
+  User,
+  Volume2,
+  MessageSquare,
+} from "lucide-react";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 import { VrSettings } from "./VrSettings";
 import { SoundSettings } from "./SoundSettings";
@@ -47,44 +57,128 @@ const FITS: { id: WallpaperFit; label: string }[] = [
   { id: "tile", label: "Kacheln" },
 ];
 
-type Section = "personal" | "account" | "chat" | "sounds" | "vr" | "system";
+type Section = "home" | "personal" | "account" | "chat" | "sounds" | "vr" | "system";
+
+function SettingCard({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-border/80 bg-elevated/35 p-4 shadow-sm">
+      <header className="mb-3">
+        <h3 className="text-[14px] font-semibold tracking-tight">{title}</h3>
+        {hint && <p className="mt-0.5 text-[12px] text-muted">{hint}</p>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function SettingsHome({
+  go,
+  showChat,
+}: {
+  go: (s: Section) => void;
+  showChat: boolean;
+}) {
+  const tiles: { id: Section; title: string; desc: string; icon: typeof Home }[] = [
+    { id: "personal", title: "Personalisierung", desc: "Modus, Hintergrund, Akzent", icon: Palette },
+    { id: "account", title: "Konto", desc: "Name, Passwort, Abmelden", icon: User },
+    ...(showChat
+      ? [{ id: "chat" as const, title: "FurrChat", desc: "Aufbewahrung der Nachrichten", icon: MessageSquare }]
+      : []),
+    { id: "sounds", title: "Töne", desc: "Chat, Update, Votekick", icon: Volume2 },
+    { id: "vr", title: "FurrBox VR", desc: "Overlay und Arm-Panel", icon: Headset },
+    { id: "system", title: "System", desc: "Updates und Gerät", icon: Monitor },
+  ];
+  return (
+    <div className="mx-auto grid max-w-3xl gap-5">
+      <div>
+        <h2 className="text-[22px] font-semibold tracking-tight">Einstellungen</h2>
+        <p className="mt-1 text-[13px] text-muted">Wähle einen Bereich – übersichtlich wie unter Windows.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {tiles.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => go(t.id)}
+              className="group flex items-center gap-3 rounded-xl border border-border/80 bg-elevated/40 p-4 text-left transition-[background,transform] duration-[180ms] ease-out hover:bg-fg/8 active:scale-[0.99]"
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent">
+                <Icon className="size-5" strokeWidth={1.7} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-semibold">{t.title}</span>
+                <span className="mt-0.5 block text-[12px] text-muted">{t.desc}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-subtle transition-transform duration-[180ms] group-hover:translate-x-0.5" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function Settings() {
   const me = useMe();
-  const [section, setSection] = useState<Section>("personal");
-  const sections: [Section, string][] = [
-    ["personal", "Personalisierung"],
-    ["account", "Konto"],
-    ...(me.data?.permissions.canConfigureChat
-      ? ([["chat", "FurrChat"]] as [Section, string][])
-      : []),
-    ["sounds", "Töne"],
-    ["vr", "FurrBox VR"],
-    ["system", "System"],
+  const [section, setSection] = useState<Section>("home");
+  const showChat = Boolean(me.data?.permissions.canConfigureChat);
+  const nav: { id: Section; label: string; icon: typeof Home }[] = [
+    { id: "home", label: "Start", icon: Home },
+    { id: "personal", label: "Personalisierung", icon: Palette },
+    { id: "account", label: "Konto", icon: User },
+    ...(showChat ? [{ id: "chat" as const, label: "FurrChat", icon: MessageSquare }] : []),
+    { id: "sounds", label: "Töne", icon: Volume2 },
+    { id: "vr", label: "FurrBox VR", icon: Headset },
+    { id: "system", label: "System", icon: Monitor },
   ];
   return (
-    <div className="flex h-full bg-bg/40">
-      <aside className="w-40 shrink-0 border-r border-border p-2 text-[13px]">
-        {sections.map(([id, label]) => (
+    <div className="flex h-full bg-bg/30">
+      <aside className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-border p-3">
+        <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Einstellungen</p>
+        {nav.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             onClick={() => setSection(id)}
             className={cn(
-              "block w-full rounded-sm px-2 py-1.5 text-left hover:bg-fg/6",
+              "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-[130ms] hover:bg-fg/6",
               section === id && "bg-fg/10 font-medium",
             )}
           >
-            {label}
+            <Icon className={cn("size-4 shrink-0", section === id ? "text-accent" : "text-muted")} strokeWidth={1.7} />
+            <span className="truncate">{label}</span>
           </button>
         ))}
       </aside>
-      <div className="min-w-0 flex-1 overflow-auto p-5">
+      <div className="min-w-0 flex-1 overflow-auto p-6">
+        {section === "home" && <SettingsHome go={setSection} showChat={showChat} />}
         {section === "personal" && <Personal />}
         {section === "account" && <Account />}
         {section === "chat" && <ChatRetention />}
-        {section === "sounds" && <SoundSettings />}
-        {section === "vr" && <VrSettings />}
+        {section === "sounds" && (
+          <div className="mx-auto max-w-2xl">
+            <SettingCard title="Töne" hint="Chat, Update und Votekick – gleiche Feedback-Familie.">
+              <SoundSettings />
+            </SettingCard>
+          </div>
+        )}
+        {section === "vr" && (
+          <div className="mx-auto max-w-2xl">
+            <SettingCard title="FurrBox VR" hint="Overlay und Arm-Panel.">
+              <VrSettings />
+            </SettingCard>
+          </div>
+        )}
         {section === "system" && <SystemInfo />}
       </div>
     </div>
@@ -98,10 +192,13 @@ function Personal() {
   const [busy, setBusy] = useState(false);
 
   return (
-    <div className="grid max-w-xl gap-5">
+    <div className="mx-auto grid max-w-2xl gap-5">
       <div>
-        <p className="text-[13px] font-medium">Modus</p>
-        <div className="mt-2 flex gap-2">
+        <h2 className="text-[20px] font-semibold tracking-tight">Personalisierung</h2>
+        <p className="mt-1 text-[13px] text-muted">Darstellung in klaren Karten – Modus, Hintergrund und Akzent getrennt.</p>
+      </div>
+      <SettingCard title="Modus" hint="Hell oder dunkel.">
+        <div className="flex gap-2">
           {(["dark", "light"] as ThemeId[]).map((t) => (
             <Btn
               key={t}
@@ -112,9 +209,8 @@ function Personal() {
             </Btn>
           ))}
         </div>
-      </div>
-      <div>
-        <p className="text-[13px] font-medium">Hintergrund</p>
+      </SettingCard>
+      <SettingCard title="Hintergrund" hint="Vorgefertigte Motive oder eigenes Bild.">
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {WALLS.map((w) => (
             <button
@@ -170,10 +266,9 @@ function Personal() {
           <ErrorText>{error}</ErrorText>
           {s.wallpaperUrl && <WallpaperAdjust />}
         </div>
-      </div>
-      <div>
-        <p className="text-[13px] font-medium">Akzentfarbe</p>
-        <div className="mt-2 flex gap-2">
+      </SettingCard>
+      <SettingCard title="Akzentfarbe" hint="Farbe für Taskleiste, Buttons und Hervorhebungen.">
+        <div className="flex flex-wrap gap-2">
           {ACCENTS.map((hex) => (
             <button
               key={hex}
@@ -181,14 +276,14 @@ function Personal() {
               aria-label={hex}
               onClick={() => s.setAccent(hex)}
               className={cn(
-                "size-8 rounded-full",
+                "size-9 rounded-full transition-transform duration-[130ms] hover:scale-105",
                 s.accent === hex && "ring-2 ring-fg ring-offset-2 ring-offset-surface",
               )}
               style={{ background: hex }}
             />
           ))}
         </div>
-      </div>
+      </SettingCard>
     </div>
   );
 }
@@ -348,9 +443,14 @@ function Account() {
   }
 
   return (
-    <div className="grid max-w-md gap-4">
+    <div className="mx-auto grid max-w-xl gap-5">
+      <div>
+        <h2 className="text-[20px] font-semibold tracking-tight">Konto</h2>
+        <p className="mt-1 text-[13px] text-muted">Profil und Anmeldung.</p>
+      </div>
       {me.data && (
-        <div className="rounded-md bg-elevated/50 p-3 text-[13px]">
+        <SettingCard title="Profil">
+        <div className="text-[13px]">
           <p className="font-medium">
             {me.data.displayName} <span className="text-muted">@{me.data.username}</span>
           </p>
@@ -359,17 +459,21 @@ function Account() {
             {me.data.discordId ? ` · Discord ${me.data.discordId}` : ""}
           </p>
         </div>
+        </SettingCard>
       )}
-      <Field label="Anzeigename">
+      <SettingCard title="Anzeigename">
+      <Field label="Name">
         <div className="flex gap-2">
           <TextInput value={name} onChange={(e) => setName(e.target.value)} />
           <Btn onClick={() => void saveName()}>Speichern</Btn>
         </div>
       </Field>
-      {msg && <p className="text-[12px] text-emerald-300">{msg}</p>}
+      {msg && <p className="mt-2 text-[12px] text-emerald-300">{msg}</p>}
       <ErrorText>{error}</ErrorText>
+      </SettingCard>
       {me.data?.whitelistUsername && <WhitelistPassword username={me.data.whitelistUsername} />}
       {!gateSession && (
+        <SettingCard title="Sitzung">
         <Btn
           variant="danger"
           onClick={async () => {
@@ -389,6 +493,7 @@ function Account() {
         >
           Abmelden
         </Btn>
+        </SettingCard>
       )}
     </div>
   );
@@ -455,10 +560,15 @@ function ChatRetention() {
     if (settings.data) setDays(settings.data.retentionDays);
   }, [settings.data]);
   return (
-    <div className="grid max-w-sm gap-3">
+    <div className="mx-auto grid max-w-xl gap-5">
+      <div>
+        <h2 className="text-[20px] font-semibold tracking-tight">FurrChat</h2>
+        <p className="mt-1 text-[13px] text-muted">Aufbewahrung der Nachrichten.</p>
+      </div>
+      <SettingCard title="Auto-Löschung" hint="1–365 Tage für Team- und Privatchats.">
       <Field
-        label="Auto-Löschung von Chatnachrichten nach (Tagen)"
-        hint="1–365 Tage, gilt für Team- und Privatchats"
+        label="Nach wie vielen Tagen löschen?"
+        hint="Gilt für Team- und Privatchats"
       >
         <TextInput
           type="number"
@@ -483,6 +593,7 @@ function ChatRetention() {
         Speichern
       </Btn>
       <ErrorText>{error}</ErrorText>
+      </SettingCard>
     </div>
   );
 }
@@ -515,17 +626,22 @@ function SystemInfo() {
     ["Online", nav?.onLine ? "ja" : "nein"],
   ];
   return (
-    <div className="max-w-md">
-      <p className="text-[13px] font-medium">Gerätemonitor</p>
-      <dl className="mt-3 grid grid-cols-[140px_1fr] gap-y-2 text-[13px]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-muted">{k}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-      </dl>
+    <div className="mx-auto grid max-w-2xl gap-5">
+      <div>
+        <h2 className="text-[20px] font-semibold tracking-tight">System</h2>
+        <p className="mt-1 text-[13px] text-muted">Updates und Geräteinformationen getrennt.</p>
+      </div>
       <UpdateSection state={update} />
+      <SettingCard title="Gerät" hint="Was dieses Gerät über sich selbst meldet.">
+        <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-[13px]">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted">{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </SettingCard>
     </div>
   );
 }
@@ -574,8 +690,8 @@ function UpdateSection({ state }: { state: UpdateState | null }) {
   }
 
   return (
-    <div className="mt-6 grid gap-2 rounded-md bg-elevated/50 p-3 text-[13px]">
-      <p className="font-medium">Updates</p>
+    <SettingCard title="Updates" hint="Desktop-Installer und Server-Stand.">
+    <div className="grid gap-2 text-[13px]">
       <p className="text-muted">{detail}</p>
       {state?.status === "error" && state.error && <ErrorText>{state.error}</ErrorText>}
       <div className="flex gap-2">
@@ -605,6 +721,7 @@ function UpdateSection({ state }: { state: UpdateState | null }) {
       )}
       <UpdateHistory />
     </div>
+    </SettingCard>
   );
 }
 

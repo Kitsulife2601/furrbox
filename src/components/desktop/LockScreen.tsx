@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useDesktop } from "@/store/desktop";
@@ -23,7 +23,7 @@ export function LockScreen({ userName, style }: { userName: string | null; style
       type="button"
       onClick={unlock}
       style={style}
-      className={`relative flex h-dvh w-full flex-col items-center justify-end overflow-hidden bg-cover bg-center wallpaper-${wallpaper} text-fg`}
+      className={`furr-lock-in relative flex h-dvh w-full flex-col items-center justify-end overflow-hidden bg-cover bg-center wallpaper-${wallpaper} text-fg`}
     >
       <div className="pointer-events-none absolute inset-0 bg-bg/25" />
       <div className="relative mb-auto mt-[18vh] flex flex-col items-center text-center">

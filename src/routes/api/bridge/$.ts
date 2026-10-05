@@ -14,15 +14,16 @@
 //   POST /api/bridge/file-down-done     -> { fileId, ok, totalChunks?, error? }
 import { createFileRoute } from "@tanstack/react-router";
 import { appendTextFile, discordName, getSetting, getSql, iso, newId, notify, setSetting } from "@/lib/furr/core";
+import { bridgeError, bridgeJson, runSideEffect, safeJsonParse } from "@/lib/furr/http";
 import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
 import { VRC_ACCESS, VRC_REGION, parseLocation, vrchatAuditAction } from "@/lib/furr/vrchat-location";
 import { isRole } from "@/lib/furr/roles";
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-}
-
 const DUTY_ROLE: Record<string, string> = { dev: "Dev", owner: "Owner", moderator: "Mod", supporter: "Supporter" };
+const MAX_MEMBERS_PER_PUSH = 2_000;
+const MAX_PRESENCES_PER_PUSH = 2_000;
+const MAX_AUDIT_ENTRIES = 500;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * "Instance opened" message for Discord: who is anwesend (can moderate right now) and who is not.
@@ -76,12 +77,20 @@ type MemberSnapshot = {
 };
 
 async function handle(request: Request, action: string) {
-  if (!process.env.BOT_BRIDGE_TOKEN) return json({ error: "BOT_BRIDGE_TOKEN ist nicht gesetzt." }, 503);
-  if (!authorized(request)) return json({ error: "Unauthorized" }, 401);
+  if (!process.env.BOT_BRIDGE_TOKEN) return bridgeError("BOT_BRIDGE_TOKEN ist nicht gesetzt.", 503);
+  if (!authorized(request)) return bridgeError("Unauthorized", 401);
   const sql = await getSql();
   await setSetting("bot_last_seen", new Date().toISOString());
 
   if (request.method === "GET" && action === "queue") {
+    // Stuck Discord moderation / inspect after bot picked them up but never reported back.
+    await sql`
+      update moderation_request set status = 'failed', error = 'Der Discord-Bot hat nicht reagiert.', completed_at = now()
+      where status = 'dispatched' and created_at < now() - interval '12 minutes'`;
+    await sql`
+      update message_inspect set status = 'failed', completed_at = now()
+      where status in ('queued', 'dispatched') and created_at < now() - interval '12 minutes'`;
+
     const moderation = await sql<{
       id: string;
       action: string;
@@ -100,7 +109,7 @@ async function handle(request: Request, action: string) {
     // VRChat jobs. A login job's payload (contains the password) is wiped as soon as it is handed out.
     await sql`
       update vrchat_job set status = 'failed', error = 'Der Discord-Bot hat nicht reagiert.', payload_json = null
-      where status = 'queued' and created_at < now() - interval '12 minutes'`;
+      where status in ('queued', 'dispatched') and created_at < now() - interval '12 minutes'`;
     const vrchatJobs = await sql<{ id: string; kind: string; payload_json: string | null }>`
       select id, kind, payload_json from vrchat_job where status = 'queued' order by created_at limit 10`;
     for (const job of vrchatJobs) {
@@ -125,7 +134,7 @@ async function handle(request: Request, action: string) {
     // Lets the bot poll fast only while someone has FurrBox open (keeps the database asleep otherwise).
     const activeRows = await sql<{ n: number }>`
       select count(*)::int as n from furr_presence where last_heartbeat_at > now() - interval '3 minutes'`;
-    return json({
+    return bridgeJson({
       active: (activeRows[0]?.n ?? 0) > 0,
       moderation: moderation.map((m) => ({
         requestId: m.id,
@@ -137,7 +146,11 @@ async function handle(request: Request, action: string) {
         durationMs: m.duration_ms ?? undefined,
       })),
       inspections: inspections.map((i) => ({ requestId: i.id, messageId: i.message_id })),
-      vrchatJobs: vrchatJobs.map((j) => ({ jobId: j.id, kind: j.kind, payload: j.payload_json ? JSON.parse(j.payload_json) : {} })),
+      vrchatJobs: vrchatJobs.map((j) => ({
+        jobId: j.id,
+        kind: j.kind,
+        payload: safeJsonParse<Record<string, unknown>>(j.payload_json, {}),
+      })),
       discordMessages: outbox.map((m) => ({ channelId: m.channel_id, content: m.content })),
       botFiles: {
         uploads: uploads.map((u) => ({ fileId: u.id, folder: u.folder, name: u.name, totalChunks: u.bot_chunks })),
@@ -146,31 +159,34 @@ async function handle(request: Request, action: string) {
     });
   }
 
-  if (request.method !== "POST") return json({ error: "Not found" }, 404);
+  if (request.method !== "POST") return bridgeError("Not found", 404);
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (action === "file-take") {
     const fileId = String(body.fileId ?? "");
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
     const rows = await sql<{ data_b64: string }>`
       delete from bot_file_chunk where file_id = ${fileId} and direction = 'up' and idx = ${idx} returning data_b64`;
     const [f] = await sql<{ bot_chunks: number | null; bot_state: string | null }>`
       select bot_chunks, bot_state from furr_file where id = ${fileId}`;
-    return json({ data: rows[0]?.data_b64 ?? null, totalChunks: f?.bot_chunks ?? null, active: f?.bot_state === "uploading" });
+    return bridgeJson({ data: rows[0]?.data_b64 ?? null, totalChunks: f?.bot_chunks ?? null, active: f?.bot_state === "uploading" });
   }
 
   if (action === "file-stored") {
     const fileId = String(body.fileId ?? "");
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const ok = Boolean(body.ok);
     await sql`
       update furr_file set bot_state = ${ok ? "stored" : "failed"}, bot_error = ${ok ? null : String(body.error ?? "Fehler beim Speichern").slice(0, 300)}
       where id = ${fileId}`;
     await sql`delete from bot_file_chunk where file_id = ${fileId} and direction = 'up'`;
-    return json({ ok: true });
+    return bridgeJson({ ok: true });
   }
 
   if (action === "file-down") {
     const fileId = String(body.fileId ?? "");
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
     // Without data it is only a "how many pieces are still waiting?" check.
     if (typeof body.data === "string") {
@@ -181,21 +197,22 @@ async function handle(request: Request, action: string) {
     const [{ n }] = await sql<{ n: number }>`
       select count(*)::int as n from bot_file_chunk where file_id = ${fileId} and direction = 'down'`;
     const [r] = await sql<{ status: string }>`select status from bot_file_request where file_id = ${fileId}`;
-    return json({ pending: n, cancelled: r?.status !== "sending" });
+    return bridgeJson({ pending: n, cancelled: r?.status !== "sending" });
   }
 
   if (action === "file-down-done") {
     const fileId = String(body.fileId ?? "");
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const ok = Boolean(body.ok);
     await sql`
       update bot_file_request set status = ${ok ? "done" : "failed"}, total_chunks = ${ok ? Math.trunc(Number(body.totalChunks) || 0) : null},
         error = ${ok ? null : String(body.error ?? "Fehler").slice(0, 300)}
       where file_id = ${fileId}`;
-    return json({ ok: true });
+    return bridgeJson({ ok: true });
   }
 
   if (action === "members") {
-    const members = Array.isArray(body.members) ? (body.members as MemberSnapshot[]) : [];
+    const members = Array.isArray(body.members) ? (body.members as MemberSnapshot[]).slice(0, MAX_MEMBERS_PER_PUSH) : [];
     for (const m of members) {
       if (!/^\d{17,22}$/.test(String(m.discordId))) continue;
       const privilege = isRole(m.highestPrivilege) ? m.highestPrivilege : "none";
@@ -211,24 +228,29 @@ async function handle(request: Request, action: string) {
           discord_status = excluded.discord_status, synced_at = now()`;
     }
     if (Array.isArray(body.removed)) {
-      for (const id of body.removed as string[]) await sql`delete from discord_member where discord_id = ${String(id)}`;
+      for (const id of (body.removed as string[]).slice(0, MAX_MEMBERS_PER_PUSH)) {
+        await sql`delete from discord_member where discord_id = ${String(id)}`;
+      }
     }
-    return json({ ok: true, count: members.length });
+    return bridgeJson({ ok: true, count: members.length });
   }
 
   if (action === "presence") {
-    const presences = Array.isArray(body.presences) ? (body.presences as { discordId: string; discordStatus: string }[]) : [];
+    const presences = Array.isArray(body.presences)
+      ? (body.presences as { discordId: string; discordStatus: string }[]).slice(0, MAX_PRESENCES_PER_PUSH)
+      : [];
     for (const p of presences) {
       const status = STATUSES.has(p.discordStatus) ? p.discordStatus : "offline";
       await sql`
         update discord_member set discord_status = ${status}, last_presence_at = now()
         where discord_id = ${String(p.discordId)}`;
     }
-    return json({ ok: true, count: presences.length });
+    return bridgeJson({ ok: true, count: presences.length });
   }
 
   if (action === "moderation-result") {
     const requestId = String(body.requestId ?? "");
+    if (!UUID_RE.test(requestId)) return bridgeError("Ungültige requestId", 400);
     const status = body.status === "success" ? "success" : "failed";
     const error = body.error ? String(body.error).slice(0, 1000) : null;
     const rows = await sql<{
@@ -242,36 +264,40 @@ async function handle(request: Request, action: string) {
       where id = ${requestId}
       returning action, moderator_discord_id, target_discord_id, reason, duration_ms`;
     const req = rows[0];
-    if (!req) return json({ error: "Unknown requestId" }, 404);
-    const moderatorName = await discordName(req.moderator_discord_id);
-    const targetName = await discordName(req.target_discord_id);
-    const block = [
-      "------------------------------------------------------------",
-      `Date: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
-      `Status: ${status.toUpperCase()}`,
-      `Action: ${req.action.toUpperCase()}`,
-      `Moderator Name: ${moderatorName}`,
-      `Target Name: ${targetName} (${req.target_discord_id})`,
-      `Request ID: ${requestId}`,
-      req.duration_ms ? `Duration: ${Math.round(Number(req.duration_ms) / 1000)} seconds` : "Duration: Not set",
-      "Reason:",
-      req.reason,
-      error ? `Error: ${error}` : "",
-      "------------------------------------------------------------",
-      "",
-    ]
-      .filter(Boolean)
-      .join("\r\n");
-    await appendTextFile("public", `${DISCORD_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, "bot");
-    await notify(
-      `Moderation ${status === "success" ? "ausgeführt" : "fehlgeschlagen"}`,
-      `${req.action.toUpperCase()} gegen ${targetName} durch ${moderatorName}${error ? ` – ${error}` : ""}.`,
-    );
-    return json({ ok: true });
+    if (!req) return bridgeError("Unknown requestId", 404);
+    // Audit-Log + Notify nach dem kritischen DB-Update – mit Timeout, Bot wartet nicht ewig.
+    await runSideEffect(async () => {
+      const moderatorName = await discordName(req.moderator_discord_id);
+      const targetName = await discordName(req.target_discord_id);
+      const block = [
+        "------------------------------------------------------------",
+        `Date: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+        `Status: ${status.toUpperCase()}`,
+        `Action: ${req.action.toUpperCase()}`,
+        `Moderator Name: ${moderatorName}`,
+        `Target Name: ${targetName} (${req.target_discord_id})`,
+        `Request ID: ${requestId}`,
+        req.duration_ms ? `Duration: ${Math.round(Number(req.duration_ms) / 1000)} seconds` : "Duration: Not set",
+        "Reason:",
+        req.reason,
+        error ? `Error: ${error}` : "",
+        "------------------------------------------------------------",
+        "",
+      ]
+        .filter(Boolean)
+        .join("\r\n");
+      await appendTextFile("public", `${DISCORD_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, "bot");
+      await notify(
+        `Moderation ${status === "success" ? "ausgeführt" : "fehlgeschlagen"}`,
+        `${req.action.toUpperCase()} gegen ${targetName} durch ${moderatorName}${error ? ` – ${error}` : ""}.`,
+      );
+    }, "moderation-result-audit");
+    return bridgeJson({ ok: true });
   }
 
   if (action === "inspect-result") {
     const requestId = String(body.requestId ?? "");
+    if (!UUID_RE.test(requestId)) return bridgeError("Ungültige requestId", 400);
     const result = {
       requestId,
       messageId: String(body.messageId ?? ""),
@@ -287,11 +313,12 @@ async function handle(request: Request, action: string) {
     await sql`
       update message_inspect set status = 'done', result_json = ${JSON.stringify(result)}, completed_at = now()
       where id = ${requestId}`;
-    return json({ ok: true });
+    return bridgeJson({ ok: true });
   }
 
   if (action === "vrchat-result") {
     const jobId = String(body.jobId ?? "");
+    if (!UUID_RE.test(jobId)) return bridgeError("Ungültige jobId", 400);
     const ok = Boolean(body.ok);
     const error = ok ? null : String(body.error ?? "Unbekannter Fehler").slice(0, 500);
     const rows = await sql<{ kind: string; payload_json: string | null; requested_by: string }>`
@@ -300,40 +327,45 @@ async function handle(request: Request, action: string) {
       where id = ${jobId}
       returning kind, payload_json, requested_by`;
     const job = rows[0];
-    if (!job) return json({ error: "Unknown jobId" }, 404);
+    if (!job) return bridgeError("Unknown jobId", 404);
     if (job.kind === "moderate" && job.payload_json) {
-      const p = JSON.parse(job.payload_json) as { action: string; userId: string; userName?: string; reason: string };
-      const label: Record<string, string> = { kick: "Kick", ban: "Bann", unban: "Entbannung" };
-      const mods = await sql<{ display_name: string; role: string }>`
-        select display_name, role from furr_profile where user_id = ${job.requested_by}`;
-      const modName = mods[0]?.display_name ?? "Unbekannt";
-      await sql`
-        insert into vrchat_moderation (id, action, target_user_id, target_name, reason, moderator_user_id, status, error)
-        values (${newId()}, ${p.action}, ${p.userId}, ${p.userName || null}, ${p.reason}, ${job.requested_by},
-                ${ok ? "success" : "failed"}, ${error})`;
-      const block = [
-        "------------------------------------------------------------",
-        `Datum: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
-        "Plattform: VRChat (Gruppe)",
-        `Status: ${ok ? "ERFOLGREICH" : "FEHLGESCHLAGEN"}`,
-        `Aktion: ${label[p.action] ?? p.action}`,
-        `Moderator: ${modName}`,
-        `Ziel: ${p.userName || p.userId} (${p.userId})`,
-        "Grund:",
-        p.reason,
-        error ? `Fehler: ${error}` : "",
-        "------------------------------------------------------------",
-        "",
-      ]
-        .filter(Boolean)
-        .join("\r\n");
-      await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, job.requested_by);
-      await notify(
-        `VRChat: ${label[p.action] ?? p.action} ${ok ? "ausgeführt" : "fehlgeschlagen"}`,
-        `${p.userName || p.userId} – von ${modName}${error ? ` (${error})` : ""}`,
-      );
+      const p = safeJsonParse<{ action: string; userId: string; userName?: string; reason: string } | null>(job.payload_json, null);
+      if (p?.userId && p.reason) {
+        const label: Record<string, string> = { kick: "Kick", ban: "Bann", unban: "Entbannung" };
+        const mods = await sql<{ display_name: string; role: string }>`
+          select display_name, role from furr_profile where user_id = ${job.requested_by}`;
+        const modName = mods[0]?.display_name ?? "Unbekannt";
+        // DB-Eintrag synchron (ModLog / Audit-Dedup) – Datei + Notify mit Timeout.
+        await sql`
+          insert into vrchat_moderation (id, action, target_user_id, target_name, reason, moderator_user_id, status, error)
+          values (${newId()}, ${p.action}, ${p.userId}, ${p.userName || null}, ${p.reason}, ${job.requested_by},
+                  ${ok ? "success" : "failed"}, ${error})`;
+        await runSideEffect(async () => {
+          const block = [
+            "------------------------------------------------------------",
+            `Datum: ${new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}`,
+            "Plattform: VRChat (Gruppe)",
+            `Status: ${ok ? "ERFOLGREICH" : "FEHLGESCHLAGEN"}`,
+            `Aktion: ${label[p.action] ?? p.action}`,
+            `Moderator: ${modName}`,
+            `Ziel: ${p.userName || p.userId} (${p.userId})`,
+            "Grund:",
+            p.reason,
+            error ? `Fehler: ${error}` : "",
+            "------------------------------------------------------------",
+            "",
+          ]
+            .filter(Boolean)
+            .join("\r\n");
+          await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, job.requested_by);
+          await notify(
+            `VRChat: ${label[p.action] ?? p.action} ${ok ? "ausgeführt" : "fehlgeschlagen"}`,
+            `${p.userName || p.userId} – von ${modName}${error ? ` (${error})` : ""}`,
+          );
+        }, "vrchat-result-audit");
+      }
     }
-    return json({ ok: true });
+    return bridgeJson({ ok: true });
   }
 
   if (action === "vrchat-audit") {
@@ -347,7 +379,7 @@ async function handle(request: Request, action: string) {
       description?: string;
       data?: unknown;
     };
-    const entries = Array.isArray(body.entries) ? (body.entries as Entry[]) : [];
+    const entries = Array.isArray(body.entries) ? (body.entries as Entry[]).slice(0, MAX_AUDIT_ENTRIES) : [];
     const silent = Boolean(body.initial); // first import: no notification storm
     let added = 0;
     for (const e of entries) {
@@ -360,18 +392,21 @@ async function handle(request: Request, action: string) {
         returning id`;
       if (!rows.length) continue;
       added += 1;
-      const action = vrchatAuditAction(String(e.eventType));
+      const actionLabel = vrchatAuditAction(String(e.eventType));
       // Kicks/bans FurrBox itself triggered through the bot are announced already.
       const viaFurrBox = e.targetId
         ? await sql`
             select 1 from vrchat_moderation
             where target_user_id = ${e.targetId} and created_at > now() - interval '3 minutes'`
         : [];
-      if (!silent && action && !viaFurrBox.length) {
-        await notify(`VRChat: ${action}`, e.description || `${e.actorDisplayName ?? "Jemand"} – ${e.eventType}`);
+      if (!silent && actionLabel && !viaFurrBox.length) {
+        await runSideEffect(
+          () => notify(`VRChat: ${actionLabel}`, e.description || `${e.actorDisplayName ?? "Jemand"} – ${e.eventType}`),
+          "vrchat-audit-notify",
+        );
       }
     }
-    return json({ ok: true, added });
+    return bridgeJson({ ok: true, added });
   }
 
   if (action === "vrchat-state") {
@@ -395,6 +430,7 @@ async function handle(request: Request, action: string) {
       const open = await sql<{ instance_id: string }>`select instance_id from vrchat_instance where closed_at is null`;
       const known = new Set(open.map((r) => r.instance_id));
       for (const i of instances) {
+        if (!i?.instanceId || !i.location || !i.world?.id) continue;
         const loc = parseLocation(i.location);
         await sql`
           insert into vrchat_instance (instance_id, location, world_id, world_name, world_image, capacity, member_count, region, access_type)
@@ -406,8 +442,10 @@ async function handle(request: Request, action: string) {
             first_seen = case when vrchat_instance.closed_at is not null then now() else vrchat_instance.first_seen end`;
         if (!known.has(i.instanceId)) {
           const headline = `${i.world.name} · ${VRC_REGION[loc.region] ?? loc.region} · ${VRC_ACCESS[loc.access] ?? loc.access} · ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`;
-          await notify("VRChat-Instanz geöffnet", headline);
-          await announceInstance(headline).catch(() => undefined);
+          await runSideEffect(async () => {
+            await notify("VRChat-Instanz geöffnet", headline);
+            await announceInstance(headline);
+          }, "instance-opened");
         }
       }
       await sql.query(
@@ -415,17 +453,27 @@ async function handle(request: Request, action: string) {
         [instances.map((i) => i.instanceId)],
       );
     }
-    return json({ ok: true });
+    return bridgeJson({ ok: true });
   }
 
-  return json({ error: "Not found" }, 404);
+  return bridgeError("Not found", 404);
+}
+
+async function safeHandle(request: Request, action: string) {
+  try {
+    return await handle(request, action);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Interner Bridge-Fehler";
+    console.warn("[furrbox] bridge error", action, message);
+    return bridgeError(message.slice(0, 300), 500, "BRIDGE_ERROR");
+  }
 }
 
 export const Route = createFileRoute("/api/bridge/$")({
   server: {
     handlers: {
-      GET: ({ request, params }) => handle(request, params._splat ?? ""),
-      POST: ({ request, params }) => handle(request, params._splat ?? ""),
+      GET: ({ request, params }) => safeHandle(request, params._splat ?? ""),
+      POST: ({ request, params }) => safeHandle(request, params._splat ?? ""),
     },
   },
 });

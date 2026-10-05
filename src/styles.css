@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @theme {
   --color-bg: var(--os-bg);
@@ -450,7 +450,180 @@
 @keyframes furr-vr-alert { from { box-shadow: 0 0 0 0 rgb(248 113 113 / 0.55); } to { box-shadow: 0 0 0 10px rgb(248 113 113 / 0); background-color: rgb(239 68 68 / 0.4); } }
 @media (prefers-reduced-motion: reduce) { .furr-vr-alert { animation: none; } }
 
-/* FurrBox VR: the window above the wrist fades in (a short fade, few frames – no flicker). */
-.furr-vr-window { animation: furr-vr-window 0.18s ease-out both; }
-@keyframes furr-vr-window { from { opacity: 0; transform: translateY(12px); } }
-@media (prefers-reduced-motion: reduce) { .furr-vr-window { animation: none; } }
+/* FurrBox VR: Übergänge am Arm – gleiche Sprache wie der Votekick-Hinweis (kurz, weich, einmalig).
+   Die Desktop-App schickt während dieser Animationen kurz flüssige Bilder (24 fps, „boost“),
+   im Ruhezustand nur ca. 1 Bild/s. Dauern hier und in vr.tsx / vr-overlay.cjs zusammen ändern. */
+/* Fenster über dem Handgelenk: wächst von unten aus dem Widget heraus (260 ms = 2 × Votekick-Notenabstand 130 ms) … */
+.furr-vr-window { transform-origin: 50% 100%; animation: furr-vr-window 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes furr-vr-window { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+/* … und sinkt beim Zuklappen wieder hinein (200 ms = WINDOW_OUT_MS in vr.tsx). */
+.furr-vr-window-out { animation: furr-vr-window-out 0.2s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes furr-vr-window-out { to { opacity: 0; transform: translateY(10px) scale(0.98); } }
+/* Neuer Hinweis im Widget: gleitet weich herein. */
+.furr-vr-notice { animation: furr-vr-notice 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes furr-vr-notice { from { opacity: 0; transform: translateY(8px); } }
+/* Kleiner „Pop“ (Icon, Anwesend-Punkt, „gesendet“) – gleiche Feder wie Sticker / MOTION.easePop (450 ms). */
+.furr-vr-pop { animation: furr-vr-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes furr-vr-pop { from { opacity: 0; transform: scale(0.55); } }
+/* Einmaliges Aufleuchten bei einem neuen Hinweis (statt Dauerblinken). */
+.furr-vr-ring { animation: furr-vr-ring 0.7s ease-out both; }
+.furr-vr-ring-red { --furr-ring: 239 68 68; }
+.furr-vr-ring-blue { --furr-ring: 76 194 255; }
+.furr-vr-ring-green { --furr-ring: 52 211 153; }
+@keyframes furr-vr-ring {
+  from { background-color: rgb(var(--furr-ring) / 0.38); box-shadow: inset 0 0 0 3px rgb(var(--furr-ring) / 0.9); }
+  to { background-color: rgb(var(--furr-ring) / 0); box-shadow: inset 0 0 0 12px rgb(var(--furr-ring) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .furr-vr-window,
+  .furr-vr-window-out,
+  .furr-vr-notice,
+  .furr-vr-pop,
+  .furr-vr-ring { animation: none; }
+}
+
+/* ---- Desktop MOTION feedback (aligned with Votekick / src/lib/furr/motion.ts) ---- */
+.boot-fill {
+  transition: width 0.39s ease-out;
+}
+
+.furr-toast-in {
+  animation: furr-toast-in 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+.furr-toast-out {
+  animation: furr-toast-out 0.18s ease-out both;
+  pointer-events: none;
+}
+@keyframes furr-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.94);
+  }
+}
+@keyframes furr-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.furr-flyout-in {
+  animation: furr-flyout-in 0.18s ease-out both;
+}
+@keyframes furr-flyout-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+.furr-window-in {
+  animation: furr-window-in 0.18s ease-out both;
+}
+@keyframes furr-window-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+}
+
+.furr-lock-in {
+  animation: furr-lock-in 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes furr-lock-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+
+.furr-update-pulse {
+  animation: furr-update-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes furr-update-pulse {
+  from {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.furr-snap-preview {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--os-accent, #4cc2ff) 85%, white);
+  background: color-mix(in srgb, var(--os-accent, #4cc2ff) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--os-accent, #4cc2ff) 35%, transparent), 0 12px 40px rgb(0 0 0 / 0.35);
+  transition:
+    left 0.13s ease-out,
+    top 0.13s ease-out,
+    width 0.13s ease-out,
+    height 0.13s ease-out,
+    opacity 0.13s ease-out;
+  animation: furr-snap-preview-in 0.18s ease-out both;
+}
+.furr-snap-preview-max {
+  border-radius: 0;
+}
+@keyframes furr-snap-preview-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.furr-alttab {
+  animation: furr-flyout-in 0.18s ease-out both;
+}
+.furr-alttab-card {
+  transition:
+    transform 0.13s ease-out,
+    box-shadow 0.13s ease-out,
+    background-color 0.13s ease-out;
+}
+.furr-alttab-card[data-active="true"] {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px var(--os-accent, #4cc2ff), 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+.furr-show-desktop {
+  width: 10px;
+  align-self: stretch;
+  margin: 2px 0 2px 4px;
+  border-radius: 2px;
+  border-left: 1px solid color-mix(in oklab, var(--os-fg) 18%, transparent);
+  background: transparent;
+  transition: background 0.13s ease-out;
+}
+.furr-show-desktop:hover,
+.furr-show-desktop[data-active="true"] {
+  background: color-mix(in oklab, var(--os-fg) 14%, transparent);
+}
+
+.taskbar-running {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  height: 3px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  transition:
+    width 0.18s ease-out,
+    background-color 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .furr-toast-in,
+  .furr-toast-out,
+  .furr-flyout-in,
+  .furr-window-in,
+  .furr-lock-in,
+  .furr-update-pulse,
+  .furr-snap-preview,
+  .furr-alttab {
+    animation: none !important;
+  }
+}

@@ -1,4 +1,4 @@
-import { UpdateTrayButton } from "./UpdatePopup";
+﻿import { UpdateTrayButton } from "./UpdatePopup";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Bell, MessageSquare, Search, Wifi, WifiOff } from "lucide-react";
@@ -19,6 +19,16 @@ function StartGlyph() {
   );
 }
 
+function RunningDot({ focused, count }: { focused: boolean; count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={cn("taskbar-running", focused ? "w-5 bg-accent" : "w-2 bg-fg/55")}
+      aria-hidden
+    />
+  );
+}
+
 export function Taskbar({ now }: { now: Date }) {
   const me = useMe();
   const windows = useDesktop((s) => s.windows);
@@ -27,6 +37,7 @@ export function Taskbar({ now }: { now: Date }) {
   const searchOpen = useDesktop((s) => s.searchOpen);
   const chatOpen = useDesktop((s) => s.chatOpen);
   const tray = useDesktop((s) => s.tray);
+  const desktopPeek = useDesktop((s) => s.desktopPeek);
   const toggleStart = useDesktop((s) => s.toggleStart);
   const toggleSearch = useDesktop((s) => s.toggleSearch);
   const toggleChat = useDesktop((s) => s.toggleChat);
@@ -34,6 +45,7 @@ export function Taskbar({ now }: { now: Date }) {
   const openApp = useDesktop((s) => s.openApp);
   const focusWindow = useDesktop((s) => s.focusWindow);
   const minimizeWindow = useDesktop((s) => s.minimizeWindow);
+  const toggleShowDesktop = useDesktop((s) => s.toggleShowDesktop);
   const connected = useSync((s) => s.connected);
   const unread = useSync((s) => s.unreadChat);
 
@@ -77,7 +89,7 @@ export function Taskbar({ now }: { now: Date }) {
               )}
             >
               <Icon className="size-5" strokeWidth={1.6} />
-              {running.length > 0 && <span className={cn("absolute bottom-1 h-0.5 rounded-full", focused ? "w-4 bg-accent" : "w-1.5 bg-muted")} />}
+              <RunningDot focused={focused} count={running.length} />
             </button>
           );
         })}
@@ -94,12 +106,12 @@ export function Taskbar({ now }: { now: Date }) {
               className={cn("relative grid size-11 shrink-0 place-items-center rounded-md hover:bg-fg/8", focused && "bg-fg/10")}
             >
               <Icon className="size-5" strokeWidth={1.6} />
-              <span className={cn("absolute bottom-1 h-0.5 rounded-full", focused ? "w-4 bg-accent" : "w-1.5 bg-muted")} />
+              <RunningDot focused={focused} count={1} />
             </button>
           );
         })}
       </nav>
-      <div className="flex items-center gap-0.5 pr-1">
+      <div className="flex items-center gap-0.5 pr-0">
         <UpdateTrayButton />
         <button
           type="button"
@@ -133,6 +145,14 @@ export function Taskbar({ now }: { now: Date }) {
           <p className="text-[12px] font-medium tabular-nums">{format(now, "HH:mm")}</p>
           <p className="text-[11px] text-muted">{format(now, "dd.MM.yyyy", { locale: de })}</p>
         </button>
+        <button
+          type="button"
+          aria-label="Desktop anzeigen"
+          title="Desktop anzeigen"
+          data-active={desktopPeek ? "true" : "false"}
+          onClick={toggleShowDesktop}
+          className="furr-show-desktop"
+        />
       </div>
     </footer>
   );

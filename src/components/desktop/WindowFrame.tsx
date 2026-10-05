@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent as ReactPointerEvent } from "react";
+﻿import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { Copy, Minus, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApp } from "@/lib/apps";
@@ -19,7 +19,7 @@ const EDGES: { edge: Edge; className: string }[] = [
 ];
 
 /** Aero-snap targets: edges = halves, corners = quarters, top = maximize. */
-function snapTarget(px: number, py: number): Rect | "max" | null {
+export function snapTarget(px: number, py: number): Rect | "max" | null {
   const vp = viewport();
   const halfW = Math.round(vp.width / 2);
   const halfH = Math.round(vp.height / 2);
@@ -37,6 +37,21 @@ function snapTarget(px: number, py: number): Rect | "max" | null {
   return null;
 }
 
+export function SnapAssistPreview() {
+  const preview = useDesktop((s) => s.snapPreview);
+  const zTop = useDesktop((s) => s.zTop);
+  if (!preview) return null;
+  const vp = viewport();
+  const rect = preview === "max" ? { x: 0, y: 0, w: vp.width, h: vp.height } : preview;
+  return (
+    <div
+      className={cn("furr-snap-preview", preview === "max" && "furr-snap-preview-max")}
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: Math.max(1, zTop) }}
+      aria-hidden
+    />
+  );
+}
+
 export function WindowFrame({ win }: { win: OsWindow }) {
   const focusWindow = useDesktop((s) => s.focusWindow);
   const closeWindow = useDesktop((s) => s.closeWindow);
@@ -45,6 +60,7 @@ export function WindowFrame({ win }: { win: OsWindow }) {
   const moveWindow = useDesktop((s) => s.moveWindow);
   const resizeWindow = useDesktop((s) => s.resizeWindow);
   const snapWindow = useDesktop((s) => s.snapWindow);
+  const setSnapPreview = useDesktop((s) => s.setSnapPreview);
   const focused = useDesktop((s) => s.focusedId === win.id);
   const app = getApp(win.appId);
   const Icon = app.icon;
@@ -92,7 +108,7 @@ export function WindowFrame({ win }: { win: OsWindow }) {
       aria-label={win.title}
       onPointerDown={() => focusWindow(win.id)}
       className={cn(
-        "absolute flex flex-col overflow-hidden bg-surface text-fg win-shadow",
+        "absolute flex flex-col overflow-hidden bg-surface text-fg win-shadow furr-window-in",
         win.maximized ? "rounded-none" : "rounded-lg",
         focused ? "opacity-100" : "opacity-95",
       )}
@@ -112,14 +128,21 @@ export function WindowFrame({ win }: { win: OsWindow }) {
           if (!d) return;
           d.last = { x: e.clientX, y: e.clientY };
           moveWindow(win.id, d.sx + e.clientX - d.ox, d.sy + e.clientY - d.oy);
+          const moved = Math.abs(d.last.x - d.ox) + Math.abs(d.last.y - d.oy) > 4;
+          setSnapPreview(moved ? snapTarget(d.last.x, d.last.y) : null);
         }}
         onPointerUp={() => {
           const d = drag.current;
           drag.current = null;
+          setSnapPreview(null);
           if (!d) return;
           const moved = Math.abs(d.last.x - d.ox) + Math.abs(d.last.y - d.oy) > 4;
           const target = moved ? snapTarget(d.last.x, d.last.y) : null;
           if (target) snapWindow(win.id, target);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          setSnapPreview(null);
         }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2 pl-3">

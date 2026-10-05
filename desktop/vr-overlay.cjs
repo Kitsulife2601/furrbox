@@ -32,6 +32,17 @@ const POINT_ON_MS = 120;
 const FRAME_GAP_MS = 1200;
 const POINT_OFF_MS = 2500;
 const GAZE_OFF_MS = 2500;
+// Kurze Aussetzer des Lasers (Zittern am Rand) setzen das Aufklappen nicht gleich zurück.
+const POINT_GRACE_MS = 90;
+// Bildrate: im Ruhezustand sparsam (weniger Bildwechsel = weniger Flackern), während einer
+// Animation (Auf-/Zuklappen, Hinweis, Klick) kurz flüssig – wie beim Votekick-Hinweis.
+const IDLE_FPS = 10;
+const ANIM_FPS = 24;
+const BOOST_MAX_MS = 1500;
+const BOOST_OPEN_MS = 450; // Auf-/Zuklappen (Animation 260 ms + Puffer)
+const BOOST_CLICK_MS = 600; // Klick-Feedback („Pop“ 450 ms) und Seitenwechsel (300 ms)
+// So viele Fehler hintereinander (à 40 ms) gelten als „SteamVR ist weg“ → neu verbinden.
+const MAX_PUMP_ERRORS = 50;
 const EVENT = {
   mouseMove: 300,
   mouseDown: 301,
@@ -174,6 +185,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let gazeSince = 0;
   let gazeLost = 0;
   let mode = "widget"; // widget | full
+  let boostUntil = 0;
+  let boostTimer = null;
+  let pumpErrors = 0;
+  let lastPumpError = "";
+  let appliedKey = ""; // zuletzt gesetzte Position – nur bei Änderung neu an SteamVR geben
   // The picture always has the full size; with the window closed its upper part is simply empty.
   // (Changing the size on every open / close made the panel flicker.)
   const size = () => FULL;
@@ -294,16 +310,21 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function applyPlacement() {
     if (!api || handle === null) return;
-    api.ovr("SetOverlayWidthInMeters", "int FN(uint64_t, float)", handle, widthMeters());
     const hands = findHands();
     const device = placement.hand === "right" ? hands.right : hands.left;
     pointerHand = placement.hand === "right" ? hands.left : hands.right;
     if (device === INVALID_DEVICE) {
       // No controller yet: keep the panel hidden instead of leaving it somewhere in the room.
       attachedTo = INVALID_DEVICE;
+      appliedKey = "";
       show(false);
       return;
     }
+    // Alle 5 s wird geprüft – die Position aber nur neu gesetzt, wenn sich etwas geändert hat
+    // (jedes Setzen kann in SteamVR einen kleinen Ruck geben).
+    const key = `${device}|${widthMeters()}|${JSON.stringify(placement)}`;
+    if (key === appliedKey && attachedTo === device && visible) return;
+    api.ovr("SetOverlayWidthInMeters", "int FN(uint64_t, float)", handle, widthMeters());
     const m = Buffer.alloc(48);
     matrixFor(placement, raise()).forEach((v, i) => m.writeFloatLE(v, i * 4));
     const e = api.ovr(
@@ -314,6 +335,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       m,
     );
     if (e) log(`VR-Overlay: Position konnte nicht gesetzt werden (Fehler ${e}).`);
+    appliedKey = e ? "" : key;
     if (loggedDevice !== device)
       log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
     loggedDevice = device;
@@ -426,6 +448,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function setGazing(on) {
     gazing = on;
+    boost(BOOST_OPEN_MS);
     if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-gaze", on);
   }
 
@@ -497,7 +520,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       if (!pointSince) pointSince = now;
       if (!pointing && now - pointSince >= POINT_ON_MS) setPointing(true);
     } else {
-      pointSince = 0;
+      if (now - lastHit > POINT_GRACE_MS) pointSince = 0;
       if (pointing && now - lastHit >= POINT_OFF_MS) setPointing(false);
     }
     updateGaze();
@@ -505,6 +528,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function setPointing(on) {
     pointing = on;
+    boost(BOOST_OPEN_MS);
     if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-point", on);
   }
 
@@ -525,7 +549,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         sandbox: true,
       },
     });
-    win.webContents.setFrameRate(10);
+    win.webContents.setFrameRate(IDLE_FPS);
     win.webContents.on("paint", (_event, _dirty, image) => pushFrame(image));
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.loadURL(`${url}/vr`).catch((error) => log("VR-Overlay: Seite lädt nicht:", error.message));
@@ -541,7 +565,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
    */
   function pushFrame(image) {
     if (!api || handle === null) return;
-    const wait = interactive ? 0 : FRAME_GAP_MS - (Date.now() - lastFrameAt);
+    const now = Date.now();
+    const wait = interactive || now < boostUntil ? 0 : FRAME_GAP_MS - (now - lastFrameAt);
     if (wait > 0) {
       pendingFrame = image;
       if (!frameTimer) {
@@ -559,6 +584,13 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function sendFrame(image) {
     if (!api || handle === null) return;
+    // Ein noch wartendes (älteres) Bild verwerfen – sonst kam es nach dem neuen Bild noch an und
+    // das Panel sprang kurz auf einen alten Stand zurück (sah aus wie Flackern).
+    pendingFrame = null;
+    if (frameTimer) {
+      clearTimeout(frameTimer);
+      frameTimer = null;
+    }
     lastFrameAt = Date.now();
     const size = image.getSize();
     if (!size.width || !size.height) return;
@@ -592,6 +624,30 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     }
   }
 
+  /**
+   * Für `ms` Millisekunden flüssige Bilder (ANIM_FPS, keine Drosselung), damit Übergänge weich
+   * laufen. Danach zurück auf die sparsame Ruhe-Bildrate.
+   */
+  function boost(ms) {
+    if (!win || win.isDestroyed() || !api) return;
+    const now = Date.now();
+    const until = now + Math.min(BOOST_MAX_MS, Math.max(0, Number(ms) || 0));
+    if (until <= boostUntil) return;
+    if (boostUntil <= now) win.webContents.setFrameRate(ANIM_FPS);
+    boostUntil = until;
+    // Ein gedrosselt wartendes Bild sofort zeigen – der erste Animationsschritt soll nicht hängen.
+    if (pendingFrame) sendFrame(pendingFrame);
+    if (boostTimer) clearTimeout(boostTimer);
+    boostTimer = setTimeout(endBoost, until - now);
+  }
+
+  function endBoost() {
+    if (boostTimer) clearTimeout(boostTimer);
+    boostTimer = null;
+    boostUntil = 0;
+    if (win && !win.isDestroyed()) win.webContents.setFrameRate(IDLE_FPS);
+  }
+
   function mouse(type, x, y, extra = {}) {
     if (!win || win.isDestroyed()) return;
     win.webContents.sendInputEvent({
@@ -623,9 +679,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         if (type === EVENT.mouseMove) mouse("mouseMove", x, y, mouseDown ? { button: "left" } : {});
         else if (type === EVENT.mouseDown) {
           mouseDown = true;
+          boost(BOOST_CLICK_MS);
           mouse("mouseDown", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.mouseUp) {
           mouseDown = false;
+          boost(BOOST_CLICK_MS);
           mouse("mouseUp", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.scrollSmooth || type === EVENT.scroll) {
           // Scroll data: xdelta, ydelta (floats) – position is unknown, scroll the middle of the page.
@@ -647,8 +705,19 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           return;
         }
       }
+      pumpErrors = 0;
     } catch (error) {
-      log("VR-Overlay:", error.message);
+      // Gleiche Meldung nicht 25× pro Sekunde ins Log schreiben.
+      if (error.message !== lastPumpError) log("VR-Overlay:", error.message);
+      lastPumpError = error.message;
+      pumpErrors += 1;
+      // SteamVR ist abgestürzt (ohne „wird beendet“-Meldung): sauber trennen, der 5-s-Takt
+      // verbindet neu, sobald SteamVR wieder läuft.
+      if (pumpErrors >= MAX_PUMP_ERRORS) {
+        log("VR-Overlay: SteamVR antwortet nicht mehr – verbinde neu.");
+        disconnect();
+        setState({ status: "waiting", error: null });
+      }
     }
   }
 
@@ -663,6 +732,27 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     visible = false;
     interactive = false;
     attachedTo = INVALID_DEVICE;
+    // Zustand zurücksetzen: nach einem SteamVR-Neustart startet die Seite frisch (zugeklappt).
+    // Blieb hier z. B. `pointing` hängen, klappte das erste Draufzeigen danach nicht auf.
+    pointing = false;
+    pointSince = 0;
+    gazing = false;
+    gazeSince = 0;
+    gazeLost = 0;
+    lastHit = 0;
+    mouseDown = false;
+    mode = "widget";
+    appliedKey = "";
+    loggedDevice = INVALID_DEVICE;
+    lastFrameError = -1;
+    pumpErrors = 0;
+    lastPumpError = "";
+    pendingFrame = null;
+    if (frameTimer) clearTimeout(frameTimer);
+    frameTimer = null;
+    if (boostTimer) clearTimeout(boostTimer);
+    boostTimer = null;
+    boostUntil = 0;
     try {
       lib?.shutdown();
     } catch {
@@ -704,6 +794,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     setPlacement(next) {
       placement = { ...placement, ...next };
       attachedTo = INVALID_DEVICE;
+      appliedKey = "";
       applyPlacement();
       for (const fn of listeners) fn(status());
       return placement;
@@ -713,6 +804,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       const wanted = next === "full" ? "full" : "widget";
       if (mode === wanted) return;
       mode = wanted;
+      boost(BOOST_OPEN_MS);
       log(`VR-Overlay: Fenster ${mode === "full" ? "offen" : "zu"}.`);
     },
     /** Battery of headset and controllers (0–1), null when a device does not report one. */
@@ -744,6 +836,10 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       };
       const hands = findHands();
       return { headset: read(0), left: read(hands.left), right: read(hands.right) };
+    },
+    /** Die /vr-Seite startet eine Animation (z. B. neuer Hinweis): kurz flüssige Bilder. */
+    boost(ms) {
+      boost(ms);
     },
     /** Tells the /vr page something (e.g. new settings). */
     send(channel, payload) {

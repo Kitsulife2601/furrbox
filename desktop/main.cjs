@@ -307,6 +307,12 @@ ipcMain.handle("furrbox:vr-mode", (event, mode) => {
   vrOverlay.setMode(String(mode));
   return true;
 });
+// Nur die Panel-Seite selbst darf kurz flüssige Bilder anfordern (Übergänge, Hinweise).
+ipcMain.handle("furrbox:vr-boost", (event, ms) => {
+  if (event.sender !== vrOverlay.webContents()) return false;
+  vrOverlay.boost(Number(ms) || 0);
+  return true;
+});
 ipcMain.handle("furrbox:vr-battery", (event) => (trusted(event) ? vrOverlay.battery() : null));
 ipcMain.handle("furrbox:media-state", (event) => (trusted(event) ? media.state() : null));
 ipcMain.handle("furrbox:media-control", (event, action) => (trusted(event) ? media.control(String(action)) : false));

@@ -9,6 +9,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
 import { appendTextFile, bridgeStatus, getSql, iso, newId, notify, requirePermission } from "../core";
+import { BOT_JOB_STALE_MS, BOT_JOB_STALE_MSG, runSideEffect, safeJsonParse } from "../http";
 import { AUDIT_LOG_NAME, VRCHAT_LOGS } from "../paths";
 import { VRC_ACCESS, VRC_REGION } from "../vrchat-location";
 
@@ -78,6 +79,9 @@ async function conn(): Promise<Conn | null> {
 }
 
 async function enqueue(kind: string, payload: unknown, userId: string) {
+  const bot = await bridgeStatus();
+  if (!bot.configured) throw new Error("BOT_BRIDGE_TOKEN ist nicht gesetzt – VRChat-Jobs können nicht zugestellt werden.");
+  if (!bot.connected) throw new Error(BOT_JOB_STALE_MSG);
   const sql = await getSql();
   const id = newId();
   await sql`
@@ -93,16 +97,18 @@ export const getVrchatStatus = createServerFn({ method: "GET" })
     const [c, bot] = await Promise.all([conn(), bridgeStatus()]);
     let group: VrchatGroupInfo | null = null;
     if (c?.group_json) {
-      const g = JSON.parse(c.group_json) as Record<string, unknown>;
-      group = {
-        id: String(g.id),
-        name: String(g.name),
-        code: g.shortCode ? `${g.shortCode}.${g.discriminator}` : "",
-        iconUrl: (g.iconUrl as string) ?? null,
-        bannerUrl: (g.bannerUrl as string) ?? null,
-        memberCount: Number(g.memberCount ?? 0),
-        onlineMemberCount: Number(g.onlineMemberCount ?? 0),
-      };
+      const g = safeJsonParse<Record<string, unknown> | null>(c.group_json, null);
+      if (g?.id) {
+        group = {
+          id: String(g.id),
+          name: String(g.name ?? ""),
+          code: g.shortCode ? `${g.shortCode}.${g.discriminator}` : "",
+          iconUrl: (g.iconUrl as string) ?? null,
+          bannerUrl: (g.bannerUrl as string) ?? null,
+          memberCount: Number(g.memberCount ?? 0),
+          onlineMemberCount: Number(g.onlineMemberCount ?? 0),
+        };
+      }
     }
     return {
       botOnline: bot.connected,
@@ -125,10 +131,11 @@ export const getVrchatJob = createServerFn({ method: "GET" })
       select status, result_json, error, created_at from vrchat_job where id = ${jobId} and requested_by = ${context.userId}`;
     const row = rows[0];
     if (!row) throw new Error("Auftrag nicht gefunden.");
-    // The bot checks every few seconds while FurrBox is open, otherwise every 10 minutes.
-    if (row.status === "queued" && Date.now() - new Date(iso(row.created_at) ?? 0).getTime() > 12 * 60_000) {
-      await sql`update vrchat_job set status = 'failed', error = 'Der Discord-Bot hat nicht reagiert.', payload_json = null where id = ${jobId}`;
-      return { status: "failed", resultJson: null, error: "Der Discord-Bot hat nicht reagiert. Läuft er auf dem PC?" };
+    // Fail-fast: queued ODER dispatched ohne Bot-Antwort → Client-Poll hängt nicht ewig.
+    const age = Date.now() - new Date(iso(row.created_at) ?? 0).getTime();
+    if ((row.status === "queued" || row.status === "dispatched") && age > BOT_JOB_STALE_MS) {
+      await sql`update vrchat_job set status = 'failed', error = ${BOT_JOB_STALE_MSG}, payload_json = null where id = ${jobId}`;
+      return { status: "failed", resultJson: null, error: BOT_JOB_STALE_MSG };
     }
     return { status: row.status, resultJson: row.result_json, error: row.error };
   });
@@ -341,10 +348,12 @@ export const logVrchatModeration = createServerFn({ method: "POST" })
     ]
       .filter(Boolean)
       .join("\r\n");
-    await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, context.userId);
-    await notify(
-      `VRChat: ${label[data.action]} ${data.ok ? "ausgeführt" : "fehlgeschlagen"}`,
-      `${data.userName || data.userId} – von ${me.displayName}${data.error ? ` (${data.error})` : ""}`,
-    );
+    await runSideEffect(async () => {
+      await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, context.userId);
+      await notify(
+        `VRChat: ${label[data.action]} ${data.ok ? "ausgeführt" : "fehlgeschlagen"}`,
+        `${data.userName || data.userId} – von ${me.displayName}${data.error ? ` (${data.error})` : ""}`,
+      );
+    }, "log-vrchat-moderation");
     return { ok: true };
   });

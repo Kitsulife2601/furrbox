@@ -70,7 +70,19 @@ async function call(path, { method = "GET", body, auth, twoFactor, basic } = {})
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (auth) headers.Cookie = cookieHeader(auth, twoFactor);
   if (basic) headers.Authorization = `Basic ${basic}`;
-  const res = await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = err?.code || err?.cause?.code || err?.name || "";
+    throw new VrcError(`VRChat-Netzwerkfehler (${code || msg}).`, 0);
+  }
   const text = await res.text();
   let json = null;
   try {

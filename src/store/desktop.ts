@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+﻿import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppId } from "@/lib/apps";
@@ -97,6 +97,10 @@ type DesktopState = {
   chatOpen: boolean;
   tray: "none" | "quick" | "clock" | "info";
   searchQuery: string;
+  /** Window ids minimized by Show Desktop; null when not peeking. */
+  desktopPeek: string[] | null;
+  /** Live snap-assist preview while dragging a window. */
+  snapPreview: Rect | "max" | null;
   volume: number;
   brightness: number;
   nightLight: boolean;
@@ -119,6 +123,8 @@ type DesktopState = {
   setSearchQuery: (q: string) => void;
   selectIcon: (id: string | null) => void;
   setIconCell: (id: string, cell: IconCell) => void;
+  /** Clear saved icon positions so they fill the grid column-by-column. */
+  arrangeIcons: () => void;
   setOnDesktop: (appId: AppId, on: boolean) => void;
   openApp: (appId: AppId, opts?: OpenOptions) => string;
   focusWindow: (id: string) => void;
@@ -131,6 +137,8 @@ type DesktopState = {
   snapWindow: (id: string, rect: Rect | "max") => void;
   setTitle: (id: string, title: string) => void;
   restoreOrOpen: (appId: AppId) => void;
+  toggleShowDesktop: () => void;
+  setSnapPreview: (preview: Rect | "max" | null) => void;
 };
 
 const menusClosed = { startOpen: false, searchOpen: false, tray: "none" as const };
@@ -156,6 +164,8 @@ export const useDesktop = create<DesktopState>()(
       chatOpen: false,
       tray: "none",
       searchQuery: "",
+      desktopPeek: null,
+      snapPreview: null,
       volume: 62,
       brightness: 100,
       nightLight: false,
@@ -178,6 +188,7 @@ export const useDesktop = create<DesktopState>()(
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       selectIcon: (selectedIcon) => set({ selectedIcon }),
       setIconCell: (id, cell) => set((st) => ({ iconCells: { ...st.iconCells, [id]: cell } })),
+      arrangeIcons: () => set({ iconCells: {} }),
       setOnDesktop: (appId, on) =>
         set((st) => {
           const current = desktopAppIds(st.desktopApps).filter((id) => id !== appId);
@@ -196,6 +207,7 @@ export const useDesktop = create<DesktopState>()(
             ),
             zTop: z,
             focusedId: existing.id,
+            desktopPeek: null,
             ...menusClosed,
           });
           return existing.id;
@@ -217,7 +229,7 @@ export const useDesktop = create<DesktopState>()(
           z,
           payload: opts?.payload,
         };
-        set({ windows: [...get().windows, win], zTop: z, focusedId: id, ...menusClosed });
+        set({ windows: [...get().windows, win], zTop: z, focusedId: id, desktopPeek: null, ...menusClosed });
         return id;
       },
       focusWindow: (id) => {
@@ -280,6 +292,33 @@ export const useDesktop = create<DesktopState>()(
       setTitle: (id, title) => set({ windows: get().windows.map((w) => (w.id === id ? { ...w, title } : w)) }),
       restoreOrOpen: (appId) => {
         get().openApp(appId);
+      },
+      toggleShowDesktop: () => {
+        const { windows, desktopPeek } = get();
+        if (desktopPeek) {
+          const next = windows.map((w) => (desktopPeek.includes(w.id) ? { ...w, minimized: false } : w));
+          const top = [...next].filter((w) => !w.minimized).sort((a, b) => b.z - a.z)[0];
+          set({ windows: next, desktopPeek: null, focusedId: top?.id ?? null, ...menusClosed, chatOpen: false });
+          return;
+        }
+        const visible = windows.filter((w) => !w.minimized).map((w) => w.id);
+        if (!visible.length) return;
+        set({
+          windows: windows.map((w) => (visible.includes(w.id) ? { ...w, minimized: true } : w)),
+          desktopPeek: visible,
+          focusedId: null,
+          ...menusClosed,
+          chatOpen: false,
+          snapPreview: null,
+        });
+      },
+      setSnapPreview: (snapPreview) => {
+        const cur = get().snapPreview;
+        if (cur === snapPreview) return;
+        if (cur && snapPreview && cur !== "max" && snapPreview !== "max" && cur.x === snapPreview.x && cur.y === snapPreview.y && cur.w === snapPreview.w && cur.h === snapPreview.h) {
+          return;
+        }
+        set({ snapPreview });
       },
     }),
     {

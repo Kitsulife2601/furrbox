@@ -1,12 +1,15 @@
-// Boot animation (continues the Electron splash): paw logo, boot messages, progress bar,
+﻿// Boot animation (continues the Electron splash): paw logo, boot messages, progress bar,
 // then zooms out into the lock screen. Shown once per window session.
+// Timings match MOTION (Votekick note gap / spring pop) so boot feels like the rest of the desktop feedback.
 import { useEffect, useState } from "react";
 import { useDesktop } from "@/store/desktop";
+import { MOTION } from "@/lib/furr/motion";
 
 const BOOTED_KEY = "furrbox-booted";
 const MESSAGES = ["Kernel wird geladen…", "FurrFS wird eingebunden…", "Discord-Brücke wird verbunden…", "Desktop wird vorbereitet…", "Willkommen"];
-const STEP_MS = 520;
-const EXIT_MS = 650;
+const STEP_MS = MOTION.bootStepMs;
+const EXIT_MS = MOTION.bootExitMs;
+const HOLD_MS = MOTION.bootHoldMs;
 
 function alreadyBooted() {
   try {
@@ -36,7 +39,7 @@ export function BootScreen({ ready, onDone }: { ready: boolean; onDone: () => vo
 
   useEffect(() => {
     if (step !== MESSAGES.length - 1) return;
-    const t1 = setTimeout(() => setExiting(true), 450);
+    const t1 = setTimeout(() => setExiting(true), HOLD_MS);
     const t2 = setTimeout(() => {
       try {
         window.sessionStorage.setItem(BOOTED_KEY, "1");
@@ -44,7 +47,7 @@ export function BootScreen({ ready, onDone }: { ready: boolean; onDone: () => vo
         /* storage unavailable */
       }
       onDone();
-    }, 450 + EXIT_MS);
+    }, HOLD_MS + EXIT_MS);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -56,13 +59,20 @@ export function BootScreen({ ready, onDone }: { ready: boolean; onDone: () => vo
   return (
     <div
       className="boot-screen fixed inset-0 z-[10000] grid place-items-center overflow-hidden bg-[#06070b] text-[#f3f4f6]"
-      style={{ ["--boot-accent" as string]: accent, opacity: exiting ? 0 : 1, transition: `opacity ${EXIT_MS}ms ease` }}
+      style={{
+        ["--boot-accent" as string]: accent,
+        opacity: exiting ? 0 : 1,
+        transition: `opacity ${EXIT_MS}ms ${MOTION.easeOut}`,
+      }}
       aria-live="polite"
     >
       <div className="boot-glow pointer-events-none absolute -inset-[20%]" />
       <div
         className="relative flex flex-col items-center"
-        style={{ transform: exiting ? "scale(1.35)" : "scale(1)", transition: `transform ${EXIT_MS}ms cubic-bezier(.5,0,.75,0)` }}
+        style={{
+          transform: exiting ? "scale(1.35)" : "scale(1)",
+          transition: `transform ${EXIT_MS}ms ${MOTION.easePop}`,
+        }}
       >
         <div className="relative size-[150px]">
           <svg className="boot-ring absolute inset-0" viewBox="0 0 150 150" aria-hidden="true">

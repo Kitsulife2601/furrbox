@@ -108,9 +108,11 @@ export const listPresenceLogs = createServerFn({ method: "GET" })
       v.toLowerCase(),
       sanitizeSegment(v).toLowerCase(),
     ]);
+    // Neueste zuerst, Deckel – verhindert lange Latenz bei vielen Log-Dateien.
     const rows = await sql.query<FileRow & { content_b64: string | null }>(
       `select ${FILE_COLUMNS}, content_b64 from furr_file
-       where scope = 'public' and owner_id is null and folder = $1 and is_folder = false`,
+       where scope = 'public' and owner_id is null and folder = $1 and is_folder = false
+       order by updated_at desc limit 80`,
       [DISCORD_LOGS],
     );
     const logs: PresenceLog[] = [];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+﻿import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -23,7 +23,8 @@ import { DesktopIcons } from "./DesktopIcons";
 import { UpdatePopup } from "./UpdatePopup";
 import { PowerOverlay } from "./Power";
 import { Taskbar } from "./Taskbar";
-import { WindowFrame } from "./WindowFrame";
+import { SnapAssistPreview, WindowFrame } from "./WindowFrame";
+import { AltTabSwitcher } from "./AltTab";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
 
 export function Desktop() {
@@ -99,6 +100,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   const [menu, setMenu] = useState<{ x: number; y: number; file?: FurrFile; app?: AppId } | null>(null);
   const savedDesktopApps = useDesktop((s) => s.desktopApps);
   const setOnDesktop = useDesktop((s) => s.setOnDesktop);
+  const arrangeIcons = useDesktop((s) => s.arrangeIcons);
   const [dialog, setDialog] = useState<null | "folder" | "text">(null);
   const [renaming, setRenaming] = useState<FurrFile | null>(null);
   const [removing, setRemoving] = useState<FurrFile | null>(null);
@@ -161,12 +163,14 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
     { label: "Neues Textdokument", onClick: () => setDialog("text") },
     { label: "Datei auf Desktop hochladen", onClick: () => uploadRef.current?.click() },
     "divider",
-    { label: "Aktualisieren", onClick: () => void refreshDesktop() },
-    { label: "In Terminal öffnen", onClick: () => openApp("terminal") },
-    { label: "Task-Manager", onClick: () => openApp("taskmgr") },
+    { label: "Icons automatisch anordnen", onClick: () => arrangeIcons() },
     "divider",
-    { label: "Hintergrund anpassen", onClick: () => openApp("settings") },
-    { label: "Anzeigeeinstellungen", onClick: () => openApp("settings") },
+    { label: "Aktualisieren", onClick: () => void refreshDesktop() },
+    { label: "Terminal", onClick: () => openApp("terminal") },
+    { label: "Tasks", onClick: () => openApp("taskmgr") },
+    "divider",
+    { label: "Personalisierung", onClick: () => openApp("settings") },
+    { label: "Einstellungen", onClick: () => openApp("settings") },
   ];
 
   return (
@@ -227,9 +231,11 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         ]}
       />
 
+      <SnapAssistPreview />
       {windows.map((win) => (
         <WindowFrame key={win.id} win={win} />
       ))}
+      <AltTabSwitcher />
 
       <div onMouseDown={(e) => e.stopPropagation()}>
         {startOpen && <StartMenu />}

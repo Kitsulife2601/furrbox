@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+﻿import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   FileText,
@@ -33,11 +33,21 @@ export type AppId =
   | "viewer"
   | "taskmgr";
 
+/** Start-menu / catalog groups (Windows-style sections). */
+export type AppGroup = "system" | "tools" | "moderation";
+
+export const APP_GROUPS: { id: AppGroup; label: string }[] = [
+  { id: "system", label: "System" },
+  { id: "tools", label: "Tools" },
+  { id: "moderation", label: "Moderation" },
+];
+
 export type AppDef = {
   id: AppId;
   name: string;
   subtitle: string;
   icon: LucideIcon;
+  group: AppGroup;
   pinned: boolean;
   /** On the desktop until the user changes it (right-click → Zum Desktop hinzufügen / Vom Desktop entfernen). */
   desktop: boolean;
@@ -57,6 +67,7 @@ export const APPS: AppDef[] = [
     name: "FurrFS",
     subtitle: "Private und geteilte Dateien",
     icon: Folder,
+    group: "system",
     pinned: true,
     desktop: true,
     defaultSize: { w: 900, h: 600 },
@@ -67,112 +78,62 @@ export const APPS: AppDef[] = [
     name: "Dieser PC",
     subtitle: "Privat und Shared Network",
     icon: Monitor,
+    group: "system",
     pinned: false,
     desktop: true,
     defaultSize: { w: 900, h: 600 },
     minSize: { w: 520, h: 360 },
   },
   {
-    id: "terminal",
-    name: "FurrTerminal",
-    subtitle: "FurrShell für FurrFS",
-    icon: TerminalSquare,
+    id: "settings",
+    name: "Einstellungen",
+    subtitle: "System und Personalisierung",
+    icon: Settings,
+    group: "system",
     pinned: false,
     desktop: false,
-    defaultSize: { w: 720, h: 440 },
-    minSize: { w: 420, h: 260 },
+    defaultSize: { w: 920, h: 640 },
+    minSize: { w: 560, h: 420 },
+  },
+  {
+    id: "taskmgr",
+    name: "Tasks",
+    subtitle: "Offene Fenster",
+    icon: Activity,
+    group: "system",
+    pinned: false,
+    desktop: false,
+    defaultSize: { w: 560, h: 420 },
+    minSize: { w: 360, h: 260 },
   },
   {
     id: "browser",
-    name: "FurrBrowser",
+    name: "Browser",
     subtitle: "Webseiten öffnen",
     icon: Globe,
+    group: "tools",
     pinned: true,
     desktop: false,
     defaultSize: { w: 960, h: 620 },
     minSize: { w: 480, h: 340 },
   },
   {
-    id: "evidence",
-    name: "FurrEvidence",
-    subtitle: "Beweise und Moderation",
-    icon: Shield,
-    pinned: true,
-    desktop: false,
-    requires: "canUseEvidence",
-    defaultSize: { w: 900, h: 640 },
-    minSize: { w: 520, h: 420 },
-  },
-  {
-    id: "presence",
-    name: "FurrPresence",
-    subtitle: "Team- und Discord-Status",
-    icon: Radio,
-    pinned: true,
-    desktop: false,
-    requires: "canViewPresence",
-    defaultSize: { w: 1000, h: 640 },
-    minSize: { w: 520, h: 400 },
-  },
-  {
-    id: "accounts",
-    name: "FurrAccountManager",
-    subtitle: "Accounts, Rollen, Discord-IDs",
-    icon: UserCircle2,
+    id: "terminal",
+    name: "Terminal",
+    subtitle: "FurrShell für FurrFS",
+    icon: TerminalSquare,
+    group: "tools",
     pinned: false,
     desktop: false,
-    requires: "canManageAccounts",
-    defaultSize: { w: 940, h: 620 },
-    minSize: { w: 520, h: 400 },
-  },
-  {
-    id: "modlog",
-    name: "Moderationslog",
-    subtitle: "Alle Moderationen aus Discord und VRChat",
-    icon: ScrollText,
-    pinned: false,
-    desktop: false,
-    requires: "canUseEvidence",
-    defaultSize: { w: 1000, h: 640 },
-    minSize: { w: 520, h: 400 },
-  },
-  {
-    id: "worldmap",
-    name: "Instanz-Tracker",
-    subtitle: "Wer mit dir in der VRChat-Instanz ist",
-    icon: Radar,
-    pinned: true,
-    desktop: false,
-    requires: "canUseEvidence",
-    defaultSize: { w: 1080, h: 680 },
-    minSize: { w: 520, h: 420 },
-  },
-  {
-    id: "whitelist",
-    name: "FurrWhitelist",
-    subtitle: "Wer FurrBox nutzen darf",
-    icon: ShieldCheck,
-    pinned: false,
-    desktop: false,
-    requires: "canManageWhitelist",
-    defaultSize: { w: 900, h: 600 },
-    minSize: { w: 520, h: 400 },
-  },
-  {
-    id: "settings",
-    name: "FurrSettings",
-    subtitle: "System und Personalisierung",
-    icon: Settings,
-    pinned: false,
-    desktop: false,
-    defaultSize: { w: 780, h: 560 },
-    minSize: { w: 420, h: 360 },
+    defaultSize: { w: 720, h: 440 },
+    minSize: { w: 420, h: 260 },
   },
   {
     id: "notepad",
     name: "Editor",
     subtitle: "Neues Textdokument",
     icon: StickyNote,
+    group: "tools",
     pinned: false,
     desktop: false,
     multi: true,
@@ -181,9 +142,10 @@ export const APPS: AppDef[] = [
   },
   {
     id: "viewer",
-    name: "FurrFS Viewer",
+    name: "Viewer",
     subtitle: "Datei anzeigen",
     icon: FileText,
+    group: "tools",
     pinned: false,
     desktop: false,
     hidden: true,
@@ -192,14 +154,76 @@ export const APPS: AppDef[] = [
     minSize: { w: 360, h: 240 },
   },
   {
-    id: "taskmgr",
-    name: "Task-Manager",
-    subtitle: "Offene Fenster",
-    icon: Activity,
+    id: "evidence",
+    name: "Evidence",
+    subtitle: "Beweise und Moderation",
+    icon: Shield,
+    group: "moderation",
+    pinned: true,
+    desktop: false,
+    requires: "canUseEvidence",
+    defaultSize: { w: 900, h: 640 },
+    minSize: { w: 520, h: 420 },
+  },
+  {
+    id: "presence",
+    name: "Presence",
+    subtitle: "Team- und Discord-Status",
+    icon: Radio,
+    group: "moderation",
+    pinned: true,
+    desktop: false,
+    requires: "canViewPresence",
+    defaultSize: { w: 1000, h: 640 },
+    minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "modlog",
+    name: "Modlog",
+    subtitle: "Alle Moderationen aus Discord und VRChat",
+    icon: ScrollText,
+    group: "moderation",
     pinned: false,
     desktop: false,
-    defaultSize: { w: 560, h: 420 },
-    minSize: { w: 360, h: 260 },
+    requires: "canUseEvidence",
+    defaultSize: { w: 1000, h: 640 },
+    minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "whitelist",
+    name: "Whitelist",
+    subtitle: "Wer FurrBox nutzen darf",
+    icon: ShieldCheck,
+    group: "moderation",
+    pinned: false,
+    desktop: false,
+    requires: "canManageWhitelist",
+    defaultSize: { w: 900, h: 600 },
+    minSize: { w: 520, h: 400 },
+  },
+  {
+    id: "worldmap",
+    name: "Instanzen",
+    subtitle: "Wer mit dir in der VRChat-Instanz ist",
+    icon: Radar,
+    group: "moderation",
+    pinned: true,
+    desktop: false,
+    requires: "canUseEvidence",
+    defaultSize: { w: 1080, h: 680 },
+    minSize: { w: 520, h: 420 },
+  },
+  {
+    id: "accounts",
+    name: "Accounts",
+    subtitle: "Accounts, Rollen, Discord-IDs",
+    icon: UserCircle2,
+    group: "moderation",
+    pinned: false,
+    desktop: false,
+    requires: "canManageAccounts",
+    defaultSize: { w: 940, h: 620 },
+    minSize: { w: 520, h: 400 },
   },
 ];
 
@@ -215,4 +239,12 @@ export function desktopAppIds(saved: AppId[] | null) {
 export function canLaunch(app: AppDef, permissions: Permissions | null | undefined) {
   if (!app.requires) return true;
   return Boolean(permissions?.[app.requires]);
+}
+
+/** Group apps for the Start menu (skips empty groups). */
+export function groupApps(apps: AppDef[]) {
+  return APP_GROUPS.map((g) => ({
+    ...g,
+    apps: apps.filter((a) => a.group === g.id),
+  })).filter((g) => g.apps.length > 0);
 }

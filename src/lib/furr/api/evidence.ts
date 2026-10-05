@@ -14,6 +14,7 @@ import {
   writeFile,
   writeTextFile,
 } from "../core";
+import { BOT_JOB_STALE_MS, BOT_JOB_STALE_MSG } from "../http";
 import { DISCORD_LOGS, EVIDENCE_ROOT, MAX_UPLOAD_BYTES, formatSize, sanitizeName, sanitizeSegment } from "../paths";
 import { MODERATION_ACTIONS, type ModerationAction } from "../roles";
 import type { EvidenceCase, Me, MessageProof, ModerationEntry } from "../types";
@@ -225,6 +226,8 @@ export const requestMessageInspect = createServerFn({ method: "POST" })
   .handler(async ({ context, data: messageId }) => {
     await requirePermission(context.userId, "canUseEvidence");
     if (!/^\d{17,22}$/.test(messageId)) throw new Error("Nachrichten-ID muss eine Discord-Snowflake sein.");
+    const bot = await bridgeStatus();
+    if (!bot.connected) throw new Error(BOT_JOB_STALE_MSG);
     const sql = await getSql();
     const id = newId();
     await sql`insert into message_inspect (id, message_id, requested_by) values (${id}, ${messageId}, ${context.userId})`;
@@ -236,10 +239,17 @@ export const getMessageInspect = createServerFn({ method: "GET" })
   .middleware([accessMiddleware])
   .handler(async ({ context, data: requestId }) => {
     const sql = await getSql();
-    const rows = await sql<{ status: string; result_json: string | null }>`
-      select status, result_json from message_inspect where id = ${requestId} and requested_by = ${context.userId}`;
+    const rows = await sql<{ status: string; result_json: string | null; created_at: unknown }>`
+      select status, result_json, created_at from message_inspect where id = ${requestId} and requested_by = ${context.userId}`;
     const row = rows[0];
     if (!row) throw new Error("Anfrage nicht gefunden.");
+    if (
+      (row.status === "queued" || row.status === "dispatched") &&
+      Date.now() - new Date(iso(row.created_at) ?? 0).getTime() > BOT_JOB_STALE_MS
+    ) {
+      await sql`update message_inspect set status = 'failed', completed_at = now() where id = ${requestId}`;
+      return { status: "failed", result: { requestId, messageId: "", found: false, content: "", error: BOT_JOB_STALE_MSG } as MessageProof };
+    }
     let result: MessageProof | null = null;
     if (row.result_json) {
       try {
@@ -274,6 +284,8 @@ export const queueModeration = createServerFn({ method: "POST" })
     if (needsDuration && (!data.durationMs || data.durationMs < 60_000 || data.durationMs > 2_419_200_000)) {
       throw new Error("Dauer muss zwischen 1 Minute und 28 Tagen liegen.");
     }
+    const bot = await bridgeStatus();
+    if (!bot.connected) throw new Error(BOT_JOB_STALE_MSG);
     const sql = await getSql();
     const id = newId();
     await sql`

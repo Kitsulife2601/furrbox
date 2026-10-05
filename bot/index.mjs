@@ -5,9 +5,14 @@
 // Env: DISCORD_TOKEN, BOT_BRIDGE_TOKEN (same value as in Vercel),
 //      FURRBOX_URL (default https://furrbox-88ir.vercel.app), DISCORD_GUILD_ID (default Fish),
 //      DISCORD_MUTED_ROLE_ID / DISCORD_MUTED_ROLE_NAME (optional, for "mute").
+import { writeFileSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client, EmbedBuilder, GatewayIntentBits, Partials, PermissionsBitField } from "discord.js";
 import { handleVrchatJobs, startVrchat } from "./vrchat.mjs";
 import { filesBusy, handleBotFiles } from "./files.mjs";
+
+const READY_FILE = join(dirname(fileURLToPath(import.meta.url)), "bot.ready");
 
 const token = process.env.DISCORD_TOKEN;
 const bridgeToken = process.env.BOT_BRIDGE_TOKEN;
@@ -58,12 +63,40 @@ const client = new Client({
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
+/** Transient network / DNS / connect-timeout errors (undici ConnectTimeout, ENOTFOUND, …). */
+function isNetworkError(err) {
+  if (!err) return false;
+  const code = err.code || err.cause?.code;
+  const name = err.name || err.cause?.name || "";
+  const msg = String(err.message || err.cause?.message || err);
+  return (
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    code === "UND_ERR_BODY_TIMEOUT" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    name === "ConnectTimeoutError" ||
+    name === "AbortError" ||
+    /connect timeout|fetch failed|getaddrinfo/i.test(msg)
+  );
+}
+
 async function bridge(path, body) {
-  const res = await fetch(`${baseUrl}/api/bridge/${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { authorization: `Bearer ${bridgeToken}`, "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/api/bridge/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { authorization: `Bearer ${bridgeToken}`, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(isNetworkError(err) ? `Bridge ${path}: Netzwerk (${msg})` : `Bridge ${path}: ${msg}`);
+  }
   if (!res.ok) throw new Error(`Bridge ${path}: HTTP ${res.status} ${await res.text().catch(() => "")}`.slice(0, 300));
   return res.json();
 }
@@ -292,10 +325,18 @@ async function poll() {
 }
 
 client.once("clientReady", () => {
+  try {
+    writeFileSync(READY_FILE, new Date().toISOString());
+  } catch {
+    // marker only used by start-bot.cmd backoff reset
+  }
   log(`Eingeloggt als ${client.user?.tag}. FurrBox: ${baseUrl}`);
   poll();
   startVrchat(bridge, log);
 });
+
+client.on("error", (err) => log("Discord-Client-Fehler:", err instanceof Error ? err.message : err));
+client.on("shardError", (err) => log("Discord-Shard-Fehler:", err instanceof Error ? err.message : err));
 
 client.on("guildMemberAdd", (m) => {
   if (m.guild.id === guildId && !m.user.bot) pendingMembers.set(m.id, snapshot(m));
@@ -315,8 +356,33 @@ client.on("presenceUpdate", (_old, p) => {
 });
 
 process.on("SIGINT", async () => {
+  try {
+    unlinkSync(READY_FILE);
+  } catch {
+    // ignore
+  }
   await client.destroy();
   process.exit(0);
 });
 
-await client.login(token);
+process.on("uncaughtException", (err) => {
+  log("Uncaught:", err instanceof Error ? err.message : err);
+  if (isNetworkError(err)) log("Netzwerkfehler – Prozess endet für Backoff-Neustart.");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  log("Unhandled rejection:", err.message);
+  if (isNetworkError(err)) {
+    log("Netzwerkfehler – Prozess endet für Backoff-Neustart.");
+    process.exit(1);
+  }
+});
+
+try {
+  await client.login(token);
+} catch (err) {
+  log("Discord-Login fehlgeschlagen:", err instanceof Error ? err.message : err);
+  process.exit(1);
+}

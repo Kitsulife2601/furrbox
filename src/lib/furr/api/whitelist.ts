@@ -5,6 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { accessMiddleware } from "../access";
 import { getSetting, getSql, iso, loadMe, notify, requirePermission, setSetting } from "../core";
+import { runSideEffect } from "../http";
 
 const DISCORD_ID = /^\d{17,22}$/;
 const USERNAME = /^[a-z0-9_.-]{3,32}$/;
@@ -67,19 +68,22 @@ export const getWhitelist = createServerFn({ method: "GET" })
       mustChangePassword: Boolean(r.must_change_password),
       passwordChangedAt: iso(r.password_changed_at),
     }));
-    // People who already signed in or are known from the Discord server, for quick adding.
-    const candidates = await sql<{ discord_id: string; name: string; username: string }>`
-      select discord_id, name, username from (
-        select dm.discord_id, coalesce(dm.nickname, dm.display_name) as name, dm.username
-        from discord_member dm where dm.highest_privilege = 'none'
-        union
-        select p.discord_id, p.display_name as name, p.username
-        from furr_profile p where p.discord_id is not null
-      ) c
-      where discord_id not in (select discord_id from furr_whitelist)
-      order by name limit 500`;
+    // Candidates + Setting parallel – kürzere Latenz für die Owner-UI.
+    const [candidates, enabledRaw] = await Promise.all([
+      sql<{ discord_id: string; name: string; username: string }>`
+        select discord_id, name, username from (
+          select dm.discord_id, coalesce(dm.nickname, dm.display_name) as name, dm.username
+          from discord_member dm where dm.highest_privilege = 'none'
+          union
+          select p.discord_id, p.display_name as name, p.username
+          from furr_profile p where p.discord_id is not null
+        ) c
+        where discord_id not in (select discord_id from furr_whitelist)
+        order by name limit 500`,
+      getSetting("whitelist_enabled", "true"),
+    ]);
     return {
-      enabled: (await getSetting("whitelist_enabled", "true")) === "true",
+      enabled: enabledRaw === "true",
       entries,
       candidates: candidates.map((c): WhitelistCandidate => ({ discordId: c.discord_id, name: c.name, username: c.username })),
     };
@@ -115,7 +119,11 @@ export const addToWhitelist = createServerFn({ method: "POST" })
     await sql`
       delete from furr_whitelist_unlock
       where user_id in (select user_id from furr_profile where discord_id = ${data.discordId})`;
-    await notify("Whitelist", `${me.displayName} hat ${data.username} für FurrBox freigeschaltet.`);
+    // Notify nach dem kritischen DB-Write – Antwort nicht blockieren.
+    void runSideEffect(
+      () => notify("Whitelist", `${me.displayName} hat ${data.username} für FurrBox freigeschaltet.`),
+      "whitelist-notify-add",
+    );
     return { ok: true };
   });
 
@@ -237,7 +245,10 @@ export const removeFromWhitelist = createServerFn({ method: "POST" })
     await sql`
       delete from furr_whitelist_unlock
       where user_id in (select user_id from furr_profile where discord_id = ${discordId})`;
-    await notify("Whitelist", `${me.displayName} hat ${discordId} von der Whitelist entfernt.`);
+    void runSideEffect(
+      () => notify("Whitelist", `${me.displayName} hat ${discordId} von der Whitelist entfernt.`),
+      "whitelist-notify-remove",
+    );
     return { ok: true };
   });
 

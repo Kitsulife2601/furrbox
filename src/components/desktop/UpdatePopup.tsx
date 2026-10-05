@@ -1,4 +1,4 @@
-// Desktop-app updates (GitHub Releases via electron-updater in desktop/main.cjs):
+﻿// Desktop-app updates (GitHub Releases via electron-updater in desktop/main.cjs):
 // a toast while an update downloads, then a centered popup to restart and install it.
 import { playSound } from "@/lib/furr/sounds";
 import { useEffect, useRef, useState } from "react";
@@ -241,9 +241,9 @@ export function UpdateTrayButton() {
         setBusy(true);
         pending.apply();
       }}
-      className="relative grid size-10 place-items-center rounded-md text-accent hover:bg-fg/8 disabled:opacity-60"
+      className="furr-toast-in relative grid size-10 place-items-center rounded-md text-accent hover:bg-fg/8 disabled:opacity-60"
     >
-      <Download className={busy ? "size-4 animate-pulse" : "size-4"} />
+      <Download className="size-4 furr-update-pulse" />
       <span className="absolute right-2 top-2 size-2 rounded-full bg-accent ring-2 ring-[var(--os-taskbar)]" />
     </button>
   );

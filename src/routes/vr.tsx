@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { desktopVrchat, unwrap, type VrcInstanceState } from "@/components/furr/VRChat";
 import { listChatMessages } from "@/lib/furr/api/chat";
-import { listDuty, markVotekickDone, setDuty } from "@/lib/furr/api/duty";
+import { listDuty, markVotekickDone, setDuty, type DutyEntry } from "@/lib/furr/api/duty";
 import { listPresence } from "@/lib/furr/api/presence";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
@@ -49,8 +49,15 @@ type PanelBridge = {
   onGaze?(cb: (looking: boolean) => void): () => void;
   onPoint?(cb: (pointing: boolean) => void): () => void;
   battery?(): Promise<Battery | null>;
+  boost?(ms: number): Promise<boolean>;
 };
 const panelBridge = () => (window as { furrbox?: { vr?: PanelBridge } }).furrbox?.vr ?? null;
+/**
+ * Vor einer Animation kurz flüssige Bilder anfordern – sonst schickt die Desktop-App im Ruhezustand
+ * nur gut ein Bild pro Sekunde an SteamVR und Übergänge ruckeln bzw. fehlen ganz.
+ * (Ältere Desktop-Versionen kennen das nicht – dann passiert einfach nichts.)
+ */
+const boostFrames = (ms: number) => void panelBridge()?.boost?.(ms)?.catch(() => undefined);
 
 function mmss(sec: number) {
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
@@ -64,6 +71,10 @@ const VOTE_ALERT_MS = 45_000;
 const INSTANCE_ALERT_MS = 2 * 60_000;
 /** Drag further than this (px) to change the page. */
 const SWIPE_PX = 60;
+/** Zuklappen: so lange bleibt das Fenster für die Ausblend-Animation noch stehen (wie in styles.css). */
+const WINDOW_OUT_MS = 200;
+/** Neuer Hinweis: Einblenden + einmaliges Aufleuchten (furr-vr-ring 700 ms) + Puffer. */
+const NOTICE_BOOST_MS = 900;
 
 type PageId = Exclude<VrWidgetId, "votekick" | "instanceAlert" | "chatAlert">;
 const PAGES: PageId[] = ["instance", "team", "music", "chatbox", "teamchat"];
@@ -99,6 +110,17 @@ function VrPanel() {
   const [point, setPoint] = useState(false);
   useEffect(() => panelBridge()?.onPoint?.(setPoint), []);
   const collapsed = buttonMode && !open && !(gazeOpen && gaze) && !(pointOpen && point);
+  // Beim Zuklappen bleibt das Fenster noch WINDOW_OUT_MS stehen und blendet weich aus,
+  // statt schlagartig zu verschwinden.
+  const [windowMounted, setWindowMounted] = useState(!collapsed);
+  useEffect(() => {
+    if (!collapsed) {
+      setWindowMounted(true);
+      return;
+    }
+    const t = window.setTimeout(() => setWindowMounted(false), WINDOW_OUT_MS);
+    return () => window.clearTimeout(t);
+  }, [collapsed]);
   /** Notices marked "Erledigt" (vote kick / chat message / instance ids). */
   const [done, setDone] = useState<string[]>([]);
   const dismiss = (id: string) => setDone((d) => [...d.slice(-40), id]);
@@ -165,9 +187,36 @@ function VrPanel() {
   // Anwesenheit: can I moderate right now? Shown in the team list and used by the bot's message.
   const duty = useQuery({ queryKey: ["furr", "duty"], queryFn: () => listDuty(), enabled: Boolean(me.data), refetchInterval: 20_000, retry: false });
   const onDuty = Boolean(duty.data?.find((d) => d.userId === me.data?.userId)?.onDuty);
+  // Anwesend-Schalter: schaltet sofort sichtbar um (nicht erst nach der Server-Antwort),
+  // sperrt Doppelklicks und springt bei einem Fehler zurück – mit kurzem Hinweis.
+  const [dutyBusy, setDutyBusy] = useState(false);
+  const [dutyError, setDutyError] = useState(false);
   async function toggleDuty() {
-    await setDuty({ data: !onDuty }).catch(() => undefined);
-    await queryClient.invalidateQueries({ queryKey: ["furr", "duty"] });
+    const uid = me.data?.userId;
+    if (dutyBusy || !uid) return;
+    const next = !onDuty;
+    const key = ["furr", "duty"];
+    setDutyBusy(true);
+    setDutyError(false);
+    boostFrames(600);
+    await queryClient.cancelQueries({ queryKey: key });
+    const before = queryClient.getQueryData<DutyEntry[]>(key);
+    queryClient.setQueryData<DutyEntry[]>(key, (list = []) =>
+      list.some((d) => d.userId === uid)
+        ? list.map((d) => (d.userId === uid ? { ...d, onDuty: next } : d))
+        : [...list, { userId: uid, onDuty: next, since: new Date().toISOString() }],
+    );
+    try {
+      await setDuty({ data: next });
+    } catch {
+      queryClient.setQueryData(key, before);
+      setDutyError(true);
+      boostFrames(600);
+      window.setTimeout(() => setDutyError(false), 3_000);
+    } finally {
+      setDutyBusy(false);
+      await queryClient.invalidateQueries({ queryKey: key });
+    }
   }
 
   // What to announce while the panel is closed: vote kick first, then chat, then a new instance.
@@ -178,6 +227,12 @@ function VrPanel() {
       : widgets.instanceAlert && fresh
         ? { id: fresh.instanceId, tone: "green" as const, title: "Neue Gruppen-Instanz", text: `${fresh.worldName} · ${fresh.memberCount} Leute` }
         : null;
+  // Neuer Hinweis: kurz flüssige Bilder, damit Einblenden und Aufleuchten sichtbar sind.
+  const noticeId = notice?.id ?? null;
+  useEffect(() => {
+    if (noticeId) boostFrames(NOTICE_BOOST_MS);
+  }, [noticeId]);
+
   const voteDone = () => {
     if (!vote) return;
     dismiss(vote.id);
@@ -196,6 +251,11 @@ function VrPanel() {
   const pages = PAGES.filter((id) => widgets[id]);
   const current = Math.min(page, Math.max(0, pages.length - 1));
   const go = (delta: number) => setPage(Math.min(pages.length - 1, Math.max(0, current + delta)));
+  // Seitenwechsel (Wischen / Tabs): die 300-ms-Schiebe-Animation flüssig zeigen.
+  const pageId = pages[current] ?? null;
+  useEffect(() => {
+    if (pageId) boostFrames(600);
+  }, [pageId]);
 
   // Song in the widget; battery of headset and controllers.
   const battery = useQuery({
@@ -231,9 +291,14 @@ function VrPanel() {
 
   return (
     <div className="flex h-screen w-screen select-none flex-col justify-end gap-2 overflow-hidden text-white">
-      {/* The window above the wrist (only while open). */}
-      {!collapsed && (
-        <div className="furr-vr-window flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[22px] border-2 border-white/15 bg-[#0b0d14]/93 p-2.5">
+      {/* The window above the wrist (only while open). Beim Zuklappen blendet es noch kurz aus. */}
+      {windowMounted && (
+        <div
+          className={cn(
+            "furr-vr-window flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[22px] border-2 border-white/15 bg-[#0b0d14]/93 p-2.5",
+            collapsed && "furr-vr-window-out pointer-events-none",
+          )}
+        >
           {topInfos.length > 0 && (
             <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl bg-white/6 px-3 py-1.5 text-[13px]">
               {topInfos.map((id) => (
@@ -282,7 +347,7 @@ function VrPanel() {
                   {pages.map((id) => (
                     <div key={id} className="flex h-full w-full shrink-0 flex-col">
                       {id === "instance" && <InstanceList state={s} />}
-                      {id === "team" && <TeamList duty={duty.data ?? []} onDuty={onDuty} onToggle={() => void toggleDuty()} />}
+                      {id === "team" && <TeamList duty={duty.data ?? []} onDuty={onDuty} busy={dutyBusy} error={dutyError} onToggle={() => void toggleDuty()} />}
                       {id === "music" && <MusicPage song={song.data ?? null} onChanged={() => void song.refetch()} />}
                       {id === "chatbox" && <Chatbox />}
                       {id === "teamchat" && <TeamChat />}
@@ -302,7 +367,7 @@ function VrPanel() {
                         type="button"
                         onClick={() => setPage(i)}
                         className={cn(
-                          "rounded-full px-2.5 py-1.5 text-[13px] font-medium",
+                          "rounded-full px-2.5 py-1.5 text-[13px] font-medium transition duration-150 active:scale-95",
                           i === current ? "bg-accent text-black" : "bg-white/8 text-white/60 hover:bg-white/15",
                         )}
                       >
@@ -323,29 +388,18 @@ function VrPanel() {
       {/* The widget on the wrist: always there. */}
       <div
         className={cn(
-          "flex h-[192px] shrink-0 flex-col gap-1.5 overflow-hidden rounded-[22px] border-2 p-2.5",
-          notice && collapsed ? tone : "border-white/15 bg-[#0b0d14]/93",
+          "relative flex h-[192px] shrink-0 flex-col gap-1.5 overflow-hidden rounded-[22px] border-2 p-2.5 transition-colors duration-300",
+          notice && collapsed ? tone : "border-white/15 bg-[#0b0d14]/93 hover:border-white/30",
         )}
       >
+        {/* Neuer Hinweis: leuchtet einmal in seiner Farbe auf (kein Dauerblinken). */}
+        {notice && collapsed && <span key={notice.id} aria-hidden className={cn("furr-vr-ring pointer-events-none absolute inset-0 rounded-[20px]", `furr-vr-ring-${notice.tone}`)} />}
         <div className="flex items-center gap-2.5">
           <span className="text-[40px] font-bold tabular-nums leading-none">{info.time}</span>
           <div className="grid min-w-0 flex-1 justify-items-start gap-1">
             <p className="truncate text-[13px] leading-none text-white/70">{info.date}</p>
             {/* Tap to switch between "Anwesend" (you can moderate right now) and "Nicht anwesend". */}
-            {me.data && (
-              <button
-                type="button"
-                onClick={() => void toggleDuty()}
-                aria-pressed={onDuty}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold leading-none",
-                  onDuty ? "bg-emerald-500 text-black" : "bg-white/12 text-white hover:bg-white/25",
-                )}
-              >
-                <span className={cn("size-2.5 shrink-0 rounded-full", onDuty ? "bg-black/60" : "bg-white/40")} />
-                {onDuty ? "Anwesend" : "Nicht anwesend"}
-              </button>
-            )}
+            {me.data && <DutyToggle onDuty={onDuty} busy={dutyBusy} error={dutyError} onToggle={() => void toggleDuty()} className="leading-none" />}
           </div>
           <BatteryChips battery={battery.data ?? null} />
           {buttonMode && (
@@ -353,7 +407,7 @@ function VrPanel() {
               type="button"
               aria-label={open ? "Fenster schließen" : "Fenster öffnen"}
               onClick={() => setOpen(!open)}
-              className={cn("grid size-12 shrink-0 place-items-center rounded-full", open ? "bg-accent text-black" : "bg-white/12 hover:bg-white/25")}
+              className={cn("grid size-12 shrink-0 place-items-center rounded-full transition duration-150 active:scale-90", open ? "bg-accent text-black" : "bg-white/12 hover:bg-white/25")}
             >
               {open ? <X className="size-6" /> : <PawPrint className="size-6" />}
             </button>
@@ -361,13 +415,13 @@ function VrPanel() {
         </div>
 
         {notice && collapsed ? (
-          <div className="flex min-h-0 flex-1 items-center gap-2">
+          <div key={notice.id} className="furr-vr-notice flex min-h-0 flex-1 items-center gap-2">
             {notice.tone === "red" ? (
-              <AlertTriangle className="size-9 shrink-0 text-red-300" />
+              <AlertTriangle className="furr-vr-pop size-9 shrink-0 text-red-300" />
             ) : notice.tone === "blue" ? (
-              <MessageSquare className="size-9 shrink-0 text-accent" />
+              <MessageSquare className="furr-vr-pop size-9 shrink-0 text-accent" />
             ) : (
-              <DoorOpen className="size-9 shrink-0 text-emerald-300" />
+              <DoorOpen className="furr-vr-pop size-9 shrink-0 text-emerald-300" />
             )}
             <button type="button" onClick={() => setOpen(true)} className="min-w-0 flex-1 text-left" aria-label="Fenster öffnen">
               <span className="block truncate text-[19px] font-bold leading-tight">{notice.title}</span>
@@ -376,7 +430,7 @@ function VrPanel() {
             <button
               type="button"
               onClick={() => (notice.tone === "red" ? voteDone() : dismiss(notice.id))}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[14px] font-semibold hover:bg-emerald-500/60"
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[14px] font-semibold transition duration-150 hover:bg-emerald-500/60 active:scale-95"
             >
               <Check className="size-5" /> Erledigt
             </button>
@@ -394,13 +448,13 @@ function VrPanel() {
                     : "Spotify, YouTube … starten"}
                 </p>
               </div>
-              <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/25">
+              <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/25 active:scale-90">
                 <SkipBack className="size-5" />
               </button>
-              <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-black">
+              <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-black transition duration-150 hover:brightness-110 active:scale-90">
                 {song.data?.playing ? <Pause className="size-5" /> : <Play className="size-5" />}
               </button>
-              <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/25">
+              <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/25 active:scale-90">
                 <SkipForward className="size-5" />
               </button>
             </div>
@@ -438,6 +492,43 @@ function BatteryChips({ battery }: { battery: { headset: number | null; left: nu
   );
 }
 
+/** Anwesend-Schalter (am Handgelenk und in der Team-Liste): sofortiges Umschalten mit kleinem „Pop“. */
+function DutyToggle({
+  onDuty,
+  busy,
+  error,
+  onToggle,
+  className,
+  title,
+}: {
+  onDuty: boolean;
+  busy: boolean;
+  error: boolean;
+  onToggle: () => void;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={onDuty}
+      aria-busy={busy}
+      title={title}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition duration-200 active:scale-95",
+        error ? "bg-red-500/70 text-white" : onDuty ? "bg-emerald-500 text-black" : "bg-white/12 text-white hover:bg-white/25",
+        busy && "opacity-75",
+        className,
+      )}
+    >
+      {/* key: der Punkt „poppt“ bei jedem Umschalten einmal. */}
+      <span key={String(onDuty)} className={cn("furr-vr-pop size-2.5 shrink-0 rounded-full", onDuty ? "bg-black/60" : "bg-white/40")} />
+      {error ? "Fehler – nochmal" : onDuty ? "Anwesend" : "Nicht anwesend"}
+    </button>
+  );
+}
+
 function NavButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -445,7 +536,7 @@ function NavButton({ label, disabled, onClick, children }: { label: string; disa
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25"
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/20 active:scale-90 disabled:opacity-25"
     >
       {children}
     </button>
@@ -454,8 +545,9 @@ function NavButton({ label, disabled, onClick, children }: { label: string; disa
 
 function VoteAlert({ vote, onDone }: { vote: NonNullable<VrcInstanceState["votes"]>[number]; onDone: () => void }) {
   return (
-    <div className="mr-11 flex items-center gap-3 rounded-2xl border-2 border-red-400 bg-red-500/25 px-3 py-2">
-      <AlertTriangle className="size-8 shrink-0 text-red-300" />
+    <div className="furr-vr-notice relative mr-11 flex items-center gap-3 overflow-hidden rounded-2xl border-2 border-red-400 bg-red-500/25 px-3 py-2">
+      <span aria-hidden className="furr-vr-ring furr-vr-ring-red pointer-events-none absolute inset-0 rounded-[14px]" />
+      <AlertTriangle className="furr-vr-pop size-8 shrink-0 text-red-300" />
       <div className="min-w-0">
         <p className="text-[12px] font-bold uppercase tracking-wide text-red-200">Votekick gestartet · {clock(vote.at)}</p>
         <p className="truncate text-[18px] font-bold leading-tight">gegen {vote.target}</p>
@@ -472,7 +564,7 @@ function VoteAlert({ vote, onDone }: { vote: NonNullable<VrcInstanceState["votes
       <button
         type="button"
         onClick={onDone}
-        className="ml-auto flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-[14px] font-semibold hover:bg-emerald-500/60"
+        className="ml-auto flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-[14px] font-semibold transition duration-150 hover:bg-emerald-500/60 active:scale-95"
         title="Schließt den Hinweis und schreibt es ins Anwesenheits-Protokoll"
       >
         <Check className="size-5" /> Erledigt
@@ -529,7 +621,19 @@ function availability(u: PresenceUser, present: boolean) {
 }
 
 /** Team list: who is anwesend (can moderate right now) and who is not – plus your own switch. */
-function TeamList({ duty, onDuty, onToggle }: { duty: { userId: string; onDuty: boolean }[]; onDuty: boolean; onToggle: () => void }) {
+function TeamList({
+  duty,
+  onDuty,
+  busy,
+  error,
+  onToggle,
+}: {
+  duty: { userId: string; onDuty: boolean }[];
+  onDuty: boolean;
+  busy: boolean;
+  error: boolean;
+  onToggle: () => void;
+}) {
   const team = useQuery({ queryKey: ["furr", "presence", "team"], queryFn: () => listPresence({ data: "team" }), refetchInterval: 15_000 });
   if (team.isError) return <Hint>{errorMessage(team.error)}</Hint>;
   const present = new Set(duty.filter((d) => d.onDuty).map((d) => d.userId));
@@ -545,24 +649,13 @@ function TeamList({ duty, onDuty, onToggle }: { duty: { userId: string; onDuty: 
         <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
           <ShieldCheck className="size-3.5" /> Team · {ready} anwesend
         </p>
-        <button
-          type="button"
-          onClick={onToggle}
-          className={cn(
-            "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold",
-            onDuty ? "bg-emerald-500 text-black" : "bg-white/12 text-white hover:bg-white/20",
-          )}
-          title="Tippen zum Umschalten – wird ins Anwesenheits-Protokoll geschrieben"
-        >
-          <span className={cn("size-2.5 rounded-full", onDuty ? "bg-black/60" : "bg-white/40")} />
-          {onDuty ? "Anwesend" : "Nicht anwesend"}
-        </button>
+        <DutyToggle onDuty={onDuty} busy={busy} error={error} onToggle={onToggle} className="shrink-0" title="Tippen zum Umschalten – wird ins Anwesenheits-Protokoll geschrieben" />
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-1 overflow-auto">
         {list.map((u) => {
           const a = availabilityOf(u);
           return (
-            <div key={u.id} className={cn("flex items-center gap-2 rounded-lg px-2 py-1", a.rank === 0 ? "bg-emerald-500/12" : "bg-white/5", a.rank === 2 && "opacity-55")}>
+            <div key={u.id} className={cn("flex items-center gap-2 rounded-lg px-2 py-1 transition-colors duration-300", a.rank === 0 ? "bg-emerald-500/12" : "bg-white/5", a.rank === 2 && "opacity-55")}>
               <span className={cn("size-2.5 shrink-0 rounded-full", a.dot)} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-medium leading-tight">{u.nickname || u.displayName}</span>
@@ -607,7 +700,7 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
               <div className="mt-2 flex items-center gap-2 text-[12px] tabular-nums text-white/60">
                 <span>{mmss(song.position ?? 0)}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/12">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, ((song.position ?? 0) / song.duration!) * 100)}%` }} />
+                  <div className="h-full rounded-full bg-accent transition-[width] duration-700 ease-linear" style={{ width: `${Math.min(100, ((song.position ?? 0) / song.duration!) * 100)}%` }} />
                 </div>
                 <span>{mmss(song.duration!)}</span>
               </div>
@@ -618,13 +711,13 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
         )}
       </div>
       <div className="flex items-center justify-center gap-3">
-        <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-12 place-items-center rounded-full bg-white/10 hover:bg-white/20">
+        <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-12 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/20 active:scale-90">
           <SkipBack className="size-6" />
         </button>
-        <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-14 place-items-center rounded-full bg-accent text-black hover:brightness-110">
+        <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-14 place-items-center rounded-full bg-accent text-black transition duration-150 hover:brightness-110 active:scale-90">
           {song?.playing ? <Pause className="size-7" /> : <Play className="size-7" />}
         </button>
-        <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-12 place-items-center rounded-full bg-white/10 hover:bg-white/20">
+        <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-12 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/20 active:scale-90">
           <SkipForward className="size-6" />
         </button>
       </div>
@@ -632,32 +725,55 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
   );
 }
 
+/** So lange bleibt „gesendet“ bzw. ein Fehler unter „Chatbox“ stehen. */
+const CHATBOX_SENT_MS = 3_000;
+const CHATBOX_ERROR_MS = 5_000;
+
 function Chatbox() {
   const texts = useVrSettings((s) => s.texts);
   const [sent, setSent] = useState<string | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
   const [error, setError] = useState("");
   const timer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (timer.current) window.clearTimeout(timer.current);
+  }, []);
 
   async function send(text: string) {
+    // Doppelklick mit dem Laser schickt den Text nicht zweimal.
+    if (sending) return;
     setError("");
+    setSent(null);
+    setSending(text);
+    if (timer.current) window.clearTimeout(timer.current);
     try {
       const bridge = osc();
       if (!bridge) throw new Error("Geht nur in der FurrBox-Desktop-App.");
       const r = await bridge.chatbox(text);
       if (!r.ok) throw new Error(r.error);
       setSent(text);
-      if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setSent(null), 2500);
+      timer.current = window.setTimeout(() => setSent(null), CHATBOX_SENT_MS);
     } catch (e) {
       setError(errorMessage(e));
+      // Fehler verschwindet von selbst wieder, statt dauerhaft stehen zu bleiben.
+      timer.current = window.setTimeout(() => setError(""), CHATBOX_ERROR_MS);
+    } finally {
+      setSending(null);
+      boostFrames(600);
     }
   }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/6 p-2.5">
       <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
-        <Send className="size-3.5" /> Chatbox {sent && <span className="normal-case tracking-normal text-emerald-300">· gesendet</span>}
-        {error && <span className="normal-case tracking-normal text-red-300">· {error}</span>}
+        <Send className="size-3.5" /> Chatbox
+        {sending && <span className="normal-case tracking-normal text-white/60">· sendet…</span>}
+        {sent && (
+          <span key={sent} className="furr-vr-pop flex items-center gap-1 normal-case tracking-normal text-emerald-300">
+            · <Check className="size-3.5" /> gesendet
+          </span>
+        )}
+        {error && <span className="furr-vr-notice truncate normal-case tracking-normal text-red-300">· {error}</span>}
       </p>
       <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5">
         {texts.map((t) => (
@@ -665,9 +781,10 @@ function Chatbox() {
             key={t}
             type="button"
             onClick={() => void send(t)}
+            aria-busy={sending === t}
             className={cn(
-              "overflow-hidden rounded-xl px-3 py-1.5 text-left text-[14px] font-medium leading-tight active:scale-95",
-              sent === t ? "bg-emerald-500/30" : "bg-white/10 hover:bg-accent/40",
+              "overflow-hidden rounded-xl px-3 py-1.5 text-left text-[14px] font-medium leading-tight transition duration-200 active:scale-95",
+              sent === t ? "bg-emerald-500/30 ring-2 ring-emerald-400/70" : sending === t ? "bg-accent/30 opacity-80" : "bg-white/10 hover:bg-accent/40",
             )}
           >
             {t}

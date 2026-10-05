@@ -1,4 +1,4 @@
-// Desktop icon grid: icons snap to cells and can be dragged anywhere with the mouse.
+﻿// Desktop icon grid: icons snap to cells and can be dragged anywhere with the mouse.
 // Positions are remembered per icon id (apps and FurrFS desktop files alike).
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,9 @@ export type DesktopIconItem = {
   onContextMenu?: (e: MouseEvent) => void;
 };
 
-const CELL_W = 84;
-const CELL_H = 96;
-const PAD = 12;
+const CELL_W = 96;
+const CELL_H = 104;
+const PAD = 20;
 const DRAG_THRESHOLD = 5;
 
 const key = (c: IconCell) => `${c.c}:${c.r}`;
@@ -123,14 +123,14 @@ export function DesktopIcons({ items }: { items: DesktopIconItem[] }) {
             onDoubleClick={item.onOpen}
             onContextMenu={item.onContextMenu}
             className={cn(
-              "absolute flex w-[76px] touch-none select-none flex-col items-center gap-1 rounded-sm px-1 py-2 text-center",
+              "absolute flex w-[88px] touch-none select-none flex-col items-center gap-1.5 rounded-md px-1 py-2 text-center",
               selectedIcon === item.id && "bg-accent/25",
-              dragging ? "z-20 cursor-grabbing opacity-80" : "transition-[left,top] duration-150",
+              dragging ? "z-20 cursor-grabbing opacity-80" : "transition-[left,top] duration-[180ms] ease-out",
             )}
             style={{ left, top }}
           >
             {item.icon}
-            <span lang="de" className="desk-label line-clamp-2 hyphens-auto break-words text-[11px] leading-tight">{softBreak(item.label)}</span>
+            <span lang="de" className="desk-label line-clamp-2 hyphens-auto break-words text-[11px] leading-snug text-fg/95">{softBreak(item.label)}</span>
           </button>
         );
       })}

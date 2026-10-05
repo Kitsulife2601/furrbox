@@ -4,6 +4,7 @@
 import { createServerOnlyFn } from "@tanstack/react-start";
 import type { Sql } from "@/lib/db";
 import type { Role } from "./roles";
+import { fetchWithTimeout } from "./http";
 
 const FISH_GUILD_ID = "1386651125327073470";
 
@@ -82,7 +83,7 @@ const fetchPrivilege = createServerOnlyFn(async (userId: string, discordId: stri
     const { accessToken } = await auth.api.getAccessToken({ body: { providerId: "discord", userId } });
     if (!accessToken) return null;
     const guildId = process.env.DISCORD_GUILD_ID?.trim() || FISH_GUILD_ID;
-    const res = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
+    const res = await fetchWithTimeout(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     if (res.status === 404) return { inGuild: false, privilege: "none" }; // not on the server

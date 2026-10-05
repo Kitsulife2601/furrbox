@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { Lock, Moon, Search, Settings2, Sun, Volume2 } from "lucide-react";
+import { Moon, Search, Settings2, Sun, Volume2 } from "lucide-react";
 import { useState } from "react";
-import { APPS, canLaunch, desktopAppIds, type AppId } from "@/lib/apps";
+import { APPS, canLaunch, desktopAppIds, groupApps, type AppId } from "@/lib/apps";
 import { PopupMenu } from "@/components/furr/ui";
 import { recentFiles, searchFiles } from "@/lib/furr/api/files";
 import { timeAgo, useMe } from "@/lib/furr/client";
@@ -64,11 +64,33 @@ export function StartMenu() {
   const setSearchQuery = useDesktop((s) => s.setSearchQuery);
   const apps = useLaunchableApps();
   const recent = useQuery({ queryKey: ["furr", "recent"], queryFn: () => recentFiles() });
-  const shown = searchQuery ? apps.filter((a) => a.name.toLowerCase().includes(searchQuery.toLowerCase())) : apps;
+  const q = searchQuery.trim().toLowerCase();
+  const shown = q
+    ? apps.filter((a) => a.name.toLowerCase().includes(q) || a.subtitle.toLowerCase().includes(q))
+    : apps;
+  const groups = groupApps(shown);
   const appMenu = useAppMenu();
 
+  function AppTile({ app }: { app: (typeof apps)[number] }) {
+    const Icon = app.icon;
+    return (
+      <button
+        type="button"
+        onClick={() => openApp(app.id)}
+        onContextMenu={(e) => appMenu.open(e, app.id)}
+        title={`${app.subtitle} · Rechtsklick: Desktop`}
+        className="flex flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 hover:bg-fg/8"
+      >
+        <span className="grid size-11 place-items-center rounded-xl bg-elevated shadow-sm">
+          <Icon className="size-5 text-accent" strokeWidth={1.6} />
+        </span>
+        <span className="line-clamp-2 text-center text-[11px] leading-snug">{app.name}</span>
+      </button>
+    );
+  }
+
   return (
-    <div className="mica absolute bottom-14 left-1/2 z-[80] w-[min(640px,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl p-4">
+    <div className="mica furr-flyout-in absolute bottom-14 left-1/2 z-[80] w-[min(680px,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl p-4">
       <div className="flex items-center gap-2 rounded-full bg-bg/70 px-3 py-2">
         <Search className="size-4 text-subtle" />
         <input
@@ -79,26 +101,18 @@ export function StartMenu() {
         />
       </div>
       {appMenu.element}
-      <p className="mt-4 text-[12px] font-medium text-muted">Apps</p>
-      <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-        {shown.map((app) => {
-          const Icon = app.icon;
-          return (
-            <button
-              key={app.id}
-              type="button"
-              onClick={() => openApp(app.id)}
-              onContextMenu={(e) => appMenu.open(e, app.id)}
-              title="Rechtsklick: zum Desktop hinzufügen"
-              className="flex flex-col items-center gap-2 rounded-md px-2 py-3 hover:bg-fg/8"
-            >
-              <span className="grid size-10 place-items-center rounded-md bg-elevated">
-                <Icon className="size-5 text-accent" strokeWidth={1.6} />
-              </span>
-              <span className="text-center text-[11px] leading-tight">{app.name}</span>
-            </button>
-          );
-        })}
+      <div className="mt-3 max-h-[min(420px,52vh)] space-y-3 overflow-auto pr-1">
+        {groups.map((g) => (
+          <div key={g.id}>
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{g.label}</p>
+            <div className="mt-1.5 grid grid-cols-3 gap-1 sm:grid-cols-5">
+              {g.apps.map((app) => (
+                <AppTile key={app.id} app={app} />
+              ))}
+            </div>
+          </div>
+        ))}
+        {!groups.length && <p className="px-2 py-4 text-center text-[12px] text-subtle">Keine Apps gefunden.</p>}
       </div>
       {!searchQuery && (
         <>
@@ -152,7 +166,7 @@ export function SearchPanel() {
   });
 
   return (
-    <div className="mica absolute bottom-14 left-1/2 z-[80] w-[min(560px,calc(100%-1rem))] -translate-x-1/2 rounded-xl p-4">
+    <div className="mica furr-flyout-in absolute bottom-14 left-1/2 z-[80] w-[min(560px,calc(100%-1rem))] -translate-x-1/2 rounded-xl p-4">
       <div className="flex items-center gap-2 rounded-full bg-bg/70 px-3 py-2">
         <Search className="size-4 text-subtle" />
         <input
@@ -218,7 +232,7 @@ export function InfoCenter() {
   const clearHistory = useNotifications((n) => n.clearHistory);
 
   return (
-    <div className="mica absolute bottom-14 right-2 z-[80] flex max-h-[calc(100%-4.5rem)] w-[min(360px,calc(100%-1rem))] flex-col rounded-xl p-3">
+    <div className="mica furr-flyout-in absolute bottom-14 right-2 z-[80] flex max-h-[calc(100%-4.5rem)] w-[min(360px,calc(100%-1rem))] flex-col rounded-xl p-3">
       <div className="flex items-center justify-between rounded-md bg-elevated/60 px-3 py-2 text-[12px]">
         <span className="flex items-center gap-2">
           <span className={cn("size-2 rounded-full", sync.connected ? "bg-emerald-400" : "bg-danger")} />
@@ -277,7 +291,7 @@ export function ClockFlyout({ now }: { now: Date }) {
   const offset = (first.getDay() + 6) % 7;
   const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   return (
-    <div className="mica absolute bottom-14 right-2 z-[80] w-[min(320px,calc(100%-1rem))] rounded-xl p-4">
+    <div className="mica furr-flyout-in absolute bottom-14 right-2 z-[80] w-[min(320px,calc(100%-1rem))] rounded-xl p-4">
       <p className="text-3xl font-medium tabular-nums">{format(now, "HH:mm:ss")}</p>
       <p className="mt-1 text-sm capitalize text-muted">{format(now, "EEEE, d. MMMM yyyy", { locale: de })}</p>
       <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[11px] text-subtle">
@@ -308,10 +322,11 @@ export function Toasts() {
           key={t.id}
           type="button"
           onClick={() => {
+            if (t.exiting) return;
             t.onClick?.();
             dismiss(t.id);
           }}
-          className="mica pointer-events-auto rounded-lg px-3 py-2.5 text-left"
+          className={cn("mica pointer-events-auto rounded-lg px-3 py-2.5 text-left", t.exiting ? "furr-toast-out" : "furr-toast-in")}
         >
           <p className="text-[11px] text-subtle">{t.version}</p>
           <p className="text-[13px] font-medium">{t.title}</p>

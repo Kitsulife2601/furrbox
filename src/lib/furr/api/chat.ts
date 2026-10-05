@@ -2,10 +2,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { accessMiddleware } from "../access";
 import { getSetting, getSql, iso, loadMe, newId, requirePermission, setSetting } from "../core";
+import { runSideEffect, safeJsonParse } from "../http";
 import { EVIDENCE_ROOT, MAX_UPLOAD_BYTES, sanitizeName } from "../paths";
 import { ROLE_LABEL, effectiveRole } from "../roles";
 import type { ChatAttachment, ChatChannel, ChatKind, ChatMessage } from "../types";
 import { STICKER_IDS } from "../stickers";
+
+/** Purge höchstens alle 60s – verhindert DB-Last bei Polling. */
+const PURGE_MIN_INTERVAL_MS = 60_000;
+let lastPurgeAt = 0;
 
 async function retentionDays() {
   const parsed = Number(await getSetting("chat_retention_days", "7"));
@@ -17,6 +22,18 @@ async function purgeExpired() {
   const sql = await getSql();
   await sql.query(`delete from chat_message where created_at < now() - ($1::int * interval '1 day')`, [days]);
   await sql`delete from chat_attachment a where not exists (select 1 from chat_message m where m.id = a.message_id)`;
+}
+
+/**
+ * Abgelaufene Nachrichten im Hintergrund aufräumen.
+ * Nie den Request blockieren (Client-Animationen / Chat-UI warten nicht).
+ */
+function schedulePurge(force = false) {
+  void runSideEffect(async () => {
+    if (!force && Date.now() - lastPurgeAt < PURGE_MIN_INTERVAL_MS) return;
+    lastPurgeAt = Date.now();
+    await purgeExpired();
+  }, force ? "chat-purge-settings" : "chat-purge");
 }
 
 type Row = {
@@ -55,7 +72,7 @@ function toDto(r: Row): ChatMessage {
     content: r.content,
     createdAt: iso(r.created_at) ?? new Date().toISOString(),
     kind: (r.kind ?? "text") as ChatKind,
-    attachment: r.attachment_json ? (JSON.parse(r.attachment_json) as ChatAttachment) : null,
+    attachment: safeJsonParse<ChatAttachment | null>(r.attachment_json, null),
   };
 }
 
@@ -66,7 +83,8 @@ export const listChatMessages = createServerFn({ method: "GET" })
   }))
   .middleware([accessMiddleware])
   .handler(async ({ context, data }): Promise<ChatMessage[]> => {
-    await purgeExpired();
+    schedulePurge();
+    if (data.channel === "private" && !data.partnerId) return [];
     const sql = await getSql();
     const rows =
       data.channel === "team"
@@ -170,10 +188,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     }
     if (!content) throw new Error("Nachricht ist leer.");
 
-    await purgeExpired();
+    // Kritischer Pfad: Insert zuerst – Purge danach im Hintergrund.
     await sql`
       insert into chat_message (id, channel, sender_id, recipient_id, content, kind, attachment_json)
       values (${id}, ${data.channel}, ${context.userId}, ${recipientId}, ${content}, ${kind}, ${attachment ? JSON.stringify(attachment) : null})`;
+    schedulePurge();
     return { id };
   });
 
@@ -202,6 +221,6 @@ export const updateChatSettings = createServerFn({ method: "POST" })
   .handler(async ({ context, data: days }) => {
     await requirePermission(context.userId, "canConfigureChat");
     await setSetting("chat_retention_days", String(days));
-    await purgeExpired();
+    schedulePurge(true);
     return { retentionDays: days };
   });
