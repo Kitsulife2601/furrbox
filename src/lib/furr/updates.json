@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.22",
+    "title": "FurrBox VR: Overlay nach SteamVR-Neustart wieder da",
+    "items": [
+      "Behoben: Wurde SteamVR beendet und neu gestartet, während FurrBox lief, erschien das Fenster am Arm nicht mehr. FurrBox verbindet sich jetzt von selbst wieder.",
+      "Das Aufklappen beim Hinschauen ist ruhiger: Das Fenster bleibt offen, solange du grob in seine Richtung schaust."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "title": "Eigene Töne und schönerer Votekick-Ton",
     "items": [
       "Der Votekick-Ton ist jetzt ein Glockenspiel, das zweimal ruft – auffällig, aber nicht mehr schrill.",

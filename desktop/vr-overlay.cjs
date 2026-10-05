@@ -24,6 +24,7 @@ const POINT_DISTANCE = 0.9;
 // "Looking at your arm": the panel is within this angle of where the headset points, faces you
 // and is close enough. Opens after GAZE_ON_MS, closes GAZE_OFF_MS after you look away.
 const GAZE_COS = Math.cos((24 * Math.PI) / 180);
+const GAZE_COS_OPEN = Math.cos((40 * Math.PI) / 180);
 const GAZE_FACING = 0.2;
 const GAZE_DISTANCE = 0.9;
 const GAZE_ON_MS = 250;
@@ -109,6 +110,10 @@ function matrixFor(p, raise = 0) {
   return [...m[0], p.x + m[0][1] * raise, ...m[1], p.y + m[1][1] * raise, ...m[2], p.z + m[2][1] * raise];
 }
 
+// Function signatures are registered with koffi once per app run – registering the same name again
+// (after SteamVR was restarted and FurrBox reconnects) is an error, so they are kept here.
+const PROTOS = new Map();
+
 function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let koffi = null;
   let lib = null;
@@ -127,6 +132,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let mouseDown = false;
   let lastFrameError = -1;
   let lastConnectError = "";
+  let loggedDevice = INVALID_DEVICE;
   let gazing = false;
   let gazeSince = 0;
   let gazeLost = 0;
@@ -181,7 +187,9 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       if (!fn) {
         const index = names.indexOf(name);
         if (index < 0) throw new Error(`Unbekannte Funktion ${name}`);
-        fn = { ptr: pointers[index], proto: koffi.proto(signature.replace("FN", `${version}_${name}`)) };
+        const key = `${version}_${name}`;
+        if (!PROTOS.has(key)) PROTOS.set(key, koffi.proto(signature.replace("FN", key)));
+        fn = { ptr: pointers[index], proto: PROTOS.get(key) };
         cache.set(name, fn);
       }
       return koffi.call(fn.ptr, fn.proto, ...args);
@@ -249,7 +257,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     matrixFor(placement, raise()).forEach((v, i) => m.writeFloatLE(v, i * 4));
     const e = api.ovr("SetOverlayTransformTrackedDeviceRelative", "int FN(uint64_t, uint32_t, void*)", handle, device, m);
     if (e) log(`VR-Overlay: Position konnte nicht gesetzt werden (Fehler ${e}).`);
-    if (attachedTo !== device) log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
+    if (loggedDevice !== device) log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
+    loggedDevice = device;
     const changed = attachedTo !== device;
     attachedTo = device;
     show(true);
@@ -311,7 +320,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       api.sys("GetDeviceToAbsoluteTrackingPose", "void FN(int, float, void*, uint32_t)", UNIVERSE_STANDING, 0, poses, count);
       const row = (device, i) => poses.readFloatLE(device * POSE_SIZE + i * 4);
       if (poses.readUInt8(76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
-        const p = matrixFor(placement, raise());
+        const p = matrixFor(placement, 0);
         const h = (i) => row(attachedTo, i);
         // Panel centre and normal in room coordinates: hand pose × placement.
         const centre = [0, 1, 2].map((r) => h(r * 4) * p[3] + h(r * 4 + 1) * p[7] + h(r * 4 + 2) * p[11] + h(r * 4 + 3));
@@ -322,7 +331,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         const dist = Math.hypot(...to) || 1;
         const dir = to.map((v) => v / dist);
         const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        looking = dist < GAZE_DISTANCE && dot(forward, dir) > GAZE_COS && -dot(normal, dir) > GAZE_FACING;
+        // Once open, a wider angle keeps it open (you also look at the window above the widget).
+        looking = dist < GAZE_DISTANCE && dot(forward, dir) > (gazing ? GAZE_COS_OPEN : GAZE_COS) && -dot(normal, dir) > (gazing ? 0 : GAZE_FACING);
       }
     }
     const now = Date.now();
