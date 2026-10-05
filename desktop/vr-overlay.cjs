@@ -28,8 +28,18 @@ const GAZE_COS_OPEN = Math.cos((40 * Math.PI) / 180);
 const GAZE_FACING = 0.2;
 const GAZE_DISTANCE = 0.9;
 const GAZE_ON_MS = 250;
+const POINT_ON_MS = 120;
+const FRAME_GAP_MS = 1200;
+const POINT_OFF_MS = 2500;
 const GAZE_OFF_MS = 2500;
-const EVENT = { mouseMove: 300, mouseDown: 301, mouseUp: 302, scroll: 305, scrollSmooth: 309, quit: 700 };
+const EVENT = {
+  mouseMove: 300,
+  mouseDown: 301,
+  mouseUp: 302,
+  scroll: 305,
+  scrollSmooth: 309,
+  quit: 700,
+};
 const FLAG_INTERACTIVE = 65536; // MakeOverlaysInteractiveIfVisible
 const FLAG_SCROLL = 131072; // SendVRSmoothScrollEvents
 const INPUT_MOUSE = 1;
@@ -46,7 +56,11 @@ const PROVIDES_BATTERY_PROP = 1026; // Prop_DeviceProvidesBatteryStatus_Bool
 /** Where SteamVR lives (from %LOCALAPPDATA%\openvr\openvrpaths.vrpath). */
 function findOpenvrDll() {
   try {
-    const file = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "openvr", "openvrpaths.vrpath");
+    const file = path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "openvr",
+      "openvrpaths.vrpath",
+    );
     const runtimes = JSON.parse(fs.readFileSync(file, "utf8")).runtime ?? [];
     for (const dir of runtimes) {
       const dll = path.join(dir, "bin", "win64", "openvr_api.dll");
@@ -64,7 +78,17 @@ function findOpenvrDll() {
  */
 // Default: flat on the back of the left hand up to the wrist, readable when you look at your arm
 // like at a watch (turn 90° = the long side runs along the arm).
-const DEFAULT_PLACEMENT = { hand: "left", width: 0.15, x: 0, y: 0.04, z: 0.1, tilt: 0, roll: 0, turn: 90, lift: 35 };
+const DEFAULT_PLACEMENT = {
+  hand: "left",
+  width: 0.15,
+  x: 0,
+  y: 0.04,
+  z: 0.1,
+  tilt: 0,
+  roll: 0,
+  turn: 90,
+  lift: 35,
+};
 
 function matrixFor(p, raise = 0) {
   // Overlay X -> controller X, overlay up (Y) -> controller forward (-Z), overlay normal (Z) -> controller up (Y),
@@ -78,7 +102,8 @@ function matrixFor(p, raise = 0) {
     [0, s, c],
     [0, -c, s],
   ];
-  const mul = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
+  const mul = (a, b) =>
+    a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
   // "turn": spin the panel around its own middle (like turning a phone from portrait to landscape).
   const ct = Math.cos(rad(p.turn));
   const st = Math.sin(rad(p.turn));
@@ -107,7 +132,14 @@ function matrixFor(p, raise = 0) {
     m,
   );
   // `raise`: move the centre along the panel's own "up" (keeps the bottom edge in place when the window opens).
-  return [...m[0], p.x + m[0][1] * raise, ...m[1], p.y + m[1][1] * raise, ...m[2], p.z + m[2][1] * raise];
+  return [
+    ...m[0],
+    p.x + m[0][1] * raise,
+    ...m[1],
+    p.y + m[1][1] * raise,
+    ...m[2],
+    p.z + m[2][1] * raise,
+  ];
 }
 
 // Function signatures are registered with koffi once per app run – registering the same name again
@@ -131,8 +163,13 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let lastHit = 0;
   let mouseDown = false;
   let lastFrameError = -1;
+  let lastFrameAt = 0;
+  let pendingFrame = null;
+  let frameTimer = null;
   let lastConnectError = "";
   let loggedDevice = INVALID_DEVICE;
+  let pointing = false;
+  let pointSince = 0;
   let gazing = false;
   let gazeSince = 0;
   let gazeLost = 0;
@@ -171,7 +208,10 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       return true;
     } catch (error) {
       lib = null;
-      setState({ status: "unsupported", error: `SteamVR-Schnittstelle konnte nicht geladen werden: ${error.message}` });
+      setState({
+        status: "unsupported",
+        error: `SteamVR-Schnittstelle konnte nicht geladen werden: ${error.message}`,
+      });
       return false;
     }
   }
@@ -210,12 +250,21 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     try {
       if (!lib.valid(OVERLAY) || !lib.valid(SYSTEM)) {
         disconnect();
-        setState({ status: "unsupported", error: "Diese SteamVR-Version wird noch nicht unterstützt (bitte SteamVR aktualisieren)." });
+        setState({
+          status: "unsupported",
+          error: "Diese SteamVR-Version wird noch nicht unterstützt (bitte SteamVR aktualisieren).",
+        });
         return false;
       }
       api = { sys: bind(SYSTEM), ovr: bind(OVERLAY) };
       const out = [0n];
-      const e = api.ovr("CreateOverlay", "int FN(const char*, const char*, _Out_ uint64_t*)", OVERLAY_KEY, "FurrBox", out);
+      const e = api.ovr(
+        "CreateOverlay",
+        "int FN(const char*, const char*, _Out_ uint64_t*)",
+        OVERLAY_KEY,
+        "FurrBox",
+        out,
+      );
       if (e) throw new Error(`Overlay konnte nicht angelegt werden (Fehler ${e}).`);
       handle = out[0];
       api.ovr("SetOverlayInputMethod", "int FN(uint64_t, int)", handle, INPUT_MOUSE);
@@ -257,9 +306,16 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     }
     const m = Buffer.alloc(48);
     matrixFor(placement, raise()).forEach((v, i) => m.writeFloatLE(v, i * 4));
-    const e = api.ovr("SetOverlayTransformTrackedDeviceRelative", "int FN(uint64_t, uint32_t, void*)", handle, device, m);
+    const e = api.ovr(
+      "SetOverlayTransformTrackedDeviceRelative",
+      "int FN(uint64_t, uint32_t, void*)",
+      handle,
+      device,
+      m,
+    );
     if (e) log(`VR-Overlay: Position konnte nicht gesetzt werden (Fehler ${e}).`);
-    if (loggedDevice !== device) log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
+    if (loggedDevice !== device)
+      log(`VR-Overlay: hängt am Controller ${device} (${placement.hand}).`);
     loggedDevice = device;
     const changed = attachedTo !== device;
     attachedTo = device;
@@ -297,14 +353,19 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   /** Left / right controller: SteamVR's role first, otherwise the connected controllers in order. */
   function findHands() {
     const role = (r) => api.sys("GetTrackedDeviceIndexForControllerRole", "uint32_t FN(int)", r);
-    const connected = (i) => i !== INVALID_DEVICE && api.sys("IsTrackedDeviceConnected", "bool FN(uint32_t)", i);
+    const connected = (i) =>
+      i !== INVALID_DEVICE && api.sys("IsTrackedDeviceConnected", "bool FN(uint32_t)", i);
     let left = role(ROLE.left);
     let right = role(ROLE.right);
     if (!connected(left)) left = INVALID_DEVICE;
     if (!connected(right)) right = INVALID_DEVICE;
     if (left === INVALID_DEVICE || right === INVALID_DEVICE) {
       for (let i = 0; i < MAX_DEVICES; i += 1) {
-        if (api.sys("GetTrackedDeviceClass", "int FN(uint32_t)", i) !== DEVICE_CLASS_CONTROLLER || !connected(i)) continue;
+        if (
+          api.sys("GetTrackedDeviceClass", "int FN(uint32_t)", i) !== DEVICE_CLASS_CONTROLLER ||
+          !connected(i)
+        )
+          continue;
         const r = api.sys("GetControllerRoleForTrackedDeviceIndex", "int FN(uint32_t)", i);
         if (r === ROLE.left && left === INVALID_DEVICE) left = i;
         else if (r === ROLE.right && right === INVALID_DEVICE) right = i;
@@ -314,19 +375,30 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   }
 
   /** Are you looking at the panel (like at a watch)? Tells the page, which then opens / closes. */
-  function updateGaze(pointing) {
+  function updateGaze() {
     let looking = false;
     if (attachedTo !== INVALID_DEVICE) {
       const count = attachedTo + 1;
       const poses = Buffer.alloc(POSE_SIZE * count);
-      api.sys("GetDeviceToAbsoluteTrackingPose", "void FN(int, float, void*, uint32_t)", UNIVERSE_STANDING, 0, poses, count);
+      api.sys(
+        "GetDeviceToAbsoluteTrackingPose",
+        "void FN(int, float, void*, uint32_t)",
+        UNIVERSE_STANDING,
+        0,
+        poses,
+        count,
+      );
       const row = (device, i) => poses.readFloatLE(device * POSE_SIZE + i * 4);
       if (poses.readUInt8(76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
         const p = matrixFor(placement, 0);
         const h = (i) => row(attachedTo, i);
         // Panel centre and normal in room coordinates: hand pose × placement.
-        const centre = [0, 1, 2].map((r) => h(r * 4) * p[3] + h(r * 4 + 1) * p[7] + h(r * 4 + 2) * p[11] + h(r * 4 + 3));
-        const normal = [0, 1, 2].map((r) => h(r * 4) * p[2] + h(r * 4 + 1) * p[6] + h(r * 4 + 2) * p[10]);
+        const centre = [0, 1, 2].map(
+          (r) => h(r * 4) * p[3] + h(r * 4 + 1) * p[7] + h(r * 4 + 2) * p[11] + h(r * 4 + 3),
+        );
+        const normal = [0, 1, 2].map(
+          (r) => h(r * 4) * p[2] + h(r * 4 + 1) * p[6] + h(r * 4 + 2) * p[10],
+        );
         const head = [row(0, 3), row(0, 7), row(0, 11)];
         const forward = [-row(0, 2), -row(0, 6), -row(0, 10)];
         const to = centre.map((v, i) => v - head[i]);
@@ -334,11 +406,14 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         const dir = to.map((v) => v / dist);
         const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         // Once open, a wider angle keeps it open (you also look at the window above the widget).
-        looking = dist < GAZE_DISTANCE && dot(forward, dir) > (gazing ? GAZE_COS_OPEN : GAZE_COS) && -dot(normal, dir) > (gazing ? 0 : GAZE_FACING);
+        looking =
+          dist < GAZE_DISTANCE &&
+          dot(forward, dir) > (gazing ? GAZE_COS_OPEN : GAZE_COS) &&
+          -dot(normal, dir) > (gazing ? 0 : GAZE_FACING);
       }
     }
     const now = Date.now();
-    if (looking || pointing) {
+    if (looking) {
       gazeLost = 0;
       if (!gazeSince) gazeSince = now;
       if (!gazing && now - gazeSince >= GAZE_ON_MS) setGazing(true);
@@ -358,25 +433,58 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   function updatePointer() {
     if (!api || handle === null || !visible) return;
     let hit = false;
-    if (pointerHand !== INVALID_DEVICE) {
-      const poses = Buffer.alloc(POSE_SIZE * (pointerHand + 1));
-      api.sys("GetDeviceToAbsoluteTrackingPose", "void FN(int, float, void*, uint32_t)", UNIVERSE_STANDING, 0, poses, pointerHand + 1);
+    if (pointerHand !== INVALID_DEVICE && attachedTo !== INVALID_DEVICE) {
+      const count = Math.max(pointerHand, attachedTo) + 1;
+      const poses = Buffer.alloc(POSE_SIZE * count);
+      api.sys(
+        "GetDeviceToAbsoluteTrackingPose",
+        "void FN(int, float, void*, uint32_t)",
+        UNIVERSE_STANDING,
+        0,
+        poses,
+        count,
+      );
       const o = pointerHand * POSE_SIZE;
-      if (poses.readUInt8(o + 76)) {
+      if (poses.readUInt8(o + 76) && poses.readUInt8(attachedTo * POSE_SIZE + 76)) {
         const f = (i) => poses.readFloatLE(o + i * 4);
         const source = [f(3), f(7), f(11)];
-        // Straight ahead (-Z) and tilted 35° down – controllers point slightly downwards.
+        // Straight ahead (-Z) and tilted 35° down – controllers (and fingers) point slightly downwards.
         const forward = [-f(2), -f(6), -f(10)];
         const up = [f(1), f(5), f(9)];
         const tilted = forward.map((v, i) => v * 0.82 - up[i] * 0.57);
+        // Where the panel is: hand pose × placement (centre and its "up" direction in the room).
+        const h = (i) => poses.readFloatLE(attachedTo * POSE_SIZE + i * 4);
+        const m = matrixFor(placement, raise());
+        const centre = [0, 1, 2].map(
+          (r) => h(r * 4) * m[3] + h(r * 4 + 1) * m[7] + h(r * 4 + 2) * m[11] + h(r * 4 + 3),
+        );
+        const panelUp = [0, 1, 2].map(
+          (r) => h(r * 4) * m[1] + h(r * 4 + 1) * m[5] + h(r * 4 + 2) * m[9],
+        );
+        const scale = widthMeters() / FULL.width;
+        // With the window closed only the widget (the bottom part) counts – the empty area above it
+        // must not catch the laser, otherwise it would get in the way of VRChat.
+        const widgetTop = -(FULL.height / 2) * scale + WIDGET.height * scale + 0.01;
         hit = [forward, tilted].some((dir) => {
           const params = Buffer.alloc(28);
           source.forEach((v, i) => params.writeFloatLE(v, i * 4));
           dir.forEach((v, i) => params.writeFloatLE(v, 12 + i * 4));
           params.writeInt32LE(UNIVERSE_STANDING, 24);
           const results = Buffer.alloc(36);
-          const ok = api.ovr("ComputeOverlayIntersection", "bool FN(uint64_t, void*, void*)", handle, params, results);
-          return ok && results.readFloatLE(32) < POINT_DISTANCE;
+          const ok = api.ovr(
+            "ComputeOverlayIntersection",
+            "bool FN(uint64_t, void*, void*)",
+            handle,
+            params,
+            results,
+          );
+          if (!ok || results.readFloatLE(32) >= POINT_DISTANCE) return false;
+          if (mode === "full") return true;
+          const y = [0, 1, 2].reduce(
+            (sum, i) => sum + (results.readFloatLE(i * 4) - centre[i]) * panelUp[i],
+            0,
+          );
+          return y <= widgetTop;
         });
       }
     }
@@ -384,7 +492,20 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     if (hit) lastHit = now;
     // Keep the laser for a moment after leaving the panel (so a click at the edge still lands).
     setInteractive(hit || (interactive && now - lastHit < 400));
-    updateGaze(interactive);
+    // "Pointing at it" opens the window (if switched on in the settings); it closes a moment after you stop.
+    if (hit) {
+      if (!pointSince) pointSince = now;
+      if (!pointing && now - pointSince >= POINT_ON_MS) setPointing(true);
+    } else {
+      pointSince = 0;
+      if (pointing && now - lastHit >= POINT_OFF_MS) setPointing(false);
+    }
+    updateGaze();
+  }
+
+  function setPointing(on) {
+    pointing = on;
+    if (win && !win.isDestroyed()) win.webContents.send("furrbox:vr-point", on);
   }
 
   function openPage() {
@@ -396,7 +517,13 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       show: false,
       frame: false,
       transparent: true,
-      webPreferences: { offscreen: true, preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: {
+        offscreen: true,
+        preload,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
     });
     win.webContents.setFrameRate(10);
     win.webContents.on("paint", (_event, _dirty, image) => pushFrame(image));
@@ -407,8 +534,32 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     });
   }
 
+  /**
+   * Hands a new picture to SteamVR. Every hand-over makes SteamVR swap the picture, which can show
+   * as a short flicker – so while nobody points at the panel at most one update per FRAME_GAP_MS
+   * is sent (the newest picture always arrives).
+   */
   function pushFrame(image) {
     if (!api || handle === null) return;
+    const wait = interactive ? 0 : FRAME_GAP_MS - (Date.now() - lastFrameAt);
+    if (wait > 0) {
+      pendingFrame = image;
+      if (!frameTimer) {
+        frameTimer = setTimeout(() => {
+          frameTimer = null;
+          const latest = pendingFrame;
+          pendingFrame = null;
+          if (latest) sendFrame(latest);
+        }, wait);
+      }
+      return;
+    }
+    sendFrame(image);
+  }
+
+  function sendFrame(image) {
+    if (!api || handle === null) return;
+    lastFrameAt = Date.now();
     const size = image.getSize();
     if (!size.width || !size.height) return;
     // Electron gives BGRA, SteamVR wants RGBA.
@@ -419,10 +570,22 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       pixels[i + 2] = b;
     }
     try {
-      const e = api.ovr("SetOverlayRaw", "int FN(uint64_t, void*, uint32_t, uint32_t, uint32_t)", handle, pixels, size.width, size.height, 4);
+      const e = api.ovr(
+        "SetOverlayRaw",
+        "int FN(uint64_t, void*, uint32_t, uint32_t, uint32_t)",
+        handle,
+        pixels,
+        size.width,
+        size.height,
+        4,
+      );
       if (e !== lastFrameError) {
         lastFrameError = e;
-        log(e ? `VR-Overlay: Bild wurde abgelehnt (Fehler ${e}).` : `VR-Overlay: Bild wird angezeigt (${size.width}×${size.height}).`);
+        log(
+          e
+            ? `VR-Overlay: Bild wurde abgelehnt (Fehler ${e}).`
+            : `VR-Overlay: Bild wird angezeigt (${size.width}×${size.height}).`,
+        );
       }
     } catch (error) {
       log("VR-Overlay: Bild konnte nicht gesendet werden:", error.message);
@@ -431,7 +594,12 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function mouse(type, x, y, extra = {}) {
     if (!win || win.isDestroyed()) return;
-    win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(size().height - y), ...extra });
+    win.webContents.sendInputEvent({
+      type,
+      x: Math.round(x),
+      y: Math.round(size().height - y),
+      ...extra,
+    });
   }
 
   function pump() {
@@ -440,7 +608,15 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       updatePointer();
       const event = Buffer.alloc(EVENT_SIZE);
       // Laser pointer -> mouse input for the page. (Event data starts at byte 16.)
-      while (api.ovr("PollNextOverlayEvent", "bool FN(uint64_t, void*, uint32_t)", handle, event, EVENT_SIZE)) {
+      while (
+        api.ovr(
+          "PollNextOverlayEvent",
+          "bool FN(uint64_t, void*, uint32_t)",
+          handle,
+          event,
+          EVENT_SIZE,
+        )
+      ) {
         const type = event.readUInt32LE(0);
         const x = event.readFloatLE(16);
         const y = event.readFloatLE(20);
@@ -453,7 +629,13 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           mouse("mouseUp", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.scrollSmooth || type === EVENT.scroll) {
           // Scroll data: xdelta, ydelta (floats) – position is unknown, scroll the middle of the page.
-          win?.webContents.sendInputEvent({ type: "mouseWheel", x: size().width / 2, y: size().height / 2, deltaX: x * 120, deltaY: y * 120 });
+          win?.webContents.sendInputEvent({
+            type: "mouseWheel",
+            x: size().width / 2,
+            y: size().height / 2,
+            deltaX: x * 120,
+            deltaY: y * 120,
+          });
         }
       }
       // SteamVR is closing: let go, otherwise it waits for us.
@@ -540,9 +722,21 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         if (device === INVALID_DEVICE) return null;
         try {
           const err = [0];
-          const has = api.sys("GetBoolTrackedDeviceProperty", "bool FN(uint32_t, int, _Out_ int*)", device, PROVIDES_BATTERY_PROP, err);
+          const has = api.sys(
+            "GetBoolTrackedDeviceProperty",
+            "bool FN(uint32_t, int, _Out_ int*)",
+            device,
+            PROVIDES_BATTERY_PROP,
+            err,
+          );
           if (!has || err[0]) return null;
-          const value = api.sys("GetFloatTrackedDeviceProperty", "float FN(uint32_t, int, _Out_ int*)", device, BATTERY_PROP, err);
+          const value = api.sys(
+            "GetFloatTrackedDeviceProperty",
+            "float FN(uint32_t, int, _Out_ int*)",
+            device,
+            BATTERY_PROP,
+            err,
+          );
           return err[0] ? null : Math.round(value * 100) / 100;
         } catch {
           return null;

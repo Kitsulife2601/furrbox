@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld("furrbox", {
     setPlacement: (placement) => ipcRenderer.invoke("furrbox:vr-placement", placement),
     setMode: (mode) => ipcRenderer.invoke("furrbox:vr-mode", mode),
     battery: () => ipcRenderer.invoke("furrbox:vr-battery"),
+    // Panel page: true while the other controller points at the panel, false a moment after it stops.
+    onPoint: (callback) => {
+      const listener = (_event, pointing) => callback(Boolean(pointing));
+      ipcRenderer.on("furrbox:vr-point", listener);
+      return () => ipcRenderer.removeListener("furrbox:vr-point", listener);
+    },
     // Panel page: called with true while you look at your arm, false after you look away.
     onGaze: (callback) => {
       const listener = (_event, looking) => callback(Boolean(looking));

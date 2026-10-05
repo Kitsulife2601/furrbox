@@ -103,6 +103,8 @@ export function VrSettings() {
   const setButtonMode = useVrSettings((s) => s.setButtonMode);
   const gazeOpen = useVrSettings((s) => s.gazeOpen);
   const setGazeOpen = useVrSettings((s) => s.setGazeOpen);
+  const pointOpen = useVrSettings((s) => s.pointOpen);
+  const setPointOpen = useVrSettings((s) => s.setPointOpen);
   const status = useVrSettings((s) => s.status);
   const setStatus = useVrSettings((s) => s.setStatus);
 
@@ -116,7 +118,7 @@ export function VrSettings() {
     return (
       <div className="grid max-w-xl gap-3">
         <Header />
-        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.21" />
+        <DesktopHint what="FurrBox VR (das Fenster am Arm in SteamVR)" version="2.0.24" />
       </div>
     );
   }
@@ -159,11 +161,24 @@ export function VrSettings() {
       {buttonMode && (
         <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
           <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium">Beim Draufzeigen aufklappen</p>
+            <p className="text-[12px] text-muted">
+              {pointOpen
+                ? "Zeigst du mit dem anderen Controller (oder Finger) auf das kleine Feld am Handgelenk, klappt das Fenster auf. 2,5 Sekunden nachdem du nicht mehr darauf zeigst, klappt es wieder zu."
+                : "Das Fenster öffnet sich nicht beim Draufzeigen."}
+            </p>
+          </div>
+          <Toggle on={pointOpen} label="Beim Draufzeigen aufklappen" onChange={setPointOpen} />
+        </div>
+      )}
+      {buttonMode && (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+          <div className="min-w-0 flex-1">
             <p className="text-[13px] font-medium">Beim Hinschauen aufklappen</p>
             <p className="text-[12px] text-muted">
               {gazeOpen
                 ? "Schaust du auf deinen Arm, klappt das Fenster von selbst auf – ganz ohne Antippen. Schaust du weg, klappt es nach knapp 2 Sekunden wieder zu."
-                : "Das Fenster öffnet sich nur, wenn du den Pfoten-Knopf antippst."}
+                : "Aus. Das Fenster öffnet sich nicht beim Hinschauen."}
             </p>
           </div>
           <Toggle on={gazeOpen} label="Beim Hinschauen aufklappen" onChange={setGazeOpen} />

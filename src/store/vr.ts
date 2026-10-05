@@ -38,9 +38,12 @@ type VrSettings = {
   /** true = only a small button on the arm; the panel opens on a tap or when something happens. */
   buttonMode: boolean;
   setButtonMode: (on: boolean) => void;
-  /** Open the panel by looking at your arm (no tapping needed). */
+  /** Open the window by looking at your arm. */
   gazeOpen: boolean;
   setGazeOpen: (on: boolean) => void;
+  /** Open the window by pointing at the wrist widget with the other controller / finger. */
+  pointOpen: boolean;
+  setPointOpen: (on: boolean) => void;
   /** Permanent status in the VRChat chatbox (sent again every few seconds by the desktop app). */
   status: { enabled: boolean; items: VrInfoId[]; text: string };
   setStatus: (patch: Partial<VrSettings["status"]>) => void;
@@ -56,8 +59,10 @@ export const useVrSettings = create<VrSettings>()(
       infos: { time: "top", world: "top", people: "top", date: "off", joined: "bottom", instanceAge: "bottom", music: "off" },
       buttonMode: true,
       setButtonMode: (buttonMode) => set({ buttonMode }),
-      gazeOpen: true,
+      gazeOpen: false,
       setGazeOpen: (gazeOpen) => set({ gazeOpen }),
+      pointOpen: true,
+      setPointOpen: (pointOpen) => set({ pointOpen }),
       texts: DEFAULT_TEXTS,
       status: { enabled: false, items: ["time", "people", "joined"], text: "" },
       setStatus: (patch) => set((s) => ({ status: { ...s.status, ...patch } })),
@@ -65,7 +70,7 @@ export const useVrSettings = create<VrSettings>()(
       setInfo: (id, place) => set((s) => ({ infos: { ...s.infos, [id]: place } })),
       setTexts: (texts) => set({ texts: texts.map((t) => t.trim().slice(0, 144)).filter(Boolean).slice(0, 8) }),
     }),
-    { name: "furrbox-vr", version: 2, migrate: (state) => state as VrSettings, merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) } }) },
+    { name: "furrbox-vr", version: 3, migrate: (state, version) => (version < 3 ? { ...(state as VrSettings), gazeOpen: false, pointOpen: true } : (state as VrSettings)), merge: (saved, current) => ({ ...current, ...(saved as object), infos: { ...current.infos, ...((saved as Partial<VrSettings>)?.infos ?? {}) }, widgets: { ...current.widgets, ...((saved as Partial<VrSettings>)?.widgets ?? {}) }, status: { ...current.status, ...((saved as Partial<VrSettings>)?.status ?? {}) } }) },
   ),
 );
 

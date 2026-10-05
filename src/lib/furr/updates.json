@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.24",
+    "title": "FurrBox VR: Aufklappen beim Draufzeigen, weniger Flackern",
+    "items": [
+      "Das Fenster klappt jetzt auf, wenn du mit dem anderen Controller (oder Finger) auf das kleine Feld am Handgelenk zeigst – nicht mehr beim Hinschauen. 2,5 Sekunden nach dem Wegzeigen klappt es wieder zu.",
+      "„Beim Hinschauen aufklappen“ ist jetzt aus und lässt sich unter FurrSettings → „FurrBox VR“ wieder einschalten.",
+      "Weniger Flackern: Das Bild am Arm wird nur noch gut einmal pro Sekunde erneuert, solange du nicht darauf zeigst. Beim Bedienen bleibt es flüssig.",
+      "Der Votekick-Hinweis blinkt nicht mehr, der rote Rahmen bleibt.",
+      "Der leere Bereich über dem kleinen Feld fängt den Laser nicht mehr ab."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "version": "2.0.23",
     "title": "FurrBox VR: Flackern behoben",
     "items": [

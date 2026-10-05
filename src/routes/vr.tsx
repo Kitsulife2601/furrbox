@@ -47,6 +47,7 @@ type Battery = { headset: number | null; left: number | null; right: number | nu
 type PanelBridge = {
   setMode?(mode: "widget" | "full"): Promise<boolean>;
   onGaze?(cb: (looking: boolean) => void): () => void;
+  onPoint?(cb: (pointing: boolean) => void): () => void;
   battery?(): Promise<Battery | null>;
 };
 const panelBridge = () => (window as { furrbox?: { vr?: PanelBridge } }).furrbox?.vr ?? null;
@@ -93,7 +94,11 @@ function VrPanel() {
   const gazeOpen = useVrSettings((s) => s.gazeOpen);
   const [gaze, setGaze] = useState(false);
   useEffect(() => panelBridge()?.onGaze?.(setGaze), []);
-  const collapsed = buttonMode && !open && !(gazeOpen && gaze);
+  // Pointing at the wrist widget with the other controller / finger opens it too.
+  const pointOpen = useVrSettings((s) => s.pointOpen);
+  const [point, setPoint] = useState(false);
+  useEffect(() => panelBridge()?.onPoint?.(setPoint), []);
+  const collapsed = buttonMode && !open && !(gazeOpen && gaze) && !(pointOpen && point);
   /** Notices marked "Erledigt" (vote kick / chat message / instance ids). */
   const [done, setDone] = useState<string[]>([]);
   const dismiss = (id: string) => setDone((d) => [...d.slice(-40), id]);
@@ -319,7 +324,7 @@ function VrPanel() {
       <div
         className={cn(
           "flex h-[192px] shrink-0 flex-col gap-1.5 overflow-hidden rounded-[22px] border-2 p-2.5",
-          notice && collapsed ? cn(tone, notice.tone === "red" && "furr-vr-alert") : "border-white/15 bg-[#0b0d14]/93",
+          notice && collapsed ? tone : "border-white/15 bg-[#0b0d14]/93",
         )}
       >
         <div className="flex items-center gap-2.5">
@@ -385,7 +390,7 @@ function VrPanel() {
                 <p className="truncate text-[15px] font-semibold leading-tight">{song.data?.title || "Keine Musik"}</p>
                 <p className="truncate text-[12px] text-white/55">
                   {song.data?.title
-                    ? `${song.data.artist}${song.data.duration ? ` · ${mmss(song.data.position ?? 0)} / ${mmss(song.data.duration)}` : ""}`
+                    ? `${song.data.artist}${song.data.duration ? ` · ${mmss(song.data.duration)}` : ""}`
                     : "Spotify, YouTube … starten"}
                 </p>
               </div>
@@ -449,7 +454,7 @@ function NavButton({ label, disabled, onClick, children }: { label: string; disa
 
 function VoteAlert({ vote, onDone }: { vote: NonNullable<VrcInstanceState["votes"]>[number]; onDone: () => void }) {
   return (
-    <div className="furr-vr-alert mr-11 flex items-center gap-3 rounded-2xl border-2 border-red-400 bg-red-500/25 px-3 py-2">
+    <div className="mr-11 flex items-center gap-3 rounded-2xl border-2 border-red-400 bg-red-500/25 px-3 py-2">
       <AlertTriangle className="size-8 shrink-0 text-red-300" />
       <div className="min-w-0">
         <p className="text-[12px] font-bold uppercase tracking-wide text-red-200">Votekick gestartet · {clock(vote.at)}</p>
