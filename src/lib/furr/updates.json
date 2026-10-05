@@ -1,6 +1,19 @@
 [
   {
     "date": "2026-10-05",
+    "version": "2.0.25",
+    "title": "Desktop fühlt sich mehr wie Windows an",
+    "items": [
+      "Fenster, Startmenü, Meldungen, Sperrbildschirm und Start-Animation haben jetzt einheitliche, flüssige Übergänge.",
+      "Neu: Alt+Tab zum Wechseln zwischen offenen Fenstern.",
+      "Neu: Vorschau beim Andocken – beim Ziehen an den Rand siehst du, wo das Fenster landet.",
+      "Neu: schmaler Streifen ganz rechts in der Taskleiste zeigt den Desktop.",
+      "Offene Apps sind in der Taskleiste klarer markiert.",
+      "Weitere Anpassungen an FurrBox VR, Einstellungen, Chat und Anwesenheit."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "version": "2.0.24",
     "title": "FurrBox VR: Aufklappen beim Draufzeigen, weniger Flackern",
     "items": [
