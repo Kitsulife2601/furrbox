@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-05",
+    "title": "Eigene Töne und schönerer Votekick-Ton",
+    "items": [
+      "Der Votekick-Ton ist jetzt ein Glockenspiel, das zweimal ruft – auffällig, aber nicht mehr schrill.",
+      "Für Chat, Update und Votekick kannst du jeweils deine eigene Tondatei nehmen: FurrSettings → „Töne“ → „Eigener Ton…“ (MP3, WAV oder OGG, max. 600 KB).",
+      "Mit „Zurücksetzen“ kommt der FurrBox-Ton zurück."
+    ]
+  },
+  {
+    "date": "2026-10-05",
     "title": "Eigene Töne für Chat, Update und Votekick",
     "items": [
       "Neue Benachrichtigungstöne: ein helles „Pling“ bei einer Chat-Nachricht, drei aufsteigende Töne bei einem Update und ein auffälliger Alarm bei einem Votekick.",

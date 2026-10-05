@@ -8,7 +8,7 @@ export type SoundKind = "chat" | "update" | "votekick";
 export const SOUNDS: { id: SoundKind; label: string; hint: string }[] = [
   { id: "chat", label: "Chat-Nachricht", hint: "kurzes, helles „Pling“" },
   { id: "update", label: "Update verfügbar", hint: "drei aufsteigende Töne" },
-  { id: "votekick", label: "Votekick", hint: "auffälliger Alarm" },
+  { id: "votekick", label: "Votekick", hint: "Glockenspiel, das zweimal ruft" },
 ];
 
 type SoundSettings = {
@@ -47,12 +47,53 @@ const TUNES: Record<SoundKind, Note[]> = {
     { freq: 783.99, at: 0.26, length: 0.16, type: "triangle" },
     { freq: 1046.5, at: 0.39, length: 0.4, type: "triangle" },
   ],
-  // Alarm: three urgent high/low pairs.
-  votekick: [0, 0.32, 0.64].flatMap((start): Note[] => [
-    { freq: 988, at: start, length: 0.14, type: "square", gain: 0.5 },
-    { freq: 740, at: start + 0.15, length: 0.14, type: "square", gain: 0.5 },
-  ]),
+  // A bell-like call, played twice: G – D – G' with a soft overtone, so it is noticed without being harsh.
+  votekick: [0, 0.62].flatMap((start): Note[] =>
+    [
+      { freq: 783.99, at: 0, length: 0.3 },
+      { freq: 1174.66, at: 0.13, length: 0.3 },
+      { freq: 1567.98, at: 0.26, length: 0.5 },
+    ].flatMap((n): Note[] => [
+      { freq: n.freq, at: start + n.at, length: n.length, type: "sine" },
+      { freq: n.freq * 2, at: start + n.at, length: n.length * 0.6, type: "sine", gain: 0.25 },
+    ]),
+  ),
 };
+
+/** Your own sound file per kind (kept in this browser / app, max. ~600 KB each). */
+export const MAX_CUSTOM_SOUND_BYTES = 600 * 1024;
+const fileKey = (kind: SoundKind) => `furrbox-sound-file-${kind}`;
+
+export function customSound(kind: SoundKind): { name: string; dataUrl: string } | null {
+  try {
+    const raw = localStorage.getItem(fileKey(kind));
+    return raw ? (JSON.parse(raw) as { name: string; dataUrl: string }) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCustomSound(kind: SoundKind, file: File | null) {
+  return new Promise<void>((resolve, reject) => {
+    if (!file) {
+      localStorage.removeItem(fileKey(kind));
+      return resolve();
+    }
+    if (!file.type.startsWith("audio/")) return reject(new Error("Bitte eine Tondatei auswählen (z. B. MP3, WAV oder OGG)."));
+    if (file.size > MAX_CUSTOM_SOUND_BYTES) return reject(new Error("Die Datei ist zu groß (max. 600 KB) – nimm einen kurzen Ton."));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Die Datei konnte nicht gelesen werden."));
+    reader.onload = () => {
+      try {
+        localStorage.setItem(fileKey(kind), JSON.stringify({ name: file.name.slice(0, 80), dataUrl: String(reader.result) }));
+        resolve();
+      } catch {
+        reject(new Error("Der Speicher ist voll – nimm eine kleinere Datei."));
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 let context: AudioContext | null = null;
 
@@ -84,6 +125,14 @@ export function playSound(kind: SoundKind, options: { eventId?: string; force?: 
   const settings = useSounds.getState();
   if (!options.force && !settings.enabled[kind]) return;
   if (options.eventId && alreadyPlayed(kind, options.eventId)) return;
+  // Your own sound file, if you picked one.
+  const custom = customSound(kind);
+  if (custom) {
+    const player = new Audio(custom.dataUrl);
+    player.volume = settings.volume / 100;
+    void player.play().catch(() => undefined);
+    return;
+  }
   const ctx = audio();
   if (!ctx) return;
   const master = ctx.createGain();
