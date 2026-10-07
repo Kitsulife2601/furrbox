@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("furrbox", {
     boost: (ms) => ipcRenderer.invoke("furrbox:vr-boost", ms),
     // Panel page: short buzz on the arm with the panel (strong = two buzzes).
     haptic: (strong) => ipcRenderer.invoke("furrbox:vr-haptic", strong),
+    // Panel page: show the panel for some milliseconds even when nobody looks at it (a hint came in).
+    reveal: (ms) => ipcRenderer.invoke("furrbox:vr-reveal", ms),
     // Panel page: true while the other controller points at the panel, false a moment after it stops.
     onPoint: (callback) => {
       const listener = (_event, pointing) => callback(Boolean(pointing));

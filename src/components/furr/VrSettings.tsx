@@ -11,7 +11,7 @@ import { DesktopHint } from "./VRChat";
 import { chatboxStatusBridge } from "./useChatboxStatus";
 import { Btn } from "./ui";
 
-type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number; lift?: number };
+type Placement = { hand: "left" | "right"; width: number; x: number; y: number; z: number; tilt: number; roll?: number; turn?: number; lift?: number; lookOnly?: boolean };
 
 /** Ready-made positions (for the left arm; mirrored for the right one). */
 const PRESETS: { id: string; label: string; hint: string; place: Omit<Placement, "hand"> }[] = [
@@ -197,6 +197,18 @@ export function VrSettings() {
           </p>
         </div>
         <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
+      </div>
+
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium">Nur sichtbar, wenn ich draufschaue</p>
+          <p className="text-[12px] text-muted">
+            {p?.lookOnly !== false
+              ? "Das Feld am Arm ist unsichtbar und erscheint erst, wenn du direkt auf dein Handgelenk schaust. Schaust du weg, verschwindet es wieder. Bei einem Alarm (Votekick, Watchlist) zeigt es sich kurz von selbst."
+              : "Das Feld am Arm ist immer zu sehen."}
+          </p>
+        </div>
+        <Toggle on={p?.lookOnly !== false} label="Nur sichtbar, wenn ich draufschaue" onChange={(on) => place({ lookOnly: on })} />
       </div>
 
       <HapticToggle />

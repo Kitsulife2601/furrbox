@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-07",
+    "version": "2.0.29",
+    "title": "FurrBox VR: Feld am Arm nur sichtbar, wenn du draufschaust",
+    "items": [
+      "Neu: Das Feld am Arm ist unsichtbar und erscheint erst, wenn du direkt auf dein Handgelenk schaust. Schaust du weg, blendet es sich nach einem Moment wieder aus.",
+      "Solange es unsichtbar ist, fängt es auch keinen Laser ab – es stört in VRChat nicht mehr.",
+      "Bei einem Alarm (Votekick, Watchlist, Warnung) zeigt sich das Feld kurz von selbst, damit du nichts verpasst.",
+      "Abschalten kannst du das in den Einstellungen unter FurrBox VR: „Nur sichtbar, wenn ich draufschaue“."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Übergabe-Notiz beim Dienstende",
     "items": [
       "Neu: Wenn du deine Anwesenheit auf „Aus“ stellst, fragt FurrBox nach einer kurzen Übergabe-Notiz – was ist noch offen, auf wen soll man achten?",

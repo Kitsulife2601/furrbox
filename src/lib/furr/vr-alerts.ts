@@ -18,8 +18,10 @@ export type VrAlert = {
 /** Short buzz on the arm (desktop app with SteamVR only; does nothing elsewhere or when switched off). */
 export function vrHaptic(strong = false) {
   try {
+    const bridge = (window as { furrbox?: { vr?: { haptic?(strong: boolean): Promise<boolean>; reveal?(ms: number): Promise<boolean> } } }).furrbox?.vr;
+    // The panel may be hidden while nobody looks at it – an alarm brings it back for a moment.
+    void bridge?.reveal?.(strong ? 12_000 : 6_000)?.catch(() => undefined);
     if (localStorage.getItem("furrbox-vr-haptic") === "off") return;
-    const bridge = (window as { furrbox?: { vr?: { haptic?(strong: boolean): Promise<boolean> } } }).furrbox?.vr;
     void bridge?.haptic?.(strong)?.catch(() => undefined);
   } catch {
     // no desktop app

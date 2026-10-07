@@ -392,6 +392,12 @@ ipcMain.handle("furrbox:vr-boost", (event, ms) => {
   vrOverlay.boost(Number(ms) || 0);
   return true;
 });
+// Panel page: a hint came in – show the panel for a moment even when nobody looks at it.
+ipcMain.handle("furrbox:vr-reveal", (event, ms) => {
+  if (event.sender !== vrOverlay.webContents()) return false;
+  vrOverlay.reveal(Number(ms) || 0);
+  return true;
+});
 ipcMain.handle("furrbox:vr-haptic", (event, strong) => {
   if (event.sender !== vrOverlay.webContents()) return false;
   return vrOverlay.haptic(Boolean(strong));
@@ -425,6 +431,8 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
     roll: num(input?.roll, -180, 180, current.roll ?? 0),
     turn: num(input?.turn, -180, 180, current.turn ?? 0),
     lift: num(input?.lift, -90, 90, current.lift ?? 0),
+    // Only visible while you look at it (default: on).
+    lookOnly: input?.lookOnly === undefined ? current.lookOnly !== false : Boolean(input.lookOnly),
   };
   vrOverlay.setPlacement(placement);
   try {

@@ -28,6 +28,15 @@ const GAZE_COS_OPEN = Math.cos((40 * Math.PI) / 180);
 const GAZE_FACING = 0.2;
 const GAZE_DISTANCE = 0.9;
 const GAZE_ON_MS = 250;
+// "Only visible while you look at it": appears when the panel is within LOOK_COS of where the
+// headset points, stays while within LOOK_COS_KEEP and fades out LOOK_OFF_MS after you look away.
+const LOOK_COS = Math.cos((20 * Math.PI) / 180);
+const LOOK_COS_KEEP = Math.cos((34 * Math.PI) / 180);
+const LOOK_OFF_MS = 700;
+const FADE_STEP_MS = 35;
+const FADE_STEPS = 4;
+// Pose check while hidden – fast enough that the panel is there when your eyes arrive.
+const PUMP_LOOK_MS = 120;
 const POINT_ON_MS = 120;
 const FRAME_GAP_MS = 2000; // Idle: max. 0,5 Bilder/s an SteamVR (vorher ~0,83/s)
 const POINT_OFF_MS = 2500;
@@ -106,6 +115,7 @@ const DEFAULT_PLACEMENT = {
   roll: 0,
   turn: 90,
   lift: 35,
+  lookOnly: true,
 };
 
 function matrixFor(p, raise = 0) {
@@ -192,6 +202,11 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   let gazeSince = 0;
   let gazeLost = 0;
   let mode = "widget"; // widget | full
+  let shown = true; // false = faded out because nobody looks at it (placement.lookOnly)
+  let alpha = 1;
+  let fadeTimer = null;
+  let lookLost = 0;
+  let revealUntil = 0; // a hint just came in: stay visible until then
   let boostUntil = 0;
   let boostTimer = null;
   let pumpErrors = 0;
@@ -429,6 +444,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
   /** Are you looking at the panel (like at a watch)? Tells the page, which then opens / closes. */
   function updateGaze(poses) {
     let looking = false;
+    let seen = false;
     if (attachedTo !== INVALID_DEVICE) {
       const buf =
         poses && poses.length >= POSE_SIZE * (attachedTo + 1) ? poses : readPoses(attachedTo);
@@ -450,6 +466,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         const dir = to.map((v) => v / dist);
         const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         // Once open, a wider angle keeps it open (you also look at the window above the widget).
+        const facing = -dot(normal, dir);
+        seen = dist < GAZE_DISTANCE && dot(forward, dir) > (shown ? LOOK_COS_KEEP : LOOK_COS) && facing > (shown ? 0 : GAZE_FACING);
         looking =
           dist < GAZE_DISTANCE &&
           dot(forward, dir) > (gazing ? GAZE_COS_OPEN : GAZE_COS) &&
@@ -457,6 +475,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       }
     }
     const now = Date.now();
+    updateShown(seen, now);
     if (looking) {
       gazeLost = 0;
       if (!gazeSince) gazeSince = now;
@@ -466,6 +485,40 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       if (!gazeLost) gazeLost = now;
       if (gazing && now - gazeLost >= GAZE_OFF_MS) setGazing(false);
     }
+  }
+
+  /** Fades the panel out while nobody looks at it (and nothing needs attention), and back in. */
+  function updateShown(seen, now) {
+    const keep = !placement.lookOnly || seen || interactive || mouseDown || now < revealUntil;
+    if (keep) {
+      lookLost = 0;
+      setShown(true);
+    } else {
+      if (!lookLost) lookLost = now;
+      if (now - lookLost >= LOOK_OFF_MS) setShown(false);
+    }
+  }
+
+  function setShown(on) {
+    if (shown === on) return;
+    shown = on;
+    ensurePumpRate();
+    if (on) boost(BOOST_OPEN_MS); // fresh picture right away
+    if (fadeTimer) clearInterval(fadeTimer);
+    const target = on ? 1 : 0;
+    fadeTimer = setInterval(() => {
+      alpha = on ? Math.min(1, alpha + 1 / FADE_STEPS) : Math.max(0, alpha - 1 / FADE_STEPS);
+      try {
+        const e = api && handle !== null ? api.ovr("SetOverlayAlpha", "int FN(uint64_t, float)", handle, alpha) : 0;
+        if (e) log(`VR-Overlay: Ausblenden fehlgeschlagen (Fehler ${e}).`);
+      } catch (error) {
+        log("VR-Overlay:", error.message);
+      }
+      if (alpha === target || !api) {
+        clearInterval(fadeTimer);
+        fadeTimer = null;
+      }
+    }, FADE_STEP_MS);
   }
 
   function setGazing(on) {
@@ -527,6 +580,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
         });
       }
     }
+    if (!shown) hit = false;
     const now = Date.now();
     if (hit) lastHit = now;
     // Keep the laser for a moment after leaving the panel (so a click at the edge still lands).
@@ -687,7 +741,7 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
 
   function ensurePumpRate() {
     if (!pumpTimer) return;
-    const next = wantFastPump() ? PUMP_ACTIVE_MS : PUMP_IDLE_MS;
+    const next = wantFastPump() ? PUMP_ACTIVE_MS : placement.lookOnly ? PUMP_LOOK_MS : PUMP_IDLE_MS;
     if (next === pumpMs) return;
     pumpMs = next;
     clearInterval(pumpTimer);
@@ -775,6 +829,13 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     gazing = false;
     gazeSince = 0;
     gazeLost = 0;
+    // A new overlay starts fully visible.
+    if (fadeTimer) clearInterval(fadeTimer);
+    fadeTimer = null;
+    shown = true;
+    alpha = 1;
+    lookLost = 0;
+    revealUntil = 0;
     lastHit = 0;
     mouseDown = false;
     mode = "widget";
@@ -836,8 +897,15 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
       attachedTo = INVALID_DEVICE;
       appliedKey = "";
       applyPlacement();
+      if (!placement.lookOnly) setShown(true);
+      ensurePumpRate();
       for (const fn of listeners) fn(status());
       return placement;
+    },
+    /** A hint came in: show the panel for a moment even if nobody looks at it. */
+    reveal(ms) {
+      revealUntil = Date.now() + Math.min(30_000, Math.max(0, Number(ms) || 0));
+      if (api && handle !== null) setShown(true);
     },
     /** "widget" (wrist widget only) or "full" (widget + window above it) – chosen by the /vr page. */
     setMode(next) {
