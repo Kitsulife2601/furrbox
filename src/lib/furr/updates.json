@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Update-Hinweis nur noch einmal",
+    "items": [
+      "Behoben: Bei einem neuen Update lagen zwei Hinweise übereinander. Jetzt kommt nur noch die eine Meldung mit „Neu starten“.",
+      "Das Update-Symbol unten rechts in der Taskleiste bleibt, bis das Update installiert ist."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Discord: Knöpfe „Anwesend“ und „Nicht anwesend“ unter der Instanz-Meldung",
     "items": [
       "Neu: Unter der Bot-Nachricht „Neue Gruppen-Instanz“ gibt es zwei Knöpfe. Ein Klick stellt dich direkt in Discord auf anwesend oder nicht anwesend – die Liste in der Nachricht aktualisiert sich sofort.",

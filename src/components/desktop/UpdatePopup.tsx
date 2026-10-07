@@ -5,9 +5,8 @@ import { MOTION } from "@/lib/furr/motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { getAppBuild } from "@/lib/furr/api/session";
-import { Download, Sparkles, X } from "lucide-react";
+import { Download } from "lucide-react";
 import { useNotifications } from "@/store/notifications";
-import { Btn } from "@/components/furr/ui";
 import UPDATES from "@/lib/furr/updates.json";
 
 const UPDATE_LIST = UPDATES as { version?: string; items: string[]; date?: string; title?: string }[];
@@ -438,7 +437,7 @@ export function UpdatePopup() {
     };
   }, []);
 
-  // Desktop download/ready and server updates: one toast with bullets (banner is separate UI).
+  // Desktop download/ready and server updates: one toast with bullets.
   useEffect(() => {
     if (!pending || announced.current === pending.key) return;
     announced.current = pending.key;
@@ -464,86 +463,8 @@ export function UpdatePopup() {
     });
   }, [pending]);
 
-  return <UpdateBanner />;
-}
-
-/** Windows-11-like update card (bottom-right): title, short bullets, install / dismiss. */
-export function UpdateBanner() {
-  const pending = usePendingUpdate();
-  const [hiddenKey, setHiddenKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  if (!pending || hiddenKey === pending.key) return null;
-
-  const bullets = newsPreview(pending.entries, 4);
-
-  return (
-    <div
-      className="pointer-events-none absolute bottom-14 right-2 z-[88] w-[min(360px,calc(100%-1rem))]"
-      role="status"
-      aria-live="polite"
-    >
-      <div
-        className="mica furr-toast-in pointer-events-auto overflow-hidden rounded-xl border border-accent/40 shadow-2xl"
-        style={{ animationDuration: `${MOTION.popMs}ms`, animationTimingFunction: MOTION.easePop }}
-      >
-        <div className="flex items-start gap-3 border-b border-border/50 px-3.5 py-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/18 text-accent">
-            <Download className="size-5 furr-update-pulse" strokeWidth={1.8} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Update verfügbar</p>
-            <p className="text-[14px] font-semibold leading-snug">
-              {pending.versionLabel ? `FurrBox ${pending.versionLabel}` : "Neues FurrBox-Update"}
-            </p>
-            <p className="mt-0.5 text-[12px] text-muted">{pending.label}</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Schließen"
-            className="rounded-md p-1.5 text-muted hover:bg-fg/10 hover:text-fg"
-            onClick={() => setHiddenKey(pending.key)}
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        {bullets.length > 0 && (
-          <ul className="grid gap-1.5 px-3.5 py-2.5 text-[12px] text-muted">
-            {bullets.map((b) => (
-              <li key={b} className="flex gap-2 leading-snug">
-                <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent/80" strokeWidth={1.7} />
-                <span>{b}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex justify-end gap-2 border-t border-border/50 px-3 py-2.5">
-          <button
-            type="button"
-            className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted hover:bg-fg/8"
-            onClick={() => setHiddenKey(pending.key)}
-          >
-            Später
-          </button>
-          <Btn
-            variant="primary"
-            disabled={busy || pending.canApply === false}
-            onClick={() => {
-              if (pending.canApply === false) return;
-              setBusy(true);
-              pending.apply();
-            }}
-          >
-            {pending.kind === "desktop"
-              ? pending.canApply
-                ? "Neu starten"
-                : "Wird geladen…"
-              : "Jetzt aktualisieren"}
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
+  // One message is enough: the toast above, plus the taskbar symbol until the update is installed.
+  return null;
 }
 
 /** Taskbar icon (bottom right) shown while an update is waiting; click applies it. */
