@@ -16,6 +16,7 @@ import { LoginPanel } from "@/components/furr/LoginPanel";
 import { useFurrSync } from "@/components/furr/useFurrSync";
 import { useChatboxStatus } from "@/components/furr/useChatboxStatus";
 import { useVoteWatch } from "@/components/furr/useVoteWatch";
+import { useDesktopShortcuts } from "./shortcuts";
 import { ClipSavedListener } from "@/components/furr/ClipSettings";
 import { ConfirmDialog, PopupMenu, PromptDialog, type MenuItem } from "@/components/furr/ui";
 import { LockScreen } from "./LockScreen";
@@ -115,6 +116,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   useFurrSync(true);
   useChatboxStatus();
   useVoteWatch();
+  useDesktopShortcuts();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

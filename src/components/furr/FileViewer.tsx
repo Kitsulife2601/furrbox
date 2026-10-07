@@ -9,16 +9,19 @@ import { base64ToBlob, base64ToText, downloadBase64, errorMessage } from "@/lib/
 import { formatSize, isImage, isTextLike } from "@/lib/furr/paths";
 import type { FurrFile } from "@/lib/furr/types";
 import { useDesktop, type WindowPayload } from "@/store/desktop";
+import { useUnsaved } from "@/lib/furr/unsaved";
 import { notifyError } from "@/store/notifications";
 import { openFurrFile } from "./FurrFS";
 import { Btn, Empty, PromptDialog } from "./ui";
 
-export function FileViewer({ payload }: { payload?: WindowPayload }) {
+export function FileViewer({ payload, windowId }: { payload?: WindowPayload; windowId?: string }) {
   const queryClient = useQueryClient();
   const fileId = payload?.fileId ?? "";
   const query = useQuery({ queryKey: ["furr", "file", fileId], queryFn: () => readFile({ data: fileId }), enabled: Boolean(fileId) });
   const [text, setText] = useState<string | null>(null);
   const [saved, setSaved] = useState(true);
+  // The window asks before closing while there is unsaved text.
+  useUnsaved(windowId, !saved);
   const [saving, setSaving] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
@@ -199,6 +202,7 @@ function BotFileView({ file }: { file: FurrFile }) {
 /** Editor for a brand-new document; saving stores it in FurrFS (Privat/Dokumente). */
 export function Notepad({ windowId }: { windowId: string }) {
   const [text, setText] = useState("");
+  useUnsaved(windowId, text.trim().length > 0);
   const [asking, setAsking] = useState(false);
   const closeWindow = useDesktop((s) => s.closeWindow);
   const queryClient = useQueryClient();

@@ -1,6 +1,21 @@
 [
   {
     "date": "2026-10-07",
+    "version": "2.0.28",
+    "title": "Strafen-Übersicht, Watchlist, eigene Taskleiste und Tastenkürzel",
+    "items": [
+      "Neu in FurrEvidence: Reiter „Strafen“ – wer ist gerade stumm, im Timeout oder gebannt, bis wann und warum. Mit Suche, Filter für Discord/VRChat und „Aufheben“ samt Begründung.",
+      "Neu in FurrEvidence: Reiter „Watchlist“ – Personen mit Notiz eintragen und entfernen, dazu die letzten Sichtungen. Im Instanz-Tracker setzt das Augen-Symbol jemanden direkt auf die Watchlist.",
+      "Taskleiste selbst gestalten: Rechtsklick auf ein Symbol heftet eine App an oder löst sie und schließt Fenster. Im Startmenü geht „An die Taskleiste anheften“ ebenfalls per Rechtsklick.",
+      "Neue Tastenkürzel mit Strg + Alt: Fenster links/rechts andocken, maximieren, minimieren, schließen, Desktop zeigen, sperren und Suche öffnen. Die Übersicht steht unter FurrSettings → „Tastenkürzel“.",
+      "Schließt du ein Fenster mit ungespeichertem Text, fragt FurrBox vorher nach.",
+      "Fenster rutschen zurück ins Bild, wenn das FurrBox-Fenster kleiner wird.",
+      "Rechtsklick-Menüs schließen mit Esc und sitzen immer an der richtigen Stelle.",
+      "FurrBox VR: Bei Votekick, Watchlist-Treffer und Warnungen vibriert kurz der Controller am Arm (abschaltbar unter „FurrBox VR“)."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Fehlerbehebungen an Desktop und FurrBox VR",
     "items": [
       "Behoben: Im Fenster am Arm und in einigen Meldungen standen kaputte Zeichen statt Umlauten und Gedankenstrichen.",

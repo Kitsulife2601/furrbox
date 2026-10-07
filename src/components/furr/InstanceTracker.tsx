@@ -4,8 +4,9 @@
 import { useMemo, useState } from "react";
 import { useLiveInterval } from "@/lib/furr/live-interval";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Clock, Copy, ExternalLink, Globe2, LogIn, LogOut, Map as MapIcon, Radar, Search, Users } from "lucide-react";
+import { Clock, Copy, ExternalLink, Eye, Globe2, LogIn, LogOut, Map as MapIcon, Radar, Search, Users } from "lucide-react";
 import { getVrchatStatus } from "@/lib/furr/api/vrchat";
+import { addToWatchlist, listWatchlist } from "@/lib/furr/api/watchlist";
 import { errorMessage } from "@/lib/furr/client";
 import { VRC_REGION, VRC_SPECIAL_LOCATION, instanceType, joinUrl, parseLocation } from "@/lib/furr/vrchat-location";
 import { cn } from "@/lib/utils";
@@ -266,14 +267,34 @@ function PersonCard({ player: p, info, isMe }: { player: VrcLogPlayer; info?: Vr
           seit {clock(p.joinedAt)} · {duration(p.joinedAt)}
         </p>
       </div>
-      {p.id && <PersonActions id={p.id} />}
+      {p.id && <PersonActions id={p.id} name={p.name} />}
     </div>
   );
 }
 
-function PersonActions({ id }: { id: string }) {
+/** Puts someone on the team watchlist (the note is added in FurrEvidence → Watchlist). */
+async function watch(id: string, name?: string) {
+  const notify = useNotifications.getState().notify;
+  try {
+    // Saving again would replace the existing note with an empty one – so look first.
+    const existing = (await listWatchlist()).find((e) => e.usrId.toLowerCase() === id.toLowerCase());
+    if (existing) {
+      notify({ version: "Watchlist", title: "Steht schon auf der Watchlist", description: existing.note || (name ?? id) });
+      return;
+    }
+    await addToWatchlist({ data: { usrId: id, displayName: name, note: "" } });
+    notify({ version: "Watchlist", title: "Auf der Watchlist", description: `${name ?? id} – Notiz dazu in FurrEvidence → Watchlist.` });
+  } catch (e) {
+    notify({ version: "Watchlist", title: "Nicht eingetragen", description: errorMessage(e) });
+  }
+}
+
+function PersonActions({ id, name }: { id: string; name?: string }) {
   return (
     <div className="flex shrink-0 gap-0.5">
+      <button type="button" onClick={() => void watch(id, name)} className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg" title="Auf die Watchlist setzen">
+        <Eye className="size-3.5" />
+      </button>
       <button type="button" onClick={() => copyId(id)} className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg" title="VRChat-ID kopieren">
         <Copy className="size-3.5" />
       </button>
@@ -316,7 +337,7 @@ function LeftRow({ player: p, info, loggedIn }: { player: VrcLogPlayer & { leftA
           </p>
         )}
       </div>
-      {p.id && <PersonActions id={p.id} />}
+      {p.id && <PersonActions id={p.id} name={p.name} />}
     </div>
   );
 }

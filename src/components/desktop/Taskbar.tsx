@@ -5,7 +5,9 @@ import { useNow } from "@/lib/furr/live-interval";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Bell, MessageSquare, Search, Wifi, WifiOff } from "lucide-react";
-import { APPS, canLaunch } from "@/lib/apps";
+import { useState } from "react";
+import { APPS, canLaunch, taskbarAppIds, type AppId } from "@/lib/apps";
+import { PopupMenu, type MenuItem } from "@/components/furr/ui";
 import { useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
@@ -57,7 +59,44 @@ export function Taskbar() {
   // Neue Benachrichtigungen seit dem letzten Öffnen des Info-Centers (Windows-Badge).
   const newNotes = useNotifications((n) => n.history.filter((h) => h.createdAt > n.seenAt).length);
 
-  const pinned = APPS.filter((a) => a.pinned && canLaunch(a, me.data?.permissions));
+  // Pinned apps: your own choice (right-click → anheften / lösen), in the order you pinned them.
+  const savedTaskbar = useDesktop((s) => s.taskbarApps);
+  const setOnTaskbar = useDesktop((s) => s.setOnTaskbar);
+  const closeWindow = useDesktop((s) => s.closeWindow);
+  const [menu, setMenu] = useState<{ x: number; y: number; appId: AppId; windowId?: string } | null>(null);
+  const pinnedIds = taskbarAppIds(savedTaskbar);
+  const pinned = pinnedIds
+    .map((id) => APPS.find((a) => a.id === id))
+    .filter((a): a is (typeof APPS)[number] => Boolean(a && !a.hidden && canLaunch(a, me.data?.permissions)));
+  const openMenu = (e: React.MouseEvent, appId: AppId, windowId?: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, appId, windowId });
+  };
+  const menuItems = (): MenuItem[] => {
+    if (!menu) return [];
+    const app = APPS.find((a) => a.id === menu.appId);
+    const open = windows.filter((w) => (menu.windowId ? w.id === menu.windowId : w.appId === menu.appId));
+    const isPinned = pinnedIds.includes(menu.appId);
+    const items: MenuItem[] = [];
+    if (!menu.windowId) items.push({ label: open.length ? "Neues Fenster / nach vorne" : "Öffnen", onClick: () => openApp(menu.appId) });
+    if (app && !app.hidden) {
+      items.push(
+        isPinned
+          ? { label: "Von der Taskleiste lösen", onClick: () => setOnTaskbar(menu.appId, false) }
+          : { label: "An die Taskleiste anheften", onClick: () => setOnTaskbar(menu.appId, true) },
+      );
+    }
+    if (open.length) {
+      if (items.length) items.push("divider");
+      items.push({
+        label: open.length > 1 ? `Alle ${open.length} Fenster schließen` : "Fenster schließen",
+        danger: true,
+        onClick: () => open.forEach((w) => closeWindow(w.id)),
+      });
+    }
+    return items;
+  };
   // Running windows of apps that aren't pinned (viewer, editor, task manager) get their own buttons.
   const extra = windows.filter((w) => !pinned.some((p) => p.id === w.appId));
 
@@ -90,6 +129,7 @@ export function Taskbar() {
               aria-label={app.name}
               title={app.name}
               onClick={() => (running[0] ? toggleWindow(running[0].id) : openApp(app.id))}
+              onContextMenu={(e) => openMenu(e, app.id)}
               className={cn(
                 "relative grid size-11 shrink-0 place-items-center rounded-md hover:bg-fg/8",
                 focused && "bg-fg/10",
@@ -111,6 +151,7 @@ export function Taskbar() {
               title={w.title}
               aria-label={w.title}
               onClick={() => toggleWindow(w.id)}
+              onContextMenu={(e) => openMenu(e, w.appId, w.id)}
               className={cn("relative grid size-11 shrink-0 place-items-center rounded-md hover:bg-fg/8", focused && "bg-fg/10")}
             >
               <Icon className="size-5" strokeWidth={1.6} />
@@ -119,6 +160,7 @@ export function Taskbar() {
           );
         })}
       </nav>
+      {menu && <PopupMenu x={menu.x} y={menu.y} items={menuItems()} onClose={() => setMenu(null)} />}
       <div className="flex items-center gap-0.5 pr-0">
         <StaffTrayButton />
         <UpdateTrayButton />

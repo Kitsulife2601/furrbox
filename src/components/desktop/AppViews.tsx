@@ -47,7 +47,7 @@ export function AppViews({ appId, windowId, payload }: { appId: AppId; windowId:
     case "notepad":
       return <Notepad windowId={windowId} />;
     case "viewer":
-      return <FileViewer payload={payload} />;
+      return <FileViewer payload={payload} windowId={windowId} />;
     case "taskmgr":
       return <TaskManager windowId={windowId} />;
     case "moddash":

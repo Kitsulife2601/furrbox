@@ -15,6 +15,17 @@ export type VrAlert = {
   kind: "vote-result" | "watchlist-join" | "whitelist-fail" | "report" | "hint" | "clip" | "generic";
 };
 
+/** Short buzz on the arm (desktop app with SteamVR only; does nothing elsewhere or when switched off). */
+export function vrHaptic(strong = false) {
+  try {
+    if (localStorage.getItem("furrbox-vr-haptic") === "off") return;
+    const bridge = (window as { furrbox?: { vr?: { haptic?(strong: boolean): Promise<boolean> } } }).furrbox?.vr;
+    void bridge?.haptic?.(strong)?.catch(() => undefined);
+  } catch {
+    // no desktop app
+  }
+}
+
 const MAX_QUEUE = 2;
 const DEFAULT_TTL = 4_000;
 
@@ -54,6 +65,7 @@ export function pushVrAlert(input: Omit<VrAlert, "at" | "ttlMs"> & { ttlMs?: num
   };
   queue = [alert, ...queue.filter((a) => a.id !== alert.id)].slice(0, MAX_QUEUE);
   emit();
+  if (alert.tone === "red" || alert.tone === "amber") vrHaptic(alert.tone === "red");
   const timer = setTimeout(() => drop(alert.id), alert.ttlMs);
   timers.set(alert.id, timer);
 }

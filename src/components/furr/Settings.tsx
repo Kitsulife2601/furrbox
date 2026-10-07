@@ -38,12 +38,14 @@ import {
   Palette,
   User,
   Volume2,
+  Keyboard,
   MessageSquare,
   Film,
 } from "lucide-react";
 import { Btn, ErrorText, Field, TextInput } from "./ui";
 import { VrSettings } from "./VrSettings";
 import { SoundSettings } from "./SoundSettings";
+import { ShortcutList } from "@/components/desktop/shortcuts";
 import { ClipSettings } from "./ClipSettings";
 
 const ACCENTS = ["#4CC2FF", "#60A5FA", "#34D399", "#F472B6", "#FBBF24", "#F8FAFC"];
@@ -62,7 +64,7 @@ const FITS: { id: WallpaperFit; label: string }[] = [
   { id: "tile", label: "Kacheln" },
 ];
 
-type Section = "home" | "personal" | "account" | "chat" | "sounds" | "vr" | "clips" | "system";
+type Section = "home" | "personal" | "account" | "chat" | "sounds" | "keys" | "vr" | "clips" | "system";
 
 function SettingCard({
   title,
@@ -144,6 +146,7 @@ export function Settings() {
     { id: "account", label: "Konto", icon: User },
     ...(showChat ? [{ id: "chat" as const, label: "FurrChat", icon: MessageSquare }] : []),
     { id: "sounds", label: "Töne", icon: Volume2 },
+    { id: "keys", label: "Tastenkürzel", icon: Keyboard },
     { id: "vr", label: "FurrBox VR", icon: Headset },
     { id: "clips", label: "Beweis-Clips", icon: Film },
     { id: "system", label: "System", icon: Monitor },
@@ -176,6 +179,13 @@ export function Settings() {
           <div className="mx-auto max-w-2xl">
             <SettingCard title="Töne" hint="Chat, Update und Votekick – gleiche Feedback-Familie.">
               <SoundSettings />
+            </SettingCard>
+          </div>
+        )}
+        {section === "keys" && (
+          <div className="mx-auto max-w-2xl">
+            <SettingCard title="Tastenkürzel" hint="Fenster und Desktop mit der Tastatur bedienen.">
+              <ShortcutList />
             </SettingCard>
           </div>
         )}

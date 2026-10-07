@@ -250,6 +250,11 @@ export function desktopAppIds(saved: AppId[] | null) {
   return saved ?? APPS.filter((a) => a.desktop).map((a) => a.id);
 }
 
+/** Apps pinned to the taskbar: the user's own choice, otherwise the defaults. */
+export function taskbarAppIds(saved: AppId[] | null) {
+  return saved ?? APPS.filter((a) => a.pinned).map((a) => a.id);
+}
+
 export function canLaunch(app: AppDef, permissions: Permissions | null | undefined) {
   if (!app.requires) return true;
   return Boolean(permissions?.[app.requires]);

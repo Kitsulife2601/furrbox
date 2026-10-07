@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { APPS, canLaunch, desktopAppIds, groupApps, type AppId } from "@/lib/apps";
+import { APPS, canLaunch, desktopAppIds, groupApps, taskbarAppIds, type AppId } from "@/lib/apps";
 import { PopupMenu } from "@/components/furr/ui";
 import { recentFiles, searchFiles } from "@/lib/furr/api/files";
 import { timeAgo, useMe } from "@/lib/furr/client";
@@ -42,6 +42,9 @@ function useAppMenu() {
   const openApp = useDesktop((s) => s.openApp);
   const saved = useDesktop((s) => s.desktopApps);
   const setOnDesktop = useDesktop((s) => s.setOnDesktop);
+  const savedTaskbar = useDesktop((s) => s.taskbarApps);
+  const setOnTaskbar = useDesktop((s) => s.setOnTaskbar);
+  const onTaskbar = (id: AppId) => taskbarAppIds(savedTaskbar).includes(id);
   const [menu, setMenu] = useState<{ x: number; y: number; app: AppId } | null>(null);
   const onDesktop = (id: AppId) => desktopAppIds(saved).includes(id);
   const open = (e: React.MouseEvent, app: AppId) => {
@@ -60,6 +63,9 @@ function useAppMenu() {
         onDesktop(menu.app)
           ? { label: "Vom Desktop entfernen", onClick: () => setOnDesktop(menu.app, false) }
           : { label: "Zum Desktop hinzufügen", onClick: () => setOnDesktop(menu.app, true) },
+        onTaskbar(menu.app)
+          ? { label: "Von der Taskleiste lösen", onClick: () => setOnTaskbar(menu.app, false) }
+          : { label: "An die Taskleiste anheften", onClick: () => setOnTaskbar(menu.app, true) },
       ]}
     />
   );

@@ -24,6 +24,7 @@ import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 import { VRChatPanel } from "./VRChat";
+import { SanctionsPanel, WatchlistPanel } from "./ModTools";
 import { AttachClipDialog } from "./AttachClipDialog";
 import { BAN_REASON_MIN, CaseRefSelect, UndoBanner } from "./BanSafety";
 import { useCaseDraft, withCaseRef } from "@/lib/furr/case-draft";
@@ -55,7 +56,7 @@ async function waitForInspect(requestId: string): Promise<MessageProof> {
 
 export function Evidence() {
   const live15 = useLiveInterval(15_000);
-  const [tab, setTab] = useState<"case" | "cases" | "moderation" | "vrchat">("case");
+  const [tab, setTab] = useState<"case" | "cases" | "moderation" | "sanctions" | "watchlist" | "vrchat">("case");
   const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: live15 });
   // „Fall anlegen“ aus Votekick-Panel / Staff-Tools: direkt zum Formular springen.
   const draftAt = useCaseDraft((s) => s.draft?.at ?? null);
@@ -66,12 +67,14 @@ export function Evidence() {
   return (
     <div className="flex h-full flex-col bg-bg/40">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2">
-        <div className="flex gap-1 rounded-lg bg-bg/60 p-1">
+        <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-bg/60 p-1 [&>button]:shrink-0">
           {(
             [
               ["case", "Neuer Fall"],
               ["cases", "Fallakten"],
               ["moderation", "Moderation"],
+              ["sanctions", "Strafen"],
+              ["watchlist", "Watchlist"],
               ["vrchat", "VRChat"],
             ] as const
           ).map(([id, label]) => (
@@ -104,6 +107,8 @@ export function Evidence() {
         {tab === "case" && <CaseForm onSaved={() => setTab("cases")} />}
         {tab === "cases" && <CaseList />}
         {tab === "moderation" && <ModerationPanel />}
+        {tab === "sanctions" && <SanctionsPanel />}
+        {tab === "watchlist" && <WatchlistPanel />}
         {tab === "vrchat" && <VRChatPanel />}
       </div>
     </div>

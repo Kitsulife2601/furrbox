@@ -1,9 +1,11 @@
-﻿import { useRef, type PointerEvent as ReactPointerEvent } from "react";
+﻿import { useState, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { Copy, Minus, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApp } from "@/lib/apps";
 import { useDesktop, viewport, type OsWindow, type Rect } from "@/store/desktop";
 import { AppViews } from "./AppViews";
+import { ConfirmDialog } from "@/components/furr/ui";
+import { hasUnsaved } from "@/lib/furr/unsaved";
 
 const SNAP_MARGIN = 18;
 type Edge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
@@ -62,6 +64,7 @@ export function WindowFrame({ win }: { win: OsWindow }) {
   const snapWindow = useDesktop((s) => s.snapWindow);
   const setSnapPreview = useDesktop((s) => s.setSnapPreview);
   const focused = useDesktop((s) => s.focusedId === win.id);
+  const [askClose, setAskClose] = useState(false);
   const app = getApp(win.appId);
   const Icon = app.icon;
   const drag = useRef<{ ox: number; oy: number; sx: number; sy: number; last: { x: number; y: number } } | null>(null);
@@ -166,7 +169,7 @@ export function WindowFrame({ win }: { win: OsWindow }) {
             type="button"
             aria-label="Schließen"
             className="grid h-full w-12 place-items-center hover:bg-danger hover:text-white"
-            onClick={() => closeWindow(win.id)}
+            onClick={() => (hasUnsaved(win.id) ? setAskClose(true) : closeWindow(win.id))}
           >
             <X className="size-4" />
           </button>
@@ -187,6 +190,15 @@ export function WindowFrame({ win }: { win: OsWindow }) {
             }}
           />
         ))}
+      {askClose && (
+        <ConfirmDialog
+          title="Ungespeicherte Änderungen"
+          body={`In „${win.title}“ steht Text, der noch nicht gespeichert ist. Wenn du das Fenster schließt, geht er verloren.`}
+          confirmLabel="Trotzdem schließen"
+          onConfirm={() => closeWindow(win.id)}
+          onCancel={() => setAskClose(false)}
+        />
+      )}
     </section>
   );
 }

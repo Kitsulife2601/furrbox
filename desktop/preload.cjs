@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("furrbox", {
     battery: () => ipcRenderer.invoke("furrbox:vr-battery"),
     // Panel-Seite: startet eine Animation – für kurze Zeit flüssige Bilder statt Drosselung.
     boost: (ms) => ipcRenderer.invoke("furrbox:vr-boost", ms),
+    // Panel page: short buzz on the arm with the panel (strong = two buzzes).
+    haptic: (strong) => ipcRenderer.invoke("furrbox:vr-haptic", strong),
     // Panel page: true while the other controller points at the panel, false a moment after it stops.
     onPoint: (callback) => {
       const listener = (_event, pointing) => callback(Boolean(pointing));

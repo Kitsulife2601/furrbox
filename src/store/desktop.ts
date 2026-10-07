@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppId } from "@/lib/apps";
-import { desktopAppIds, getApp } from "@/lib/apps";
+import { desktopAppIds, getApp, taskbarAppIds } from "@/lib/apps";
 import type { Scope } from "@/lib/furr/types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -92,6 +92,9 @@ type DesktopState = {
   iconCells: Record<string, IconCell>;
   /** Apps on the desktop, null = defaults (Dieser PC + FurrFS). */
   desktopApps: AppId[] | null;
+  /** Apps pinned to the taskbar, null = defaults. */
+  taskbarApps: AppId[] | null;
+  setOnTaskbar: (appId: AppId, on: boolean) => void;
   startOpen: boolean;
   searchOpen: boolean;
   chatOpen: boolean;
@@ -130,6 +133,8 @@ type DesktopState = {
   focusWindow: (id: string) => void;
   /** Bring exactly this window back (un-minimise + focus). */
   restoreWindow: (id: string) => void;
+  /** Pull windows back inside after the screen / program window changed its size. */
+  refitWindows: () => void;
   closeWindow: (id: string) => void;
   closeAll: () => void;
   minimizeWindow: (id: string) => void;
@@ -161,6 +166,7 @@ export const useDesktop = create<DesktopState>()(
       selectedIcon: null,
       iconCells: {},
       desktopApps: null,
+      taskbarApps: null,
       startOpen: false,
       searchOpen: false,
       chatOpen: false,
@@ -195,6 +201,11 @@ export const useDesktop = create<DesktopState>()(
         set((st) => {
           const current = desktopAppIds(st.desktopApps).filter((id) => id !== appId);
           return { desktopApps: on ? [...current, appId] : current };
+        }),
+      setOnTaskbar: (appId, on) =>
+        set((st) => {
+          const current = taskbarAppIds(st.taskbarApps).filter((id) => id !== appId);
+          return { taskbarApps: on ? [...current, appId] : current };
         }),
       openApp: (appId, opts) => {
         const app = getApp(appId);
@@ -243,6 +254,18 @@ export const useDesktop = create<DesktopState>()(
           focusedId: id,
           ...menusClosed,
         });
+      },
+      refitWindows: () => {
+        const windows = get().windows;
+        let changed = false;
+        const next = windows.map((w) => {
+          if (w.maximized) return w;
+          const r = constrain({ x: w.x, y: w.y, w: w.w, h: w.h }, w.appId);
+          if (r.x === w.x && r.y === w.y && r.w === w.w && r.h === w.h) return w;
+          changed = true;
+          return { ...w, ...r };
+        });
+        if (changed) set({ windows: next });
       },
       restoreWindow: (id) => {
         if (!get().windows.some((w) => w.id === id)) return;
@@ -343,6 +366,7 @@ export const useDesktop = create<DesktopState>()(
         wallpaperLayout: s.wallpaperLayout,
         iconCells: s.iconCells,
         desktopApps: s.desktopApps,
+        taskbarApps: s.taskbarApps,
         accent: s.accent,
         bootSound: s.bootSound,
         volume: s.volume,

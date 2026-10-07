@@ -54,6 +54,7 @@ import { listPresence } from "@/lib/furr/api/presence";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
 import { playSound } from "@/lib/furr/sounds";
+import { vrHaptic } from "@/lib/furr/vr-alerts";
 import type { PresenceUser } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { syncVrSettings, useVrSettings, type VrInfoId, type VrWidgetId } from "@/store/vr";
@@ -298,7 +299,9 @@ function VrPanel() {
   // Sounds (each event only once, even with FurrBox open on the desktop too).
   const voteSoundId = widgets.votekick ? (vote?.id ?? null) : null;
   useEffect(() => {
-    if (voteSoundId) playSound("votekick", { eventId: voteSoundId });
+    if (!voteSoundId) return;
+    playSound("votekick", { eventId: voteSoundId });
+    vrHaptic(true);
   }, [voteSoundId]);
   const chatSoundId = chatAlert?.id ?? null;
   useEffect(() => {

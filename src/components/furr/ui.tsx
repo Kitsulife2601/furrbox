@@ -1,5 +1,6 @@
 // Minimal shared building blocks (styling is intentionally plain — design pass comes later).
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 export function Btn({
@@ -156,17 +157,25 @@ export function PopupMenu({ x, y, items, onClose }: { x: number; y: number; item
   }, [x, y]);
   useEffect(() => {
     const close = () => onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("mousedown", close);
     window.addEventListener("blur", close);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("blur", close);
+      window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
-  return (
+  // Rendered at the top of the page: inside the taskbar or a flyout (blurred glass) a "fixed"
+  // element would be positioned relative to that box instead of the screen.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       ref={ref}
-      className="mica fixed z-[95] min-w-48 overflow-hidden rounded-md py-1 text-[13px]"
+      className="mica fixed z-[95] min-w-48 overflow-hidden rounded-md py-1 text-[13px] text-fg"
       style={{ left: pos.x, top: pos.y }}
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
@@ -192,6 +201,7 @@ export function PopupMenu({ x, y, items, onClose }: { x: number; y: number; item
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

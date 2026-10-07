@@ -47,6 +47,43 @@ const STATUS_TEXT: Record<VrState["status"], string> = {
   unsupported: "Nicht verfügbar",
 };
 
+const HAPTIC_KEY = "furrbox-vr-haptic";
+
+/** Buzz on the arm for alarms (vote kick, watchlist, warnings). Stored on this PC. */
+function HapticToggle() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(HAPTIC_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium">Vibration bei Alarm</p>
+        <p className="text-[12px] text-muted">
+          {on
+            ? "Bei Votekick, Watchlist-Treffer und Warnungen vibriert kurz der Controller am Arm mit dem Fenster – bei Votekick zweimal."
+            : "Aus. Alarme erscheinen nur als Hinweis und Ton."}
+        </p>
+      </div>
+      <Toggle
+        on={on}
+        label="Vibration bei Alarm"
+        onChange={(next) => {
+          setOn(next);
+          try {
+            localStorage.setItem(HAPTIC_KEY, next ? "on" : "off");
+          } catch {
+            // storage blocked – the switch then only lasts until the next start
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
     <button
@@ -162,6 +199,7 @@ export function VrSettings() {
         <Toggle on={buttonMode} label="Nur Knopf am Arm" onChange={setButtonMode} />
       </div>
 
+      <HapticToggle />
       {buttonMode && (
         <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated/40 p-3">
           <div className="min-w-0 flex-1">

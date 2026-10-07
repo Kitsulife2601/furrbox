@@ -886,6 +886,29 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
     boost(ms) {
       boost(ms);
     },
+    /**
+     * A short buzz on the arm that carries the panel, so an alarm is noticed without looking.
+     * One pulse of the old haptic call is only a few milliseconds, so it is repeated for a moment.
+     * "strong" = two buzzes (vote kick), otherwise one.
+     */
+    haptic(strong) {
+      if (!api || attachedTo === INVALID_DEVICE) return false;
+      const device = attachedTo;
+      const buzz = (ms) => {
+        const end = Date.now() + ms;
+        const timer = setInterval(() => {
+          if (!api || Date.now() > end) return clearInterval(timer);
+          try {
+            api.sys("TriggerHapticPulse", "void FN(uint32_t, uint32_t, uint16_t)", device, 0, 3500);
+          } catch {
+            clearInterval(timer);
+          }
+        }, 8);
+      };
+      buzz(180);
+      if (strong) setTimeout(() => buzz(180), 320);
+      return true;
+    },
     /** Tells the /vr page something (e.g. new settings). */
     send(channel, payload) {
       win?.webContents.send(channel, payload);

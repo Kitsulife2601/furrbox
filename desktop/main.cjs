@@ -392,6 +392,10 @@ ipcMain.handle("furrbox:vr-boost", (event, ms) => {
   vrOverlay.boost(Number(ms) || 0);
   return true;
 });
+ipcMain.handle("furrbox:vr-haptic", (event, strong) => {
+  if (event.sender !== vrOverlay.webContents()) return false;
+  return vrOverlay.haptic(Boolean(strong));
+});
 ipcMain.handle("furrbox:vr-battery", (event) => (trusted(event) ? vrOverlay.battery() : null));
 ipcMain.handle("furrbox:media-state", (event) => (trusted(event) ? media.state() : null));
 ipcMain.handle("furrbox:media-control", (event, action) => (trusted(event) ? media.control(String(action)) : false));
