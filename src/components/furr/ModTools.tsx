@@ -3,10 +3,11 @@
 //   Watchlist: people the team keeps an eye on, with a note and the last sightings.
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Eye, Gavel, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Copy, Eye, Gavel, Plus, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
 import { liftSanction, listSanctions, type SanctionDto } from "@/lib/furr/api/sanctions";
 import { addToWatchlist, listWatchlist, listWatchlistSightings, removeFromWatchlist, type WatchlistEntryDto } from "@/lib/furr/api/watchlist";
 import { errorMessage, timeAgo } from "@/lib/furr/client";
+import { usePersonFile } from "@/lib/furr/person-file";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
@@ -137,6 +138,20 @@ export function SanctionsPanel() {
                 )}
               </div>
               <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    usePersonFile.getState().open({
+                      name: s.targetName || s.targetId,
+                      discordId: s.platform === "vrchat" ? null : s.targetId,
+                      usrId: s.platform === "vrchat" ? s.targetId : null,
+                    })
+                  }
+                  title="Personenakte öffnen"
+                  className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg"
+                >
+                  <UserRound className="size-3.5" />
+                </button>
                 <button type="button" onClick={() => copy(s.targetId)} title="ID kopieren" className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg">
                   <Copy className="size-3.5" />
                 </button>
@@ -284,6 +299,14 @@ export function WatchlistPanel() {
                   <p className="mt-1 text-[11px] text-subtle">eingetragen {timeAgo(e.createdAt)}</p>
                 </div>
                 <div className="flex shrink-0 gap-0.5" onClick={(ev) => ev.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => usePersonFile.getState().open({ name: e.displayName || e.usrId, discordId: null, usrId: e.usrId })}
+                    title="Personenakte öffnen"
+                    className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg"
+                  >
+                    <UserRound className="size-3.5" />
+                  </button>
                   <button type="button" onClick={() => copy(e.usrId)} title="VRChat-ID kopieren" className="rounded p-1.5 text-muted hover:bg-fg/8 hover:text-fg">
                     <Copy className="size-3.5" />
                   </button>

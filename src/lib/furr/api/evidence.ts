@@ -146,6 +146,8 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
     const createdAt = new Date();
     const targetName =
       data.targetDisplayName || (data.targetDiscordId ? await discordName(data.targetDiscordId) : data.targetPrimary);
+    // For the Personenakte: Discord id, or a usr_ id typed into one of the target fields.
+    const targetId = data.targetDiscordId || /usr_[0-9a-f-]{36}/i.exec(`${data.targetPrimary} ${data.targetSecondary}`)?.[0] || null;
     const caseId = `${sanitizeSegment(targetName)}_${createdAt.toISOString().replace(/[:.]/g, "-")}`;
     const casePath = `${EVIDENCE_ROOT}/${data.platform}/${caseId}`;
     const fileSizes = data.files.map((f) => Math.floor((f.base64.length * 3) / 4));
@@ -196,8 +198,8 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
     }
     await notify("Neuer Evidence-Fall", `${me.displayName} hat einen ${data.platform}-Fall zu ${targetName} (${data.violationCategory}) angelegt.`);
     await (await getSql())`
-      insert into evidence_case_meta (case_path, status, assignee_id, updated_by)
-      values (${casePath}, 'open', ${context.userId}, ${context.userId})
+      insert into evidence_case_meta (case_path, status, assignee_id, updated_by, target_id, target_name)
+      values (${casePath}, 'open', ${context.userId}, ${context.userId}, ${targetId}, ${targetName})
       on conflict (case_path) do nothing`.catch(() => undefined);
     return { caseId, casePath, uploads };
   });
@@ -216,12 +218,13 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
       assignee_id: string | null;
       assignee_name: string | null;
       note: string | null;
+      target_name: string | null;
       updated_at: unknown;
     }>(
       `select f.folder, f.name, f.created_at,
          (select count(*)::int from furr_file c where c.scope = 'public' and c.owner_id is null
             and c.folder = f.folder || '/' || f.name and c.is_folder = false) as file_count,
-         m.status, m.assignee_id, p.display_name as assignee_name, m.note, m.updated_at
+         m.status, m.assignee_id, p.display_name as assignee_name, m.note, m.target_name, m.updated_at
        from furr_file f
        left join evidence_case_meta m on m.case_path = f.folder || '/' || f.name
        left join furr_profile p on p.user_id = m.assignee_id
@@ -235,6 +238,7 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
       caseId: r.name,
       createdAt: iso(r.created_at) ?? "",
       fileCount: Number(r.file_count) || 0,
+      targetName: r.target_name,
       status: (CASE_STATUSES.includes(r.status as CaseStatus) ? r.status : "open") as CaseStatus,
       assigneeId: r.assignee_id,
       assigneeName: r.assignee_id ? (r.assignee_name ?? "Unbekannt") : null,

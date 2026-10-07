@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Personenakte: alles zu einer Person auf einer Seite",
+    "items": [
+      "Neu in FurrEvidence: Reiter „Personen“. Name, Discord-ID oder VRChat-ID eintippen und die Person anklicken.",
+      "Die Akte zeigt auf einen Blick: laufende Strafen, alle Fälle mit Status und Zuständigem, alle bisherigen Strafen, ob die Person auf der Watchlist steht und die letzten Sichtungen.",
+      "Im Verlauf steht, was das Team bei dieser Person auf Discord und in VRChat gemacht hat – mit Datum, wer es war und warum.",
+      "Schneller Weg zur Akte: Knopf „Akte“ bei jedem Fall und das Personen-Symbol bei Strafen und in der Watchlist.",
+      "Neue Fälle merken sich ab jetzt die ID der Person, damit sie sicher in der richtigen Akte landen. Ältere Fälle werden über den Namen zugeordnet."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Fallakten mit Status und Zuständigkeit",
     "items": [
       "Neu in FurrEvidence → Fallakten: Jeder Fall hat jetzt einen Status – Offen, In Arbeit, Wartet oder Erledigt.",

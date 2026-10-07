@@ -142,6 +142,8 @@ export type EvidenceCase = {
   caseId: string;
   createdAt: string;
   fileCount: number;
+  /** Who the case is about (cases from before the Personenakte have none). */
+  targetName: string | null;
   /** "open" until someone changes it. */
   status: CaseStatus;
   assigneeId: string | null;

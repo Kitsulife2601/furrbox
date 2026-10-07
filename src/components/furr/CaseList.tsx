@@ -2,11 +2,12 @@
 // who takes care of it and a short note – so nothing is left lying around.
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Paperclip, Search, StickyNote, UserCheck } from "lucide-react";
+import { FolderOpen, Paperclip, Search, StickyNote, UserCheck, UserRound } from "lucide-react";
 import { listEvidenceCases, updateEvidenceCase } from "@/lib/furr/api/evidence";
 import { listPresence } from "@/lib/furr/api/presence";
 import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
 import { useLiveInterval } from "@/lib/furr/live-interval";
+import { usePersonFile } from "@/lib/furr/person-file";
 import type { CaseStatus, EvidenceCase } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
@@ -188,6 +189,13 @@ export function CaseList() {
                     </Btn>
                   )}
                   <div className="ml-auto flex gap-1">
+                    <Btn
+                      variant="ghost"
+                      onClick={() => usePersonFile.getState().open({ name: c.targetName ?? title(c.caseId).replace(/_/g, " "), discordId: null, usrId: null })}
+                      title="Alles zu dieser Person zeigen"
+                    >
+                      <UserRound className="size-3.5" /> Akte
+                    </Btn>
                     <Btn variant="ghost" onClick={() => setNoting(c)} title="Kurze Notiz für das Team">
                       <StickyNote className="size-3.5" /> {c.note ? "Notiz ändern" : "Notiz"}
                     </Btn>

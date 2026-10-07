@@ -24,6 +24,8 @@ import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 import { VRChatPanel } from "./VRChat";
 import { SanctionsPanel, WatchlistPanel } from "./ModTools";
 import { CaseList } from "./CaseList";
+import { PersonPanel } from "./PersonFile";
+import { usePersonFile } from "@/lib/furr/person-file";
 import { BAN_REASON_MIN, CaseRefSelect, UndoBanner } from "./BanSafety";
 import { useCaseDraft, withCaseRef } from "@/lib/furr/case-draft";
 import { scheduleWithUndo } from "@/lib/furr/undo";
@@ -53,13 +55,18 @@ async function waitForInspect(requestId: string): Promise<MessageProof> {
 
 export function Evidence() {
   const live15 = useLiveInterval(15_000);
-  const [tab, setTab] = useState<"case" | "cases" | "moderation" | "sanctions" | "watchlist" | "vrchat">("case");
+  const [tab, setTab] = useState<"case" | "cases" | "people" | "moderation" | "sanctions" | "watchlist" | "vrchat">("case");
   const bridge = useQuery({ queryKey: ["furr", "bridge"], queryFn: () => getBridgeStatus(), refetchInterval: live15 });
   // „Fall anlegen“ aus Votekick-Panel / Staff-Tools: direkt zum Formular springen.
   const draftAt = useCaseDraft((s) => s.draft?.at ?? null);
   useEffect(() => {
     if (draftAt) setTab("case");
   }, [draftAt]);
+  // „Akte“ from a case, a sanction or the watchlist: jump to the person.
+  const personAt = usePersonFile((s) => s.target?.at ?? null);
+  useEffect(() => {
+    if (personAt) setTab("people");
+  }, [personAt]);
 
   return (
     <div className="flex h-full flex-col bg-bg/40">
@@ -69,6 +76,7 @@ export function Evidence() {
             [
               ["case", "Neuer Fall"],
               ["cases", "Fallakten"],
+              ["people", "Personen"],
               ["moderation", "Moderation"],
               ["sanctions", "Strafen"],
               ["watchlist", "Watchlist"],
@@ -103,6 +111,7 @@ export function Evidence() {
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "case" && <CaseForm onSaved={() => setTab("cases")} />}
         {tab === "cases" && <CaseList />}
+        {tab === "people" && <PersonPanel />}
         {tab === "moderation" && <ModerationPanel />}
         {tab === "sanctions" && <SanctionsPanel />}
         {tab === "watchlist" && <WatchlistPanel />}
