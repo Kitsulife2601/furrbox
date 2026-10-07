@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/furr/client";
 import type { VrcInstanceState } from "@/components/furr/VRChat";
 import { ChatboxComposer } from "@/components/furr/ChatboxComposer";
 import { DUTY_DOT, DUTY_LABEL, useDuty } from "@/components/furr/useDuty";
+import { useHandover } from "@/lib/furr/handover";
 import { useVoteStore } from "@/components/furr/useVoteWatch";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
@@ -178,6 +179,9 @@ export function StaffFlyout() {
           ))}
         </div>
         {duty.error && <p className="furr-vr-notice mt-2 rounded-md bg-danger/15 px-2 py-1 text-[11px] text-red-200">{duty.error}</p>}
+        <button type="button" onClick={() => useHandover.getState().open("all")} className="mt-2 text-[12px] text-accent hover:underline">
+          Übergabe-Notizen ansehen
+        </button>
       </Section>
 
       <Section title="Chatbox-Hinweis" icon={<MessageSquareText className="size-3.5" />}>

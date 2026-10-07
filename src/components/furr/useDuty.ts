@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listDuty, setDuty, type DutyEntry, type DutyStatus } from "@/lib/furr/api/duty";
 import { errorMessage, useMe } from "@/lib/furr/client";
+import { useHandover } from "@/lib/furr/handover";
 import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useNotifications } from "@/store/notifications";
 
@@ -65,6 +66,9 @@ export function useDuty(pollMs = 60_000) {
     );
     try {
       await setDuty({ data: { status: next } });
+      // End of duty → ask for a handover note; start of duty → show what the others left.
+      if (next === "off") useHandover.getState().open("write");
+      else if (next === "on" && status === "off") useHandover.getState().open("read");
       useNotifications.getState().notify({
         id: "duty-toggle",
         version: "FurrBox · Anwesenheit",

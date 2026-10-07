@@ -31,6 +31,7 @@ import { AltTabSwitcher } from "./AltTab";
 import { ClockFlyout, InfoCenter, SearchPanel, StartMenu, Toasts } from "./Flyouts";
 import { StaffFlyout } from "./StaffTray";
 import { VoteKickPanel } from "./VoteKickPanel";
+import { HandoverDialogs } from "./Handover";
 import { CommandPalette } from "./CommandPalette";
 import { WhatsNewDialog } from "./WhatsNew";
 
@@ -256,6 +257,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
         <Taskbar />
       </div>
       <UpdatePopup />
+      <HandoverDialogs />
       <PowerOverlay />
 
       {menu && (

@@ -148,6 +148,41 @@ export const markVotekickDone = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export type HandoverNote = { id: string; userId: string; name: string; text: string; at: string };
+
+/** Übergabe-Notiz at the end of a duty: what the next one should know. */
+export const saveHandover = createServerFn({ method: "POST" })
+  .validator((text: string) => String(text ?? "").trim().slice(0, 1000))
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data: text }) => {
+    const me = await requirePermission(context.userId, "canUseEvidence");
+    if (!text) throw new Error("Die Notiz ist leer.");
+    const sql = await getSql();
+    await sql`insert into duty_handover (id, user_id, text) values (${newId()}, ${context.userId}, ${text})`;
+    appendAuditLater({
+      source: "furrbox",
+      action: "duty.handover",
+      actorId: context.userId,
+      actorName: me.displayName,
+      detail: text.slice(0, 300),
+    });
+    return { ok: true as const };
+  });
+
+/** The latest handover notes of the team (two weeks back), newest first. */
+export const listHandovers = createServerFn({ method: "GET" })
+  .middleware([accessMiddleware])
+  .handler(async ({ context }): Promise<HandoverNote[]> => {
+    await requirePermission(context.userId, "canUseEvidence");
+    const sql = await getSql();
+    const rows = await sql<{ id: string; user_id: string; text: string; created_at: unknown; name: string | null }>`
+      select h.id, h.user_id, h.text, h.created_at, p.display_name as name
+      from duty_handover h left join furr_profile p on p.user_id = h.user_id
+      where h.created_at > now() - interval '14 days'
+      order by h.created_at desc limit 20`;
+    return rows.map((r) => ({ id: r.id, userId: r.user_id, name: r.name ?? "Unbekannt", text: r.text, at: iso(r.created_at) ?? "" }));
+  });
+
 export const listDutyLog = createServerFn({ method: "GET" })
   .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<DutyLogEntry[]> => {

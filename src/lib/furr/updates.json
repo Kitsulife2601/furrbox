@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Übergabe-Notiz beim Dienstende",
+    "items": [
+      "Neu: Wenn du deine Anwesenheit auf „Aus“ stellst, fragt FurrBox nach einer kurzen Übergabe-Notiz – was ist noch offen, auf wen soll man achten?",
+      "Mit einem Klick fügst du deine offenen Fälle in die Notiz ein. Wer nichts schreiben will, klickt „Ohne Notiz“.",
+      "Wer sich danach auf „Anwesend“ stellt, bekommt die neuen Notizen der anderen sofort angezeigt und bestätigt mit „Gelesen“.",
+      "Alle Notizen der letzten zwei Wochen findest du im Staff-Menü der Taskleiste unter „Übergabe-Notizen ansehen“."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Personenakte: alles zu einer Person auf einer Seite",
     "items": [
       "Neu in FurrEvidence: Reiter „Personen“. Name, Discord-ID oder VRChat-ID eintippen und die Person anklicken.",
