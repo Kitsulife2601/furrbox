@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Fallakten mit Status und Zuständigkeit",
+    "items": [
+      "Neu in FurrEvidence → Fallakten: Jeder Fall hat jetzt einen Status – Offen, In Arbeit, Wartet oder Erledigt.",
+      "Bei jedem Fall steht, wer zuständig ist. Mit „Ich übernehme“ nimmst du dir einen Fall, oder du gibst ihn an jemanden aus dem Team weiter.",
+      "Oben filterst du nach „Zu tun“, „Meine“, „Erledigt“ und „Alle“ – mit Zähler, dazu eine Suche nach Fall, Person oder Notiz.",
+      "Zu jedem Fall lässt sich eine kurze Notiz fürs Team schreiben. Jede Änderung landet im Moderationslog.",
+      "Wer einen Fall anlegt, ist automatisch als zuständig eingetragen."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "version": "2.0.28",
     "title": "Strafen-Übersicht, Watchlist, eigene Taskleiste und Tastenkürzel",
     "items": [

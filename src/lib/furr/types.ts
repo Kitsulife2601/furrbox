@@ -134,12 +134,20 @@ export type ModerationEntry = {
   completedAt: string | null;
 };
 
+export type CaseStatus = "open" | "working" | "waiting" | "done";
+
 export type EvidenceCase = {
   path: string;
   platform: string;
   caseId: string;
   createdAt: string;
   fileCount: number;
+  /** "open" until someone changes it. */
+  status: CaseStatus;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  note: string | null;
+  statusChangedAt: string | null;
 };
 
 export type BridgeStatus = { connected: boolean; lastSeenAt: string | null; configured: boolean };

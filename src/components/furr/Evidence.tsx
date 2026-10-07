@@ -2,11 +2,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveInterval } from "@/lib/furr/live-interval";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, FolderOpen, Globe2, Image as ImageIcon, MessagesSquare, Paperclip, Save, Search, UploadCloud, X } from "lucide-react";
+import { FileText, Globe2, Image as ImageIcon, MessagesSquare, Save, Search, UploadCloud, X } from "lucide-react";
 import {
   VIOLATION_CATEGORIES,
   getMessageInspect,
-  listEvidenceCases,
   listModeration,
   queueModeration,
   requestMessageInspect,
@@ -20,16 +19,14 @@ import { checkClip, uploadToBot } from "@/lib/furr/botfile-client";
 import { ROLE_LABEL, isRole, type ModerationAction } from "@/lib/furr/roles";
 import type { DiscordMemberOption, MessageProof } from "@/lib/furr/types";
 import { cn } from "@/lib/utils";
-import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { Badge, Btn, Empty, ErrorText, Field, TextInput } from "./ui";
 import { VRChatPanel } from "./VRChat";
 import { SanctionsPanel, WatchlistPanel } from "./ModTools";
-import { AttachClipDialog } from "./AttachClipDialog";
+import { CaseList } from "./CaseList";
 import { BAN_REASON_MIN, CaseRefSelect, UndoBanner } from "./BanSafety";
 import { useCaseDraft, withCaseRef } from "@/lib/furr/case-draft";
 import { scheduleWithUndo } from "@/lib/furr/undo";
-import type { EvidenceCase } from "@/lib/furr/types";
 import { ClipCaptureButton } from "./ClipSettings";
 import { takeClipEvidenceDraft } from "@/lib/furr/clip-draft";
 import { attachClipToCase, hasDesktopClips, loadClipFile } from "@/lib/furr/clips-client";
@@ -622,52 +619,6 @@ function Card({ step, title, subtitle, children }: { step: number; title: string
       </div>
       {children}
     </section>
-  );
-}
-
-function CaseList() {
-  const live15 = useLiveInterval(15_000);
-  const cases = useQuery({ queryKey: ["furr", "evidence-cases"], queryFn: () => listEvidenceCases(), refetchInterval: live15 });
-  const openApp = useDesktop((s) => s.openApp);
-  const [attaching, setAttaching] = useState<EvidenceCase | null>(null);
-  if (cases.isError) return <Empty>{errorMessage(cases.error)}</Empty>;
-  if (!cases.data) return <Empty>Lade Fallakten…</Empty>;
-  if (!cases.data.length) return <Empty>Noch keine Fälle gespeichert.</Empty>;
-  return (
-    <div className="relative min-h-full">
-    {attaching && <AttachClipDialog target={attaching} onClose={() => setAttaching(null)} />}
-    <table className="w-full text-left text-[13px]">
-      <thead className="bg-elevated/60 text-muted">
-        <tr>
-          <th className="px-3 py-2 font-medium">Fall</th>
-          <th className="px-3 py-2 font-medium">Plattform</th>
-          <th className="px-3 py-2 font-medium">Dateien</th>
-          <th className="px-3 py-2 font-medium">Erstellt</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {cases.data.map((c) => (
-          <tr key={c.path} className="border-t border-border hover:bg-fg/5">
-            <td className="max-w-[280px] truncate px-3 py-2 font-mono text-[12px]">{c.caseId}</td>
-            <td className="px-3 py-2">{c.platform}</td>
-            <td className="px-3 py-2">{c.fileCount}</td>
-            <td className="px-3 py-2 text-muted">{c.createdAt ? new Date(c.createdAt).toLocaleString("de-DE") : ""}</td>
-            <td className="px-3 py-2 text-right">
-              <div className="flex justify-end gap-1">
-                <Btn variant="ghost" onClick={() => setAttaching(c)} title="Clip oder Datei an diesen Fall hängen (mit Audit-Bezug)">
-                  <Paperclip className="size-3.5" /> Clip anhängen
-                </Btn>
-                <Btn variant="ghost" onClick={() => openApp("explorer", { payload: { scope: "public", folder: c.path } })}>
-                  <FolderOpen className="size-3.5" /> Öffnen
-                </Btn>
-              </div>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-    </div>
   );
 }
 

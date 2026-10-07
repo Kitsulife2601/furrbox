@@ -20,7 +20,7 @@ import { publishAlertLater } from "../alerts";
 import { upsertSanctionFromBot } from "./sanctions";
 import { DISCORD_LOGS, EVIDENCE_ROOT, MAX_UPLOAD_BYTES, formatSize, sanitizeName, sanitizeSegment } from "../paths";
 import { MODERATION_ACTIONS, type ModerationAction } from "../roles";
-import type { EvidenceCase, Me, MessageProof, ModerationEntry } from "../types";
+import type { CaseStatus, EvidenceCase, Me, MessageProof, ModerationEntry } from "../types";
 
 export const VIOLATION_CATEGORIES = [
   "Harassment",
@@ -195,6 +195,10 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
       await writeTextFile("public", null, `${DISCORD_LOGS}/${sanitizeSegment(targetName)}_Report.txt`, report, context.userId);
     }
     await notify("Neuer Evidence-Fall", `${me.displayName} hat einen ${data.platform}-Fall zu ${targetName} (${data.violationCategory}) angelegt.`);
+    await (await getSql())`
+      insert into evidence_case_meta (case_path, status, assignee_id, updated_by)
+      values (${casePath}, 'open', ${context.userId}, ${context.userId})
+      on conflict (case_path) do nothing`.catch(() => undefined);
     return { caseId, casePath, uploads };
   });
 
@@ -203,13 +207,26 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<EvidenceCase[]> => {
     await requirePermission(context.userId, "canUseEvidence");
     const sql = await getSql();
-    const rows = await sql.query<{ folder: string; name: string; created_at: unknown; file_count: number }>(
+    const rows = await sql.query<{
+      folder: string;
+      name: string;
+      created_at: unknown;
+      file_count: number;
+      status: string | null;
+      assignee_id: string | null;
+      assignee_name: string | null;
+      note: string | null;
+      updated_at: unknown;
+    }>(
       `select f.folder, f.name, f.created_at,
          (select count(*)::int from furr_file c where c.scope = 'public' and c.owner_id is null
-            and c.folder = f.folder || '/' || f.name and c.is_folder = false) as file_count
+            and c.folder = f.folder || '/' || f.name and c.is_folder = false) as file_count,
+         m.status, m.assignee_id, p.display_name as assignee_name, m.note, m.updated_at
        from furr_file f
+       left join evidence_case_meta m on m.case_path = f.folder || '/' || f.name
+       left join furr_profile p on p.user_id = m.assignee_id
        where f.scope = 'public' and f.owner_id is null and f.is_folder = true and f.folder in ($1, $2)
-       order by f.created_at desc limit 100`,
+       order by f.created_at desc limit 200`,
       [`${EVIDENCE_ROOT}/Discord`, `${EVIDENCE_ROOT}/VRChat`],
     );
     return rows.map((r) => ({
@@ -218,7 +235,75 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
       caseId: r.name,
       createdAt: iso(r.created_at) ?? "",
       fileCount: Number(r.file_count) || 0,
+      status: (CASE_STATUSES.includes(r.status as CaseStatus) ? r.status : "open") as CaseStatus,
+      assigneeId: r.assignee_id,
+      assigneeName: r.assignee_id ? (r.assignee_name ?? "Unbekannt") : null,
+      note: r.note,
+      statusChangedAt: iso(r.updated_at),
     }));
+  });
+
+const CASE_STATUSES: CaseStatus[] = ["open", "working", "waiting", "done"];
+const CASE_STATUS_LABEL: Record<CaseStatus, string> = { open: "Offen", working: "In Arbeit", waiting: "Wartet", done: "Erledigt" };
+
+/**
+ * Changes state, the person in charge and / or the note of a case. Only the fields that are
+ * passed change; `assigneeId: null` takes the person off, "me" means the caller.
+ */
+export const updateEvidenceCase = createServerFn({ method: "POST" })
+  .validator((input: { path: string; status?: CaseStatus; assigneeId?: string | null; note?: string }) => ({
+    path: String(input.path ?? "").trim(),
+    status: input.status && CASE_STATUSES.includes(input.status) ? input.status : undefined,
+    assigneeId: input.assigneeId === undefined ? undefined : input.assigneeId === null ? null : String(input.assigneeId).trim() || null,
+    note: input.note === undefined ? undefined : String(input.note).trim().slice(0, 500),
+  }))
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data }) => {
+    const me = await requirePermission(context.userId, "canUseEvidence");
+    const idx = data.path.lastIndexOf("/");
+    const folder = data.path.slice(0, idx);
+    const name = data.path.slice(idx + 1);
+    if (![`${EVIDENCE_ROOT}/Discord`, `${EVIDENCE_ROOT}/VRChat`].includes(folder)) throw new Error("Das ist keine Fallakte.");
+    const sql = await getSql();
+    const exists = await sql`
+      select 1 from furr_file where scope = 'public' and owner_id is null and is_folder = true and folder = ${folder} and name = ${name}`;
+    if (!exists.length) throw new Error("Fallakte nicht gefunden.");
+
+    const assignee = data.assigneeId === "me" ? context.userId : data.assigneeId;
+    if (assignee) {
+      const known = await sql`select 1 from furr_profile where user_id = ${assignee}`;
+      if (!known.length) throw new Error("Diese Person gibt es nicht.");
+    }
+    const before = await sql<{ status: string; assignee_id: string | null; note: string | null }>`
+      select status, assignee_id, note from evidence_case_meta where case_path = ${data.path}`;
+    const next = {
+      status: data.status ?? (before[0]?.status as CaseStatus | undefined) ?? "open",
+      assignee: assignee === undefined ? (before[0]?.assignee_id ?? null) : assignee,
+      note: data.note === undefined ? (before[0]?.note ?? null) : data.note || null,
+    };
+    await sql`
+      insert into evidence_case_meta (case_path, status, assignee_id, note, updated_by, updated_at)
+      values (${data.path}, ${next.status}, ${next.assignee}, ${next.note}, ${context.userId}, now())
+      on conflict (case_path) do update set
+        status = excluded.status, assignee_id = excluded.assignee_id, note = excluded.note,
+        updated_by = excluded.updated_by, updated_at = now()`;
+
+    const changes: string[] = [];
+    if (data.status && data.status !== (before[0]?.status ?? "open")) changes.push(`Status: ${CASE_STATUS_LABEL[data.status]}`);
+    if (assignee !== undefined && assignee !== (before[0]?.assignee_id ?? null)) {
+      changes.push(assignee ? (assignee === context.userId ? "übernommen" : "zugewiesen") : "Zuständigkeit entfernt");
+    }
+    if (data.note !== undefined && (data.note || null) !== (before[0]?.note ?? null)) changes.push("Notiz geändert");
+    if (changes.length) {
+      appendAuditLater({
+        source: "furrbox",
+        action: "case.update",
+        actorId: context.userId,
+        caseId: name,
+        detail: `${me.displayName}: ${changes.join(", ")}`,
+      });
+    }
+    return { ok: true as const };
   });
 
 // ---------- Discord message inspection (answered by the bot through the bridge) ----------
