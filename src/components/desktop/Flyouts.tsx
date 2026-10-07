@@ -26,6 +26,7 @@ import { recentFiles, searchFiles } from "@/lib/furr/api/files";
 import { timeAgo, useMe } from "@/lib/furr/client";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
+import { playSound, useSounds } from "@/lib/furr/sounds";
 import { NOTIFY_KIND_LABEL, kindOf, useNotifications, type NotifyKind } from "@/store/notifications";
 import { openFurrFile } from "@/components/furr/FurrFS";
 import { useSync } from "@/components/furr/useFurrSync";
@@ -266,6 +267,8 @@ const KIND_TINT: Record<NotifyKind, string> = {
 /** Info-Center: Sync-Status, Schnellregler, Benachrichtigungen gruppiert/filterbar (wie Windows). */
 export function InfoCenter() {
   const s = useDesktop();
+  const soundVolume = useSounds((x) => x.volume);
+  const setSoundVolume = useSounds((x) => x.setVolume);
   const sync = useSync();
   const history = useNotifications((n) => n.history);
   const clearHistory = useNotifications((n) => n.clearHistory);
@@ -319,7 +322,18 @@ export function InfoCenter() {
       </label>
       <label className="mt-2 flex items-center gap-3 px-1 text-muted">
         <Volume2 className="size-4" />
-        <input type="range" min={0} max={100} value={s.volume} onChange={(e) => s.setVolume(Number(e.target.value))} className="w-full accent-[var(--os-accent)]" />
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={soundVolume}
+          aria-label="Lautstärke der FurrBox-Töne"
+          title="Lautstärke der FurrBox-Töne"
+          onChange={(e) => setSoundVolume(Number(e.target.value))}
+          onPointerUp={() => playSound("chat", { force: true })}
+          className="w-full accent-[var(--os-accent)]"
+        />
       </label>
       <div className="mt-3 flex items-center justify-between">
         <p className="text-[12px] font-medium text-muted">Benachrichtigungen</p>

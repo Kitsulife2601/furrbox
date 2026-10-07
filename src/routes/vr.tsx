@@ -1,6 +1,6 @@
 // FurrBox VR: the page shown on your arm in SteamVR (rendered offscreen by the desktop app,
 // operated with the SteamVR laser pointer). Layout like OVR Toolkit: a small widget on the wrist
-// (clock, music, battery, notices â€“ 520 Ã— 200) and, when open, a window above it (520 Ã— 700 in total)
+// (clock, music, battery, notices – 520 × 200) and, when open, a window above it (520 × 700 in total)
 // with pages you swipe through.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import {
 import { desktopVrchat, unwrap, type VrcInstanceState } from "@/components/furr/VRChat";
 import {
   ClipSaveButton,
+  saveWristClip,
   DutyBadge,
   HintPreview,
   StaffQuickPanel,
@@ -73,9 +74,9 @@ type PanelBridge = {
 };
 const panelBridge = () => (window as { furrbox?: { vr?: PanelBridge } }).furrbox?.vr ?? null;
 /**
- * Vor einer Animation kurz flÃ¼ssige Bilder anfordern â€“ sonst schickt die Desktop-App im Ruhezustand
- * nur gut ein Bild pro Sekunde an SteamVR und ÃœbergÃ¤nge ruckeln bzw. fehlen ganz.
- * (Ã„ltere Desktop-Versionen kennen das nicht â€“ dann passiert einfach nichts.)
+ * Vor einer Animation kurz flüssige Bilder anfordern – sonst schickt die Desktop-App im Ruhezustand
+ * nur gut ein Bild pro Sekunde an SteamVR und Übergänge ruckeln bzw. fehlen ganz.
+ * (Ältere Desktop-Versionen kennen das nicht – dann passiert einfach nichts.)
  */
 const boostFrames = (ms: number) => void panelBridge()?.boost?.(ms)?.catch(() => undefined);
 
@@ -86,12 +87,12 @@ function mmss(sec: number) {
 const CHAT_ALERT_MS = 20_000;
 
 /** A vote kick stays on screen this long. */
-const VOTE_ALERT_MS = 45_000;
+const VOTE_ALERT_MS = 60_000;
 /** A newly opened group instance is announced this long. */
 const INSTANCE_ALERT_MS = 2 * 60_000;
 /** Drag further than this (px) to change the page. */
 const SWIPE_PX = 60;
-/** Zuklappen: so lange bleibt das Fenster fÃ¼r die Ausblend-Animation noch stehen (wie in styles.css). */
+/** Zuklappen: so lange bleibt das Fenster für die Ausblend-Animation noch stehen (wie in styles.css). */
 const WINDOW_OUT_MS = 200;
 /** Neuer Hinweis: Einblenden + einmaliges Aufleuchten (furr-vr-ring 700 ms) + Puffer. */
 const NOTICE_BOOST_MS = 900;
@@ -108,7 +109,7 @@ const PAGE_TITLE: Record<PageId, string> = {
 };
 
 function clock(at: string | null) {
-  return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "â€“";
+  return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
 }
 
 function since(at: string | null, now: Date) {
@@ -125,7 +126,7 @@ function VrPanel() {
   const [page, setPage] = useState(0);
   const drag = useRef<number | null>(null);
   const buttonMode = useVrSettings((s) => s.buttonMode);
-  // Button mode: closed by default. Events do not open the panel â€“ they show a short notice instead.
+  // Button mode: closed by default. Events do not open the panel – they show a short notice instead.
   const [open, setOpen] = useState(false);
   // Looking at your arm opens the panel, looking away closes it again (no tapping needed).
   const gazeOpen = useVrSettings((s) => s.gazeOpen);
@@ -136,7 +137,7 @@ function VrPanel() {
   const [point, setPoint] = useState(false);
   useEffect(() => panelBridge()?.onPoint?.(setPoint), []);
   const collapsed = buttonMode && !open && !(gazeOpen && gaze) && !(pointOpen && point);
-  // Zugeklappt: seltenere Server-/Media-Polls â†’ weniger React-Renders â†’ weniger Electron-Paints.
+  // Zugeklappt: seltenere Server-/Media-Polls → weniger React-Renders → weniger Electron-Paints.
   const pollInstMs = collapsed ? 8_000 : 2_000;
   const pollChatMs = collapsed ? 10_000 : 5_000;
   const pollSongMs = collapsed ? 8_000 : 3_000;
@@ -243,9 +244,9 @@ function VrPanel() {
     : chatAlert
       ? { id: chatAlert.id, tone: "blue" as const, title: `Nachricht von ${chatAlert.senderName}`, text: chatAlert.content }
       : widgets.instanceAlert && fresh
-        ? { id: fresh.instanceId, tone: "green" as const, title: "Neue Gruppen-Instanz", text: `${fresh.worldName} Â· ${fresh.memberCount} Leute` }
+        ? { id: fresh.instanceId, tone: "green" as const, title: "Neue Gruppen-Instanz", text: `${fresh.worldName} · ${fresh.memberCount} Leute` }
         : null;
-  // Neuer Hinweis: kurz flÃ¼ssige Bilder, damit Einblenden und Aufleuchten sichtbar sind.
+  // Neuer Hinweis: kurz flüssige Bilder, damit Einblenden und Aufleuchten sichtbar sind.
   const noticeId = notice?.id ?? null;
   useEffect(() => {
     if (noticeId) boostFrames(NOTICE_BOOST_MS);
@@ -275,7 +276,7 @@ function VrPanel() {
     if (idx >= 0) setPage(idx);
     boostFrames(600);
   };
-  // Seitenwechsel (Wischen / Tabs): die 300-ms-Schiebe-Animation flÃ¼ssig zeigen.
+  // Seitenwechsel (Wischen / Tabs): die 300-ms-Schiebe-Animation flüssig zeigen.
   const pageId = pages[current] ?? null;
   useEffect(() => {
     if (pageId) boostFrames(600);
@@ -339,8 +340,8 @@ function VrPanel() {
           {widgets.votekick && !vote && lastVote && now.getTime() - new Date(lastVote.at).getTime() < 10 * 60_000 && (
             <p className="truncate rounded-xl bg-amber-500/12 px-3 py-1 text-[13px] text-amber-200">
               Votekick {clock(lastVote.at)}: gegen <b>{lastVote.target}</b>
-              {lastVote.initiator ? ` â€“ von ${lastVote.initiator}` : ""}
-              {lastVote.result === "kicked" ? " Â· gekickt" : lastVote.result === "failed" ? " Â· abgelehnt" : ""}
+              {lastVote.initiator ? ` – von ${lastVote.initiator}` : ""}
+              {lastVote.result === "kicked" ? " · gekickt" : lastVote.result === "failed" ? " · abgelehnt" : ""}
             </p>
           )}
           {onDuty && (
@@ -362,6 +363,7 @@ function VrPanel() {
             collapsed={false}
             boost={boostFrames}
             onJump={jumpPage}
+            onClip={() => void saveWristClip(boostFrames)}
             onOpenKeyboard={() => {
               setKeyboardOpen(true);
               boostFrames(450);
@@ -385,7 +387,7 @@ function VrPanel() {
 
           {!me.data ? (
             <p className="grid flex-1 place-items-center px-6 text-center text-[16px] text-white/60">
-              {me.isLoading ? "Ladeâ€¦" : "Bitte melde dich in FurrBox auf dem Desktop an."}
+              {me.isLoading ? "Lade…" : "Bitte melde dich in FurrBox auf dem Desktop an."}
             </p>
           ) : pages.length === 0 ? (
             <div className="flex-1" />
@@ -443,7 +445,7 @@ function VrPanel() {
               </div>
               {pages.length > 1 && (
                 <nav className="flex items-center gap-1">
-                  <NavButton label="ZurÃ¼ck" disabled={current === 0} onClick={() => go(-1)}>
+                  <NavButton label="Zurück" disabled={current === 0} onClick={() => go(-1)}>
                     <ChevronLeft className="size-5" />
                   </NavButton>
                   <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
@@ -503,7 +505,7 @@ function VrPanel() {
           {buttonMode && (
             <button
               type="button"
-              aria-label={open ? "Fenster schlieÃŸen" : "Fenster Ã¶ffnen"}
+              aria-label={open ? "Fenster schließen" : "Fenster öffnen"}
               onClick={() => setOpen(!open)}
               className={cn("grid size-12 shrink-0 place-items-center rounded-full transition duration-150 active:scale-90", open ? "bg-accent text-black" : "bg-white/12 hover:bg-white/25")}
             >
@@ -516,6 +518,7 @@ function VrPanel() {
             collapsed
             boost={boostFrames}
             onJump={jumpPage}
+            onClip={() => void saveWristClip(boostFrames)}
             onOpenKeyboard={() => {
               setKeyboardOpen(true);
               setOpen(true);
@@ -538,7 +541,7 @@ function VrPanel() {
             ) : (
               <DoorOpen className="furr-vr-pop size-9 shrink-0 text-emerald-300" />
             )}
-            <button type="button" onClick={() => setOpen(true)} className="min-w-0 flex-1 text-left" aria-label="Fenster Ã¶ffnen">
+            <button type="button" onClick={() => setOpen(true)} className="min-w-0 flex-1 text-left" aria-label="Fenster öffnen">
               <span className="block truncate text-[19px] font-bold leading-tight">{notice.title}</span>
               <span className="block truncate text-[14px] text-white/75">{notice.text}</span>
             </button>
@@ -559,8 +562,8 @@ function VrPanel() {
                 <p className="truncate text-[15px] font-semibold leading-tight">{song.data?.title || "Keine Musik"}</p>
                 <p className="truncate text-[12px] text-white/55">
                   {song.data?.title
-                    ? `${song.data.artist}${song.data.duration ? ` Â· ${mmss(song.data.duration)}` : ""}`
-                    : "Spotify, YouTube â€¦ starten"}
+                    ? `${song.data.artist}${song.data.duration ? ` · ${mmss(song.data.duration)}` : ""}`
+                    : "Spotify, YouTube … starten"}
                 </p>
               </div>
               <button type="button" aria-label="Vorheriger Titel" onClick={() => control("prev")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/25 active:scale-90">
@@ -569,7 +572,7 @@ function VrPanel() {
               <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-black transition duration-150 hover:brightness-110 active:scale-90">
                 {song.data?.playing ? <Pause className="size-5" /> : <Play className="size-5" />}
               </button>
-              <button type="button" aria-label="NÃ¤chster Titel" onClick={() => control("next")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/25 active:scale-90">
+              <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/25 active:scale-90">
                 <SkipForward className="size-5" />
               </button>
             </div>
@@ -627,7 +630,7 @@ function InstanceList({ state: s }: { state: VrcInstanceState | undefined }) {
     return (
       <Hint>
         <Radar className="mx-auto mb-1 size-7 text-white/40" />
-        Betritt eine Welt â€“ dann siehst du hier, wer da ist.
+        Betritt eine Welt – dann siehst du hier, wer da ist.
       </Hint>
     );
   }
@@ -664,11 +667,11 @@ const ROLE_ORDER = ["dev", "owner", "moderator", "supporter"];
 function availability(u: PresenceUser, present: boolean) {
   if (present) return { rank: 0, dot: "bg-emerald-400", text: "anwesend" };
   if (u.isAppOnline) return { rank: 1, dot: "bg-amber-300", text: "nicht anwesend" };
-  if (u.isDiscordOnline) return { rank: 1, dot: "bg-amber-300", text: u.discordStatus === "dnd" ? "nicht stÃ¶ren" : "nur Discord" };
+  if (u.isDiscordOnline) return { rank: 1, dot: "bg-amber-300", text: u.discordStatus === "dnd" ? "nicht stören" : "nur Discord" };
   return { rank: 2, dot: "bg-white/25", text: "offline" };
 }
 
-/** Team list: who is anwesend (can moderate right now) and who is not â€“ plus your own switch. */
+/** Team list: who is anwesend (can moderate right now) and who is not – plus your own switch. */
 function TeamList({
   duty,
   onDuty,
@@ -698,9 +701,9 @@ function TeamList({
     <section className="flex min-h-0 flex-1 flex-col gap-1.5 rounded-2xl bg-white/6 p-2.5">
       <div className="flex items-center gap-2">
         <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
-          <ShieldCheck className="size-3.5" /> Team Â· {ready} anwesend
+          <ShieldCheck className="size-3.5" /> Team · {ready} anwesend
         </p>
-        <DutyBadge onDuty={onDuty} away={away} busy={busy} error={error} onCycle={onToggle} className="shrink-0" title="Tippen: On Duty â†’ Away â†’ Off Duty" />
+        <DutyBadge onDuty={onDuty} away={away} busy={busy} error={error} onCycle={onToggle} className="shrink-0" title="Tippen: On Duty → Away → Off Duty" />
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-1 overflow-auto">
         {list.map((u) => {
@@ -711,7 +714,7 @@ function TeamList({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-medium leading-tight">{u.nickname || u.displayName}</span>
                 <span className="block truncate text-[11px] text-white/55">
-                  {u.roleLabel} Â· {a.text}
+                  {u.roleLabel} · {a.text}
                 </span>
               </span>
             </div>
@@ -741,7 +744,7 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
     <section className="flex min-h-0 flex-1 flex-col justify-between gap-2 rounded-2xl bg-white/6 p-3">
       <div className="min-w-0">
         <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
-          <Music className="size-3.5" /> {song?.title ? (song.playing ? "LÃ¤uft gerade" : "Pausiert") : "Musik"} {app && `Â· ${app}`}
+          <Music className="size-3.5" /> {song?.title ? (song.playing ? "Läuft gerade" : "Pausiert") : "Musik"} {app && `· ${app}`}
         </p>
         {song?.title ? (
           <>
@@ -758,7 +761,7 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
             )}
           </>
         ) : (
-          <p className="mt-2 text-[14px] text-white/55">Gerade lÃ¤uft nichts. Starte Musik in Spotify, YouTube oder einem anderen Player.</p>
+          <p className="mt-2 text-[14px] text-white/55">Gerade läuft nichts. Starte Musik in Spotify, YouTube oder einem anderen Player.</p>
         )}
       </div>
       <div className="flex items-center justify-center gap-3">
@@ -768,7 +771,7 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
         <button type="button" aria-label="Wiedergabe / Pause" onClick={() => control("toggle")} className="grid size-14 place-items-center rounded-full bg-accent text-black transition duration-150 hover:brightness-110 active:scale-90">
           {song?.playing ? <Pause className="size-7" /> : <Play className="size-7" />}
         </button>
-        <button type="button" aria-label="NÃ¤chster Titel" onClick={() => control("next")} className="grid size-12 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/20 active:scale-90">
+        <button type="button" aria-label="Nächster Titel" onClick={() => control("next")} className="grid size-12 place-items-center rounded-full bg-white/10 transition duration-150 hover:bg-white/20 active:scale-90">
           <SkipForward className="size-6" />
         </button>
       </div>
@@ -776,7 +779,7 @@ function MusicPage({ song, onChanged }: { song: Song | null; onChanged: () => vo
   );
 }
 
-/** So lange bleibt â€žgesendetâ€œ bzw. ein Fehler unter â€žChatboxâ€œ stehen. */
+/** So lange bleibt „gesendet“ bzw. ein Fehler unter „Chatbox“ stehen. */
 const CHATBOX_SENT_MS = 3_000;
 const CHATBOX_ERROR_MS = 5_000;
 
@@ -827,13 +830,13 @@ function Chatbox() {
     <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/6 p-2.5">
       <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
         <Send className="size-3.5" /> Chatbox
-        {sending && <span className="normal-case tracking-normal text-white/60">Â· sendetâ€¦</span>}
+        {sending && <span className="normal-case tracking-normal text-white/60">· sendet…</span>}
         {sent && (
           <span key={sent} className="furr-vr-pop flex items-center gap-1 normal-case tracking-normal text-emerald-300">
-            Â· <Check className="size-3.5" /> gesendet
+            · <Check className="size-3.5" /> gesendet
           </span>
         )}
-        {error && <span className="furr-vr-notice truncate normal-case tracking-normal text-red-300">Â· {error}</span>}
+        {error && <span className="furr-vr-notice truncate normal-case tracking-normal text-red-300">· {error}</span>}
       </p>
       <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5">
         {texts.map((t) => (

@@ -35,16 +35,16 @@ const MAX_MEMBERS_PER_PUSH = 2_000;
 const MAX_PRESENCES_PER_PUSH = 2_000;
 const MAX_AUDIT_ENTRIES = 500;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Batch-GrÃ¶ÃŸe fÃ¼r members/presence (1 Statement statt 1 pro Mitglied). */
+/** Batch-Größe für members/presence (1 Statement statt 1 pro Mitglied). */
 const BATCH_SIZE = 500;
 
 // ---------- Ressourcen ----------
 // bot_last_seen: vorher 1 Upsert bei JEDEM Bridge-Call (Queue-Poll, jedes Datei-Chunk, Pushes).
-// bridgeStatus() wertet ein 60-s-Fenster aus â†’ 15 s Schreib-Drossel ist sicher (worst case ~25 s alt).
+// bridgeStatus() wertet ein 60-s-Fenster aus → 15 s Schreib-Drossel ist sicher (worst case ~25 s alt).
 const BOT_SEEN_WRITE_MS = 15_000;
 const shouldWriteBotSeen = createThrottle(BOT_SEEN_WRITE_MS);
-// Stale-Cleanup (Schwellen 12 min / 30 min / 1 h) braucht keine 5-s-AuflÃ¶sung â†’ max. 1x pro Minute.
-// Die Dispatch-Queries filtern das Alter zusÃ¤tzlich selbst, Semantik bleibt exakt gleich.
+// Stale-Cleanup (Schwellen 12 min / 30 min / 1 h) braucht keine 5-s-Auflösung → max. 1x pro Minute.
+// Die Dispatch-Queries filtern das Alter zusätzlich selbst, Semantik bleibt exakt gleich.
 const QUEUE_CLEANUP_MS = 60_000;
 const shouldCleanupQueue = createThrottle(QUEUE_CLEANUP_MS);
 const CALENDAR_SOON_MS = 60_000;
@@ -58,7 +58,7 @@ function chunks<T>(list: T[], size: number): T[][] {
 
 /**
  * "Instance opened" message for Discord: who is anwesend (can moderate right now) and who is not.
- * Queued for the bot when a duty channel is set (FurrSettings â†’ FurrBox VR).
+ * Queued for the bot when a duty channel is set (FurrSettings → FurrBox VR).
  */
 async function announceInstance(headline: string) {
   const channelId = await getSetting("duty_channel_id", "1434484156431204382");
@@ -75,9 +75,9 @@ async function announceInstance(headline: string) {
     order by array_position(array['dev', 'owner', 'moderator', 'supporter'], dm.highest_privilege), 1`;
   const line = (list: typeof staff) => (list.length ? list.map((s) => `${s.name} (${DUTY_ROLE[s.privilege] ?? s.privilege})`).join(", ") : "niemand");
   const content = [
-    `ðŸŸ¢ **Neue Gruppen-Instanz:** ${headline}`,
-    `âœ… **Anwesend (kann moderieren):** ${line(staff.filter((s) => s.on_duty))}`,
-    `âŒ **Nicht anwesend:** ${line(staff.filter((s) => !s.on_duty))}`,
+    `🟢 **Neue Gruppen-Instanz:** ${headline}`,
+    `✅ **Anwesend (kann moderieren):** ${line(staff.filter((s) => s.on_duty))}`,
+    `❌ **Nicht anwesend:** ${line(staff.filter((s) => !s.on_duty))}`,
   ]
     .join("\n")
     .slice(0, 1900);
@@ -149,7 +149,7 @@ async function handle(request: Request, action: string) {
         order by created_at limit 20)
       returning id, message_id`;
     // VRChat jobs in EINEM Statement (vorher 1 Select + 1 Update pro Job). `picked` liefert die
-    // Werte VOR dem Update â€“ der Bot bekommt das Login-Payload genau einmal, in der DB wird es gelÃ¶scht.
+    // Werte VOR dem Update – der Bot bekommt das Login-Payload genau einmal, in der DB wird es gelöscht.
     const vrchatJobs = await sql<{ id: string; kind: string; payload_json: string | null }>`
       with picked as (
         select id, kind, payload_json, created_at from vrchat_job
@@ -172,7 +172,7 @@ async function handle(request: Request, action: string) {
       where f.id = r.file_id and r.status = 'queued'
       returning f.id, f.folder, f.name`;
     // Discord messages for the bot to post (handed out once; older than 1 h are never sent).
-    // Ideen: Embed/Vote-Felder wenn Migration 0016 da ist â€“ sonst Fallback auf content-only.
+    // Ideen: Embed/Vote-Felder wenn Migration 0016 da ist – sonst Fallback auf content-only.
     let outbox: {
       id: string;
       channel_id: string;
@@ -235,7 +235,7 @@ async function handle(request: Request, action: string) {
         uploads: uploads.map((u) => ({ fileId: u.id, folder: u.folder, name: u.name, totalChunks: u.bot_chunks })),
         downloads: downloads.map((d) => ({ fileId: d.id, folder: d.folder, name: d.name })),
       },
-      // Additiv: Bot kann ignorieren bis er Alerts/Hints unterstÃ¼tzt.
+      // Additiv: Bot kann ignorieren bis er Alerts/Hints unterstützt.
       alerts,
       chatboxHints: chatboxHints.map((h) => ({
         hintId: h.hintId,
@@ -254,7 +254,7 @@ async function handle(request: Request, action: string) {
   if (request.method !== "POST") return bridgeError("Not found", 404);
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
-  // Ideen-Features (Duty, WL, Hint, Sanctions, Vote, Flags, Clip) â€“ eigener Handler.
+  // Ideen-Features (Duty, WL, Hint, Sanctions, Vote, Flags, Clip) – eigener Handler.
   {
     const ideen = await handleIdeenBridge(action, body);
     if (ideen) return ideen;
@@ -282,7 +282,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "file-take") {
     const fileId = String(body.fileId ?? "");
-    if (!UUID_RE.test(fileId)) return bridgeError("UngÃ¼ltige fileId", 400);
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
     const rows = await sql<{ data_b64: string }>`
       delete from bot_file_chunk where file_id = ${fileId} and direction = 'up' and idx = ${idx} returning data_b64`;
@@ -293,7 +293,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "file-stored") {
     const fileId = String(body.fileId ?? "");
-    if (!UUID_RE.test(fileId)) return bridgeError("UngÃ¼ltige fileId", 400);
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const ok = Boolean(body.ok);
     await sql`
       update furr_file set bot_state = ${ok ? "stored" : "failed"}, bot_error = ${ok ? null : String(body.error ?? "Fehler beim Speichern").slice(0, 300)}
@@ -304,7 +304,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "file-down") {
     const fileId = String(body.fileId ?? "");
-    if (!UUID_RE.test(fileId)) return bridgeError("UngÃ¼ltige fileId", 400);
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const idx = Math.max(0, Math.trunc(Number(body.idx) || 0));
     // Without data it is only a "how many pieces are still waiting?" check.
     if (typeof body.data === "string") {
@@ -320,7 +320,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "file-down-done") {
     const fileId = String(body.fileId ?? "");
-    if (!UUID_RE.test(fileId)) return bridgeError("UngÃ¼ltige fileId", 400);
+    if (!UUID_RE.test(fileId)) return bridgeError("Ungültige fileId", 400);
     const ok = Boolean(body.ok);
     await sql`
       update bot_file_request set status = ${ok ? "done" : "failed"}, total_chunks = ${ok ? Math.trunc(Number(body.totalChunks) || 0) : null},
@@ -332,7 +332,7 @@ async function handle(request: Request, action: string) {
   if (action === "members") {
     const members = Array.isArray(body.members) ? (body.members as MemberSnapshot[]).slice(0, MAX_MEMBERS_PER_PUSH) : [];
     // Batch-Upsert: vorher 1 Round-Trip pro Mitglied (Full-Sync 200er-Pakete = 200 Queries),
-    // jetzt 1 Statement pro 500. Dedupe nÃ¶tig â€“ ON CONFLICT darf eine Zeile nur 1x treffen.
+    // jetzt 1 Statement pro 500. Dedupe nötig – ON CONFLICT darf eine Zeile nur 1x treffen.
     const rows = new Map<string, Record<string, string | null>>();
     for (const m of members) {
       const discordId = String(m?.discordId ?? "");
@@ -395,7 +395,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "moderation-result") {
     const requestId = String(body.requestId ?? "");
-    if (!UUID_RE.test(requestId)) return bridgeError("UngÃ¼ltige requestId", 400);
+    if (!UUID_RE.test(requestId)) return bridgeError("Ungültige requestId", 400);
     const status = body.status === "success" ? "success" : "failed";
     const error = body.error ? String(body.error).slice(0, 1000) : null;
     const rows = await sql<{
@@ -410,7 +410,7 @@ async function handle(request: Request, action: string) {
       returning action, moderator_discord_id, target_discord_id, reason, duration_ms`;
     const req = rows[0];
     if (!req) return bridgeError("Unknown requestId", 404);
-    // Audit-Log + Notify nach dem kritischen DB-Update â€“ mit Timeout, Bot wartet nicht ewig.
+    // Audit-Log + Notify nach dem kritischen DB-Update – mit Timeout, Bot wartet nicht ewig.
     await runSideEffect(async () => {
       const moderatorName = await discordName(req.moderator_discord_id);
       const targetName = await discordName(req.target_discord_id);
@@ -433,8 +433,8 @@ async function handle(request: Request, action: string) {
         .join("\r\n");
       await appendTextFile("public", `${DISCORD_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, "bot");
       await notify(
-        `Moderation ${status === "success" ? "ausgefÃ¼hrt" : "fehlgeschlagen"}`,
-        `${req.action.toUpperCase()} gegen ${targetName} durch ${moderatorName}${error ? ` â€“ ${error}` : ""}.`,
+        `Moderation ${status === "success" ? "ausgeführt" : "fehlgeschlagen"}`,
+        `${req.action.toUpperCase()} gegen ${targetName} durch ${moderatorName}${error ? ` – ${error}` : ""}.`,
       );
     }, "moderation-result-audit");
     return bridgeJson({ ok: true });
@@ -442,7 +442,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "inspect-result") {
     const requestId = String(body.requestId ?? "");
-    if (!UUID_RE.test(requestId)) return bridgeError("UngÃ¼ltige requestId", 400);
+    if (!UUID_RE.test(requestId)) return bridgeError("Ungültige requestId", 400);
     const result = {
       requestId,
       messageId: String(body.messageId ?? ""),
@@ -463,7 +463,7 @@ async function handle(request: Request, action: string) {
 
   if (action === "vrchat-result") {
     const jobId = String(body.jobId ?? "");
-    if (!UUID_RE.test(jobId)) return bridgeError("UngÃ¼ltige jobId", 400);
+    if (!UUID_RE.test(jobId)) return bridgeError("Ungültige jobId", 400);
     const ok = Boolean(body.ok);
     const error = ok ? null : String(body.error ?? "Unbekannter Fehler").slice(0, 500);
     const rows = await sql<{ kind: string; payload_json: string | null; requested_by: string }>`
@@ -480,7 +480,7 @@ async function handle(request: Request, action: string) {
         const mods = await sql<{ display_name: string; role: string }>`
           select display_name, role from furr_profile where user_id = ${job.requested_by}`;
         const modName = mods[0]?.display_name ?? "Unbekannt";
-        // DB-Eintrag synchron (ModLog / Audit-Dedup) â€“ Datei + Notify mit Timeout.
+        // DB-Eintrag synchron (ModLog / Audit-Dedup) – Datei + Notify mit Timeout.
         await sql`
           insert into vrchat_moderation (id, action, target_user_id, target_name, reason, moderator_user_id, status, error)
           values (${newId()}, ${p.action}, ${p.userId}, ${p.userName || null}, ${p.reason}, ${job.requested_by},
@@ -504,8 +504,8 @@ async function handle(request: Request, action: string) {
             .join("\r\n");
           await appendTextFile("public", `${VRCHAT_LOGS}/${AUDIT_LOG_NAME}`, `${block}\r\n`, job.requested_by);
           await notify(
-            `VRChat: ${label[p.action] ?? p.action} ${ok ? "ausgefÃ¼hrt" : "fehlgeschlagen"}`,
-            `${p.userName || p.userId} â€“ von ${modName}${error ? ` (${error})` : ""}`,
+            `VRChat: ${label[p.action] ?? p.action} ${ok ? "ausgeführt" : "fehlgeschlagen"}`,
+            `${p.userName || p.userId} – von ${modName}${error ? ` (${error})` : ""}`,
           );
         }, "vrchat-result-audit");
       }
@@ -546,7 +546,7 @@ async function handle(request: Request, action: string) {
         : [];
       if (!silent && actionLabel && !viaFurrBox.length) {
         await runSideEffect(
-          () => notify(`VRChat: ${actionLabel}`, e.description || `${e.actorDisplayName ?? "Jemand"} â€“ ${e.eventType}`),
+          () => notify(`VRChat: ${actionLabel}`, e.description || `${e.actorDisplayName ?? "Jemand"} – ${e.eventType}`),
           "vrchat-audit-notify",
         );
       }
@@ -586,9 +586,9 @@ async function handle(request: Request, action: string) {
             capacity = excluded.capacity, member_count = excluded.member_count, last_seen = now(), closed_at = null,
             first_seen = case when vrchat_instance.closed_at is not null then now() else vrchat_instance.first_seen end`;
         if (!known.has(i.instanceId)) {
-          const headline = `${i.world.name} Â· ${VRC_REGION[loc.region] ?? loc.region} Â· ${VRC_ACCESS[loc.access] ?? loc.access} Â· ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`;
+          const headline = `${i.world.name} · ${VRC_REGION[loc.region] ?? loc.region} · ${VRC_ACCESS[loc.access] ?? loc.access} · ${i.memberCount} ${i.memberCount === 1 ? "Person" : "Personen"}`;
           await runSideEffect(async () => {
-            await notify("VRChat-Instanz geÃ¶ffnet", headline);
+            await notify("VRChat-Instanz geöffnet", headline);
             await announceInstance(headline);
             await alertIfNoOneOnDuty(headline);
           }, "instance-opened");
@@ -605,7 +605,7 @@ async function handle(request: Request, action: string) {
   // Bot/Desktop kann Joins aus dem VRChat-Log melden (kein Server-Polling).
   if (action === "watchlist-sighting") {
     const usrId = String(body.usrId ?? "").trim();
-    if (!/^usr_[0-9a-f-]{36}$/i.test(usrId)) return bridgeError("usrId ungÃ¼ltig", 400);
+    if (!/^usr_[0-9a-f-]{36}$/i.test(usrId)) return bridgeError("usrId ungültig", 400);
     const kind = body.kind === "leave" || body.kind === "rejoin" ? String(body.kind) : "join";
     const displayName = body.displayName ? String(body.displayName).slice(0, 100) : null;
     const world = body.world ? String(body.world).slice(0, 150) : null;

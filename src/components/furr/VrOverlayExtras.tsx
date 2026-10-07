@@ -1,4 +1,4 @@
-// Extra Handgelenk-UI: Duty-Badge (3 ZustÃ¤nde), Votekick-Assistent, Alert-Toasts,
+// Extra Handgelenk-UI: Duty-Badge (3 Zustände), Votekick-Assistent, Alert-Toasts,
 // Clip-Button, Staff-Quick-Actions, Hint-Preview, Audit-Ticker, Watchlist-Joins.
 // Idle sparsam: nur Event-/Tap-getrieben + bestehende Polls; Boost nur kurz.
 import { useEffect, useRef, useState } from "react";
@@ -48,7 +48,7 @@ export function nextDutyMode(mode: DutyMode): DutyMode {
   return "off";
 }
 
-/** Anwesend / Away / Off â€“ Tap zyklisch. Away ist lokal (Server kennt nur on/off). */
+/** Anwesend / Away / Off – Tap zyklisch. Away ist lokal (Server kennt nur on/off). */
 export function DutyBadge({
   onDuty,
   away,
@@ -73,7 +73,7 @@ export function DutyBadge({
       onClick={onCycle}
       aria-pressed={mode === "on"}
       aria-busy={busy}
-      title={title ?? "Tippen: On Duty â†’ Away â†’ Off Duty"}
+      title={title ?? "Tippen: On Duty → Away → Off Duty"}
       className={cn(
         "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition duration-200 active:scale-95",
         error
@@ -94,7 +94,7 @@ export function DutyBadge({
           mode === "on" ? "bg-black/60" : mode === "away" ? "bg-black/45" : "bg-white/40",
         )}
       />
-      {error ? "Fehler â€“ nochmal" : dutyLabel(mode)}
+      {error ? "Fehler – nochmal" : dutyLabel(mode)}
     </button>
   );
 }
@@ -149,7 +149,7 @@ export function useDutyCycle(args: {
 }
 
 function clock(at: string | null) {
-  return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "â€“";
+  return at ? new Date(at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
 }
 
 function voteSecondsLeft(at: string, now: number) {
@@ -268,7 +268,7 @@ export function VoteAssistPanel({
         <AlertTriangle className="furr-vr-pop size-8 shrink-0 text-red-300" />
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-bold uppercase tracking-wide text-red-200">
-            Votekick Â· {clock(vote.at)} Â· noch {left}s
+            Votekick · {clock(vote.at)} · noch {left}s
           </p>
           <p className="truncate text-[18px] font-bold leading-tight">gegen {vote.target}</p>
           <p className="truncate text-[13px] text-white/80">
@@ -279,17 +279,17 @@ export function VoteAssistPanel({
             ) : (
               "Starter wird von VRChat nicht genannt"
             )}
-            {" Â· "}
-            Ja/Nein: <span className="text-white/50">â€“</span>
+            {" · "}
+            Ja/Nein: <span className="text-white/50">–</span>
             {usr ? (
               <>
-                {" Â· "}
-                <span className="font-mono text-[11px] text-white/55">{usr.slice(0, 12)}â€¦</span>
+                {" · "}
+                <span className="font-mono text-[11px] text-white/55">{usr.slice(0, 12)}…</span>
               </>
             ) : player ? (
-              <> Â· in Instanz</>
+              <> · in Instanz</>
             ) : (
-              <> Â· nicht in Spielerliste</>
+              <> · nicht in Spielerliste</>
             )}
           </p>
         </div>
@@ -299,7 +299,7 @@ export function VoteAssistPanel({
           type="button"
           onClick={onDone}
           className="flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-[13px] font-semibold transition duration-150 hover:bg-emerald-500/60 active:scale-95"
-          title="Hinweis schlieÃŸen + Anwesenheits-Protokoll"
+          title="Hinweis schließen + Anwesenheits-Protokoll"
         >
           <Check className="size-4" /> Erledigt
         </button>
@@ -310,7 +310,7 @@ export function VoteAssistPanel({
           className="flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-[13px] font-semibold transition duration-150 hover:bg-accent/50 active:scale-95 disabled:opacity-40"
           title={onDuty ? "Evidence-Fall anlegen" : "Nur On Duty"}
         >
-          <FolderPlus className="size-4" /> {caseBusy ? "â€¦" : "Fall anlegen"}
+          <FolderPlus className="size-4" /> {caseBusy ? "…" : "Fall anlegen"}
         </button>
         <button
           type="button"
@@ -318,12 +318,12 @@ export function VoteAssistPanel({
           onClick={() => void saveClip()}
           className="flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-[13px] font-semibold transition duration-150 hover:bg-accent/50 active:scale-95 disabled:opacity-40"
         >
-          <Video className="size-4" /> {clipBusy ? "â€¦" : "Clip"}
+          <Video className="size-4" /> {clipBusy ? "…" : "Clip"}
         </button>
       </div>
       {caseMsg && <p className="relative truncate text-[12px] text-white/70">{caseMsg}</p>}
       {!onDuty && (
-        <p className="relative text-[11px] text-amber-200/90">Staff-Aktionen (Fall) nur On Duty â€“ Erledigt geht immer.</p>
+        <p className="relative text-[11px] text-amber-200/90">Staff-Aktionen (Fall) nur On Duty – Erledigt geht immer.</p>
       )}
     </div>
   );
@@ -365,7 +365,28 @@ function XTiny() {
   return <span className="text-[11px] text-white/50">OK</span>;
 }
 
-/** Clip speichern am Handgelenk â€“ 1 Tap â†’ IPC clips-save. */
+/** Clip speichern am Handgelenk – 1 Tap → IPC clips-save. */
+let wristClipBusy = false;
+/** Saves a clip (ring buffer of the desktop app) and reports the result as a notice on the arm. */
+export async function saveWristClip(boost: (ms: number) => void) {
+  if (wristClipBusy) return;
+  if (!hasDesktopClips()) {
+    pushVrAlert({ id: `clip-none-${Date.now()}`, tone: "amber", title: "Clips nicht verfügbar", text: "Geht nur in der FurrBox-Desktop-App.", kind: "clip", ttlMs: ALERT_TOAST_MS });
+    return;
+  }
+  wristClipBusy = true;
+  boost(MOTION.popMs);
+  try {
+    const r = await clipsSave({ reason: "vr-manual", meta: { source: "vr" }, waitPostRoll: true });
+    if (!r.ok) throw new Error(r.error);
+    pushVrAlert({ id: `clip-${r.value.id}`, tone: "blue", title: "Clip gespeichert", text: r.value.name, kind: "clip", ttlMs: ALERT_TOAST_MS });
+  } catch (e) {
+    pushVrAlert({ id: `clip-err-${Date.now()}`, tone: "red", title: "Clip fehlgeschlagen", text: errorMessage(e), kind: "clip", ttlMs: ALERT_TOAST_MS });
+  } finally {
+    wristClipBusy = false;
+  }
+}
+
 export function ClipSaveButton({ boost }: { boost: (ms: number) => void }) {
   const [busy, setBusy] = useState(false);
   if (!hasDesktopClips()) return null;
@@ -411,7 +432,7 @@ export function ClipSaveButton({ boost }: { boost: (ms: number) => void }) {
   );
 }
 
-/** Watchlist-Joins aus Instanz-Events (usr_/Name); Server-Watchlist spÃ¤ter ersetzen. */
+/** Watchlist-Joins aus Instanz-Events (usr_/Name); Server-Watchlist später ersetzen. */
 export function useWatchlistJoinToasts(args: {
   events: VrcInstanceState["events"] | undefined;
   watchlist: VrWatchEntry[];
@@ -435,7 +456,7 @@ export function useWatchlistJoinToasts(args: {
         (w) =>
           (w.id && e.name.toLowerCase() === w.id.toLowerCase()) ||
           (w.name && e.name.toLowerCase() === w.name.toLowerCase()) ||
-          (w.id.startsWith("usr_") && e.name.includes(w.id)),
+          (w.id.startsWith("usr_") && e.id === w.id),
       );
       const hit2 = hit || watchlist.find((w) => w.name && w.name.toLowerCase() === e.name.toLowerCase());
       if (!hit2) continue;
@@ -486,7 +507,7 @@ export function useVoteResultToasts(args: {
   }, [votes, mute, boost]);
 }
 
-/** Chatbox-Hinweis-Preview: Team-Nachrichten mit [Hinweis]/ðŸ“Œ â€“ Confirm â†’ OSC. */
+/** Chatbox-Hinweis-Preview: Team-Nachrichten mit [Hinweis]/📌 – Confirm → OSC. */
 export function HintPreview({
   newest,
   myId,
@@ -501,9 +522,9 @@ export function HintPreview({
   const [dismissed, setDismissed] = useState<string | null>(null);
   if (!newest || newest.senderId === myId || dismissed === newest.id) return null;
   const raw = newest.content.trim();
-  const isHint = /^(\[Hinweis\]|ðŸ“Œ|\/hint\b)/i.test(raw);
+  const isHint = /^(\[Hinweis\]|📌|\/hint\b)/i.test(raw);
   if (!isHint) return null;
-  const text = raw.replace(/^(\[Hinweis\]|ðŸ“Œ|\/hint)\s*/i, "").slice(0, 144);
+  const text = raw.replace(/^(\[Hinweis\]|📌|\/hint)\s*/i, "").slice(0, 144);
   if (!text) return null;
   const age = Date.now() - new Date(newest.createdAt).getTime();
   if (age > 45_000) return null;
@@ -511,7 +532,7 @@ export function HintPreview({
   return (
     <div className="furr-vr-notice flex items-center gap-2 rounded-xl border border-accent/50 bg-accent/15 px-2.5 py-1.5">
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">Hinweis Â· {newest.senderName}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">Hinweis · {newest.senderName}</p>
         <p className="truncate text-[13px]">{text}</p>
       </div>
       <button
@@ -554,7 +575,7 @@ export function StaffQuickPanel({
   if (!onDuty) {
     return (
       <div className="grid flex-1 place-items-center rounded-2xl bg-white/6 px-6 text-center text-[15px] text-white/60">
-        Staff-MenÃ¼ nur On Duty. Duty-Badge am Handgelenk tippen.
+        Staff-Menü nur On Duty. Duty-Badge am Handgelenk tippen.
       </div>
     );
   }
@@ -624,7 +645,7 @@ export function StaffQuickPanel({
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2 rounded-2xl bg-white/6 p-2.5">
       <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/50">
-        <ShieldAlert className="size-3.5" /> Staff Â· Quick
+        <ShieldAlert className="size-3.5" /> Staff · Quick
       </p>
       <div className="grid grid-cols-2 gap-1.5">
         <button
@@ -698,7 +719,7 @@ function AuditTicker({ onDuty }: { onDuty: boolean }) {
       {rows.map((r) => (
         <p key={r.id} className="truncate text-[12px] text-white/70">
           <span className="text-white/40">{clock(r.at)}</span> {r.name}: {r.kind}
-          {r.detail ? ` â€“ ${r.detail}` : ""}
+          {r.detail ? ` – ${r.detail}` : ""}
         </p>
       ))}
     </div>

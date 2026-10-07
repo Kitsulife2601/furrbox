@@ -19,8 +19,11 @@ der Ersteller baut es ein).
    oben rechts). Alles dazwischen wird auf der Karte gezeigt.
 5. Die beiden Ecken in die Felder **Corner A** und **Corner B** von FurrBoxMap ziehen.
 6. Optional: ein Bild der Welt von oben machen (Kamera nach unten richten, genau auf die
-   beiden Ecken zuschneiden), irgendwo hochladen und den Link (`https://…`) bei
+   beiden Ecken zuschneiden), hochladen und den direkten Bild-Link (`https://…`) bei
    **Map Image Url** eintragen. Ohne Bild zeigt FurrBox ein Raster.
+   Aus Sicherheitsgründen lädt FurrBox das Bild nur von diesen Seiten:
+   imgur (`i.imgur.com`), GitHub (`raw.githubusercontent.com`, `*.github.io`),
+   catbox (`files.catbox.moe`), ImgBB (`i.ibb.co`) und PostImages (`i.postimg.cc`).
 7. Welt wie gewohnt hochladen.
 
 ## Was passiert dabei?

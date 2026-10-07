@@ -90,7 +90,7 @@ export const getWhitelist = createServerFn({ method: "GET" })
       mustChangePassword: Boolean(r.must_change_password),
       passwordChangedAt: iso(r.password_changed_at),
     }));
-    // Candidates + Setting parallel â€“ kÃ¼rzere Latenz fÃ¼r die Owner-UI.
+    // Candidates + Setting parallel – kürzere Latenz für die Owner-UI.
     const [candidates, enabledRaw] = await Promise.all([
       sql<{ discord_id: string; name: string; username: string }>`
         select discord_id, name, username from (
@@ -122,8 +122,8 @@ export const addToWhitelist = createServerFn({ method: "POST" })
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     const me = await requirePermission(context.userId, "canManageWhitelist");
-    if (!DISCORD_ID.test(data.discordId)) throw new Error("Die Discord-ID ist eine 17â€“22-stellige Zahl.");
-    if (!USERNAME.test(data.username)) throw new Error("Nutzername: 3â€“32 Zeichen, nur aâ€“z, 0â€“9, _ . -");
+    if (!DISCORD_ID.test(data.discordId)) throw new Error("Die Discord-ID ist eine 17–22-stellige Zahl.");
+    if (!USERNAME.test(data.username)) throw new Error("Nutzername: 3–32 Zeichen, nur a–z, 0–9, _ . -");
     checkPassword(data.password);
     const sql = await getSql();
     const taken = await sql`
@@ -141,8 +141,8 @@ export const addToWhitelist = createServerFn({ method: "POST" })
     await sql`
       delete from furr_whitelist_unlock
       where user_id in (select user_id from furr_profile where discord_id = ${data.discordId})`;
-    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen â€“ Abmeldung greift ohne VerzÃ¶gerung.
-    // Notify nach dem kritischen DB-Write â€“ Antwort nicht blockieren.
+    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen – Abmeldung greift ohne Verzögerung.
+    // Notify nach dem kritischen DB-Write – Antwort nicht blockieren.
     invalidateWhitelistCache();
     appendAuditLater({
       source: "furrbox",
@@ -154,7 +154,7 @@ export const addToWhitelist = createServerFn({ method: "POST" })
       detail: data.note || null,
     });
     void runSideEffect(
-      () => notify("Whitelist", `${me.displayName} hat ${data.username} fÃ¼r FurrBox freigeschaltet.`),
+      () => notify("Whitelist", `${me.displayName} hat ${data.username} für FurrBox freigeschaltet.`),
       "whitelist-notify-add",
     );
     void enqueueWhitelistSync("add", data.discordId, data.username, context.userId);
@@ -182,7 +182,7 @@ export const resetWhitelistPassword = createServerFn({ method: "POST" })
     await sql`
       delete from furr_whitelist_unlock
       where user_id in (select user_id from furr_profile where discord_id = ${data.discordId})`;
-    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen â€“ Abmeldung greift ohne VerzÃ¶gerung.
+    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen – Abmeldung greift ohne Verzögerung.
     return { ok: true };
   });
 
@@ -212,7 +212,7 @@ export const whitelistLogin = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context, data }) => {
     const entry = await myEntry(context.userId);
-    if (!entry?.password_hash) throw new Error("FÃ¼r dich ist noch kein FurrBox-Zugang angelegt.");
+    if (!entry?.password_hash) throw new Error("Für dich ist noch kein FurrBox-Zugang angelegt.");
     const lockedUntil = entry.locked_until ? new Date(String(entry.locked_until)) : null;
     if (lockedUntil && lockedUntil > new Date()) {
       const at = lockedUntil.toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
@@ -255,7 +255,7 @@ export const changeWhitelistPassword = createServerFn({ method: "POST" })
       throw new Error("Bitte melde dich zuerst mit deinem FurrBox-Nutzernamen und Passwort an.");
     }
     const entry = await myEntry(context.userId);
-    if (!entry?.password_hash) throw new Error("FÃ¼r dich ist kein FurrBox-Passwort hinterlegt.");
+    if (!entry?.password_hash) throw new Error("Für dich ist kein FurrBox-Passwort hinterlegt.");
     const { hashPassword, verifyPassword } = await import("../whitelist-login.server");
     if (!(await verifyPassword(data.currentPassword, entry.password_hash))) {
       throw new Error("Das aktuelle Passwort stimmt nicht.");
@@ -280,7 +280,7 @@ export const removeFromWhitelist = createServerFn({ method: "POST" })
     await sql`
       delete from furr_whitelist_unlock
       where user_id in (select user_id from furr_profile where discord_id = ${discordId})`;
-    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen â€“ Entfernung greift ohne VerzÃ¶gerung.
+    forgetMe(); // Kurzzeit-Profil-Cache (2 s) sofort verwerfen – Entfernung greift ohne Verzögerung.
     invalidateWhitelistCache();
     appendAuditLater({
       source: "furrbox",
@@ -313,13 +313,13 @@ export const setWhitelistEnabled = createServerFn({ method: "POST" })
   });
 
 
-/** Schneller Lookup: darf Discord-ID FurrBox nutzen? Cache 5â€¯s, Invalidation on write. */
+/** Schneller Lookup: darf Discord-ID FurrBox nutzen? Cache 5 s, Invalidation on write. */
 export const checkWhitelistUser = createServerFn({ method: "GET" })
   .validator((discordId: string) => String(discordId ?? "").trim())
   .middleware([accessMiddleware])
   .handler(async ({ context, data: discordId }) => {
     await requirePermission(context.userId, "canUseEvidence");
-    if (!DISCORD_ID.test(discordId)) throw new Error("Die Discord-ID ist eine 17â€“22-stellige Zahl.");
+    if (!DISCORD_ID.test(discordId)) throw new Error("Die Discord-ID ist eine 17–22-stellige Zahl.");
     return whitelistCheckCache.get(discordId, async () => {
       const enabled = (await getSetting("whitelist_enabled", "true")) === "true";
       if (!enabled) return { allowed: true, reason: "whitelist_disabled", entry: null as WhitelistEntry | null };
@@ -364,7 +364,7 @@ export const checkWhitelistUser = createServerFn({ method: "GET" })
   });
 
 
-/** Login/Bridge: jemanden abgelehnt â†’ Alert (Dedup 60â€¯s). */
+/** Login/Bridge: jemanden abgelehnt → Alert (Dedup 60 s). */
 export const reportWhitelistDeny = createServerFn({ method: "POST" })
   .validator((input: { discordId: string; detail?: string }) => ({
     discordId: String(input.discordId ?? "").trim(),
@@ -373,7 +373,7 @@ export const reportWhitelistDeny = createServerFn({ method: "POST" })
   .middleware([accessMiddleware])
   .handler(async ({ context, data }) => {
     await requirePermission(context.userId, "canUseEvidence");
-    if (!DISCORD_ID.test(data.discordId)) throw new Error("Discord-ID ungÃ¼ltig.");
+    if (!DISCORD_ID.test(data.discordId)) throw new Error("Discord-ID ungültig.");
     publishAlertLater({
       kind: "whitelist.deny",
       severity: "warn",

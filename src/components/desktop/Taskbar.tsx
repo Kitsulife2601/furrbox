@@ -48,6 +48,7 @@ export function Taskbar() {
   const toggleChat = useDesktop((s) => s.toggleChat);
   const setTray = useDesktop((s) => s.setTray);
   const openApp = useDesktop((s) => s.openApp);
+  const restoreWindow = useDesktop((s) => s.restoreWindow);
   const focusWindow = useDesktop((s) => s.focusWindow);
   const minimizeWindow = useDesktop((s) => s.minimizeWindow);
   const toggleShowDesktop = useDesktop((s) => s.toggleShowDesktop);
@@ -63,7 +64,7 @@ export function Taskbar() {
   function toggleWindow(id: string) {
     const win = windows.find((w) => w.id === id);
     if (!win) return;
-    if (win.minimized) openApp(win.appId, { payload: win.payload });
+    if (win.minimized) restoreWindow(id);
     else if (focusedId === id) minimizeWindow(id);
     else focusWindow(id);
   }

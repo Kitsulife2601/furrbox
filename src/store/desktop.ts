@@ -128,6 +128,8 @@ type DesktopState = {
   setOnDesktop: (appId: AppId, on: boolean) => void;
   openApp: (appId: AppId, opts?: OpenOptions) => string;
   focusWindow: (id: string) => void;
+  /** Bring exactly this window back (un-minimise + focus). */
+  restoreWindow: (id: string) => void;
   closeWindow: (id: string) => void;
   closeAll: () => void;
   minimizeWindow: (id: string) => void;
@@ -239,6 +241,17 @@ export const useDesktop = create<DesktopState>()(
           windows: get().windows.map((w) => (w.id === id ? { ...w, z } : w)),
           zTop: z,
           focusedId: id,
+          ...menusClosed,
+        });
+      },
+      restoreWindow: (id) => {
+        if (!get().windows.some((w) => w.id === id)) return;
+        const z = get().zTop + 1;
+        set({
+          windows: get().windows.map((w) => (w.id === id ? { ...w, minimized: false, z } : w)),
+          zTop: z,
+          focusedId: id,
+          desktopPeek: null,
           ...menusClosed,
         });
       },

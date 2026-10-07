@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Fehlerbehebungen an Desktop und FurrBox VR",
+    "items": [
+      "Behoben: Im Fenster am Arm und in einigen Meldungen standen kaputte Zeichen statt Umlauten und Gedankenstrichen.",
+      "Behoben: Minimierte Fenster verlieren ihren Inhalt nicht mehr (getippter Text, Terminal-Verlauf, offene Seite).",
+      "Behoben: Ein minimierter Editor ließ sich nicht zurückholen – es ging stattdessen ein neues leeres Fenster auf.",
+      "Der Lautstärke-Regler im Info-Center stellt jetzt wirklich die Lautstärke der FurrBox-Töne ein.",
+      "FurrBox VR: Watchlist-Einträge mit VRChat-ID werden erkannt, der angeheftete Clip-Knopf funktioniert, der Votekick-Hinweis bleibt so lange wie sein Countdown.",
+      "Mit der nächsten Desktop-Version: F11 und ähnliche Tasten gelten nur noch im FurrBox-Fenster, und der Chatbox-Status aktualisiert sich in VR wieder alle 5 Sekunden."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "title": "Discord-Bot wird nicht mehr fälschlich als „nicht verbunden“ angezeigt",
     "items": [
       "Behoben: Nach dem Öffnen von FurrBox stand bis zu 10 Minuten „Discord-Bot nicht verbunden“, obwohl der Bot lief. Er meldet sich im Leerlauf nur alle 10 Minuten – das wertet FurrBox jetzt richtig.",

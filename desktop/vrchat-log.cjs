@@ -22,6 +22,23 @@ const LINE = /^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2}) \w+\s+-\s+(.*)$
 const PLAYER = /^(.+?)(?: \((usr_[0-9a-f-]{36})\))?$/i;
 const MAX_EVENTS = 300;
 
+const MAP_IMAGE_HOSTS = [
+  "i.imgur.com",
+  "raw.githubusercontent.com",
+  "user-images.githubusercontent.com",
+  "files.catbox.moe",
+  "i.ibb.co",
+  "i.postimg.cc",
+];
+function allowedMapImage(value) {
+  try {
+    const url = new URL(String(value ?? ""));
+    return url.protocol === "https:" && (MAP_IMAGE_HOSTS.includes(url.hostname) || url.hostname.endsWith(".github.io"));
+  } catch {
+    return false;
+  }
+}
+
 function createLogWatcher() {
   let file = null;
   let offset = 0;
@@ -123,7 +140,7 @@ function createLogWatcher() {
     if (parts[0] === "b" && parts.length >= 5) {
       const [minX, minZ, maxX, maxZ] = parts.slice(1, 5).map(Number);
       if ([minX, minZ, maxX, maxZ].every(Number.isFinite) && maxX > minX && maxZ > minZ) map.bounds = { minX: minX / 10, minZ: minZ / 10, maxX: maxX / 10, maxZ: maxZ / 10 };
-    } else if (parts[0] === "i" && /^https:\/\/\S+$/.test(parts[1] ?? "")) {
+    } else if (parts[0] === "i" && allowedMapImage(parts[1])) {
       map.image = parts[1];
     } else if (parts[0] === "n" && parts.length >= 3) {
       map.names.set(parts[1], parts.slice(2).join("|"));

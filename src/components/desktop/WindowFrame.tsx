@@ -67,8 +67,6 @@ export function WindowFrame({ win }: { win: OsWindow }) {
   const drag = useRef<{ ox: number; oy: number; sx: number; sy: number; last: { x: number; y: number } } | null>(null);
   const resize = useRef<{ edge: Edge; ox: number; oy: number; start: Rect } | null>(null);
 
-  if (win.minimized) return null;
-
   const style = win.maximized
     ? { left: 0, top: 0, width: "100%", height: "calc(100% - 3rem)" }
     : { left: win.x, top: win.y, width: win.w, height: win.h };
@@ -106,13 +104,16 @@ export function WindowFrame({ win }: { win: OsWindow }) {
     <section
       role="dialog"
       aria-label={win.title}
+      // Minimised: only hidden – the app inside keeps what you typed / opened.
+      hidden={win.minimized}
+      aria-hidden={win.minimized}
       onPointerDown={() => focusWindow(win.id)}
       className={cn(
         "absolute flex flex-col overflow-hidden bg-surface text-fg win-shadow furr-window-in",
         win.maximized ? "rounded-none" : "rounded-lg",
         focused ? "opacity-100" : "opacity-95",
       )}
-      style={{ ...style, zIndex: win.z }}
+      style={{ ...style, zIndex: win.z, display: win.minimized ? "none" : undefined }}
     >
       <header
         className="flex h-10 shrink-0 touch-none select-none items-center bg-elevated/70"

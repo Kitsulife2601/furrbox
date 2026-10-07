@@ -723,7 +723,8 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           mouse("mouseUp", x, y, { button: "left", clickCount: 1 });
         } else if (type === EVENT.scrollSmooth || type === EVENT.scroll) {
           // Scroll data: xdelta, ydelta (floats) - position is unknown, scroll the middle of the page.
-          win?.webContents.sendInputEvent({
+          if (!win || win.isDestroyed()) continue;
+          win.webContents.sendInputEvent({
             type: "mouseWheel",
             x: size().width / 2,
             y: size().height / 2,
@@ -874,8 +875,12 @@ function createVrOverlay({ BrowserWindow, preload, log = () => undefined }) {
           return null;
         }
       };
-      const hands = findHands();
-      return { headset: read(0), left: read(hands.left), right: read(hands.right) };
+      try {
+        const hands = findHands();
+        return { headset: read(0), left: read(hands.left), right: read(hands.right) };
+      } catch {
+        return null;
+      }
     },
     /** Die /vr-Seite startet eine Animation (z. B. neuer Hinweis): kurz flüssige Bilder. */
     boost(ms) {

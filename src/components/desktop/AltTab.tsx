@@ -7,7 +7,7 @@ import { useDesktop } from "@/store/desktop";
 export function AltTabSwitcher() {
   const windows = useDesktop((s) => s.windows);
   const focusWindow = useDesktop((s) => s.focusWindow);
-  const openApp = useDesktop((s) => s.openApp);
+  const restoreWindow = useDesktop((s) => s.restoreWindow);
   const closeMenus = useDesktop((s) => s.closeMenus);
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
@@ -38,7 +38,7 @@ export function AltTabSwitcher() {
         if (!was) return false;
         const win = list[index];
         if (win) {
-          if (win.minimized) openApp(win.appId, { payload: win.payload });
+          if (win.minimized) restoreWindow(win.id);
           else focusWindow(win.id);
         }
         return false;
@@ -50,7 +50,7 @@ export function AltTabSwitcher() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [list, index, focusWindow, openApp, closeMenus]);
+  }, [list, index, focusWindow, restoreWindow, closeMenus]);
 
   if (!open || !list.length) return null;
 
@@ -70,7 +70,7 @@ export function AltTabSwitcher() {
                 active && "bg-accent/20",
               )}
               onClick={() => {
-                if (w.minimized) openApp(w.appId, { payload: w.payload });
+                if (w.minimized) restoreWindow(w.id);
                 else focusWindow(w.id);
                 setOpen(false);
               }}

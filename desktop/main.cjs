@@ -486,6 +486,7 @@ ${"▰".repeat(filled)}${"▱".repeat(10 - filled)} ${time(song.position)} / ${t
 
 function windowQuiet() {
   try {
+    if (vrOverlay.status().status === "running") return false;
     if (!mainWindow || mainWindow.isDestroyed()) return true;
     return mainWindow.isMinimized() || !mainWindow.isFocused();
   } catch {
@@ -675,6 +676,16 @@ function setStatus(text, isError = false) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("furrbox:status", text, isError);
 }
 
+function confirmQuit() {
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: "question",
+    buttons: ["Beenden", "Abbrechen"],
+    defaultId: 1,
+    message: "FurrBox beenden?",
+  });
+  if (choice === 0) app.quit();
+}
+
 async function createWindow() {
   const config = readConfig();
   mainWindow = new BrowserWindow({
@@ -697,6 +708,22 @@ async function createWindow() {
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Keys that belong to the FurrBox window only (not system-wide): F11 full screen,
+  // Ctrl+Shift+I developer tools, Ctrl+Shift+Q quit.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !mainWindow || mainWindow.isDestroyed()) return;
+    const mod = (input.control || input.meta) && input.shift && !input.alt;
+    if (input.key === "F11") {
+      event.preventDefault();
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    } else if (mod && input.key.toLowerCase() === "i") {
+      event.preventDefault();
+      mainWindow.webContents.toggleDevTools();
+    } else if (mod && input.key.toLowerCase() === "q") {
+      event.preventDefault();
+      confirmQuit();
+    }
+  });
   // Closing the FurrBox window ends the app. The invisible window of the VR panel must not keep
   // it running in the background (a second start then hit a destroyed window and crashed).
   mainWindow.on("closed", () => {
@@ -780,8 +807,6 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
-    globalShortcut.register("F11", () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
-    globalShortcut.register("CommandOrControl+Shift+I", () => mainWindow?.webContents.toggleDevTools());
     const clipHotkeyOk = globalShortcut.register("CommandOrControl+Shift+C", () => {
       clips
         .requestClip({ source: "hotkey", reason: "hotkey", meta: { source: "globalShortcut" } })
@@ -796,15 +821,6 @@ if (!app.requestSingleInstanceLock()) {
       Promise.resolve(run).catch((e) => console.log("[clips] mark hotkey:", e && e.message ? e.message : e));
     });
     console.log("[clips] Hotkey Ctrl+Shift+M (Mark In/Out):", markHotkeyOk ? "registriert" : "FEHLGESCHLAGEN");
-    globalShortcut.register("CommandOrControl+Shift+Q", () => {
-      const choice = dialog.showMessageBoxSync(mainWindow, {
-        type: "question",
-        buttons: ["Beenden", "Abbrechen"],
-        defaultId: 1,
-        message: "FurrBox beenden?",
-      });
-      if (choice === 0) app.quit();
-    });
     createWindow();
     setupAutoUpdater();
   });

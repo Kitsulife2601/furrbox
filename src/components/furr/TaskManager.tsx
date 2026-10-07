@@ -7,7 +7,7 @@ export function TaskManager({ windowId }: { windowId: string }) {
   const windows = useDesktop((s) => s.windows);
   const closeWindow = useDesktop((s) => s.closeWindow);
   const focusWindow = useDesktop((s) => s.focusWindow);
-  const openApp = useDesktop((s) => s.openApp);
+  const restoreWindow = useDesktop((s) => s.restoreWindow);
   const sync = useSync();
   const others = windows.filter((w) => w.id !== windowId);
 
@@ -37,7 +37,7 @@ export function TaskManager({ windowId }: { windowId: string }) {
                   </td>
                   <td className="px-3 py-2 text-muted">{w.minimized ? "Minimiert" : w.maximized ? "Maximiert" : "Aktiv"}</td>
                   <td className="flex justify-end gap-1 px-3 py-2">
-                    <Btn variant="ghost" onClick={() => (w.minimized ? openApp(w.appId, { payload: w.payload }) : focusWindow(w.id))}>
+                    <Btn variant="ghost" onClick={() => (w.minimized ? restoreWindow(w.id) : focusWindow(w.id))}>
                       Wechseln
                     </Btn>
                     <Btn variant="ghost" onClick={() => closeWindow(w.id)}>

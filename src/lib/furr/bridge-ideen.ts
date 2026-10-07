@@ -1,5 +1,5 @@
-﻿// Bridge-Handler fÃ¼r Bot-Ideen-Features (Duty, Whitelist, Hint, Sanctions, Vote, Flags, Clip).
-// Wird aus routes/api/bridge/$.ts dÃ¼nn eingebunden.
+﻿// Bridge-Handler für Bot-Ideen-Features (Duty, Whitelist, Hint, Sanctions, Vote, Flags, Clip).
+// Wird aus routes/api/bridge/$.ts dünn eingebunden.
 import { discordName, getSetting, getSql, iso, newId, notify } from "@/lib/furr/core";
 import { bridgeError, bridgeJson, runSideEffect } from "@/lib/furr/http";
 
@@ -36,7 +36,7 @@ async function modChannelId() {
   return getSetting("duty_channel_id", "1434484156431204382");
 }
 
-/** Sanctions + Flags an die Queue hÃ¤ngen (Outbox-Felder werden in $.ts gelesen). */
+/** Sanctions + Flags an die Queue hängen (Outbox-Felder werden in $.ts gelesen). */
 export async function enrichQueuePayload(sql: Awaited<ReturnType<typeof getSql>>, base: Record<string, unknown>) {
   let activeSanctions: unknown[] = [];
   try {
@@ -113,7 +113,7 @@ export async function handleIdeenBridge(
   if (action === "duty") {
     const discordId = String(body.discordId ?? "");
     const status = String(body.status ?? "").toLowerCase();
-    if (!DISCORD_ID.test(discordId)) return bridgeError("UngÃ¼ltige Discord-ID", 400);
+    if (!DISCORD_ID.test(discordId)) return bridgeError("Ungültige Discord-ID", 400);
     if (!["on", "off", "away"].includes(status)) return bridgeError("status muss on|off|away sein", 400);
     const userId = await resolveUserIdByDiscord(discordId);
     if (!userId) return bridgeError("Kein FurrBox-Konto zu dieser Discord-ID. Bitte einmal in FurrBox anmelden.", 404);
@@ -132,7 +132,7 @@ export async function handleIdeenBridge(
 
   if (action === "whitelist-check") {
     const discordId = String(body.discordId ?? "");
-    if (!DISCORD_ID.test(discordId)) return bridgeError("UngÃ¼ltige Discord-ID", 400);
+    if (!DISCORD_ID.test(discordId)) return bridgeError("Ungültige Discord-ID", 400);
     const rows = await sql<{ username: string | null; note: string; must_change_password: boolean }>`
       select username, note, must_change_password from furr_whitelist where discord_id = ${discordId}`;
     const row = rows[0];
@@ -149,7 +149,7 @@ export async function handleIdeenBridge(
   if (action === "whitelist-remove") {
     const discordId = String(body.discordId ?? "");
     const by = String(body.byDiscordId ?? "");
-    if (!DISCORD_ID.test(discordId)) return bridgeError("UngÃ¼ltige Discord-ID", 400);
+    if (!DISCORD_ID.test(discordId)) return bridgeError("Ungültige Discord-ID", 400);
     await sql`delete from furr_whitelist where discord_id = ${discordId}`;
     await sql`delete from furr_whitelist_unlock where user_id in (select user_id from furr_profile where discord_id = ${discordId})`;
     const auditId = await audit("bot", "whitelist-remove", { targetId: discordId, detail: `by ${by}` });
@@ -163,9 +163,9 @@ export async function handleIdeenBridge(
     const password = String(body.password ?? "");
     const note = String(body.note ?? "").trim().slice(0, 200);
     const by = String(body.byDiscordId ?? "");
-    if (!DISCORD_ID.test(discordId)) return bridgeError("UngÃ¼ltige Discord-ID", 400);
-    if (!USERNAME.test(username)) return bridgeError("Nutzername: 3â€“32 Zeichen, nur aâ€“z, 0â€“9, _ . -", 400);
-    if (password.length < 8 || password.length > 200) return bridgeError("Passwort 8â€“200 Zeichen.", 400);
+    if (!DISCORD_ID.test(discordId)) return bridgeError("Ungültige Discord-ID", 400);
+    if (!USERNAME.test(username)) return bridgeError("Nutzername: 3–32 Zeichen, nur a–z, 0–9, _ . -", 400);
+    if (password.length < 8 || password.length > 200) return bridgeError("Passwort 8–200 Zeichen.", 400);
     const taken = await sql`select 1 from furr_whitelist where lower(username) = ${username} and discord_id <> ${discordId}`;
     if (taken.length) return bridgeError("Dieser Nutzername ist schon vergeben.", 409);
     const byUser = by && DISCORD_ID.test(by) ? await resolveUserIdByDiscord(by) : null;
@@ -221,7 +221,7 @@ export async function handleIdeenBridge(
     const discordId = String(body.discordId ?? "");
     const kind = String(body.kind ?? "");
     if (!DISCORD_ID.test(discordId) || (kind !== "mute" && kind !== "timeout")) {
-      return bridgeError("UngÃ¼ltige Sanction", 400);
+      return bridgeError("Ungültige Sanction", 400);
     }
     const durationMs = body.durationMs == null ? null : Math.trunc(Number(body.durationMs));
     const expiresAt =
@@ -256,7 +256,7 @@ export async function handleIdeenBridge(
 
   if (action === "warn-count") {
     const discordId = String(body.discordId ?? "");
-    if (!DISCORD_ID.test(discordId)) return bridgeError("UngÃ¼ltige Discord-ID", 400);
+    if (!DISCORD_ID.test(discordId)) return bridgeError("Ungültige Discord-ID", 400);
     const rows = await sql<{ n: number }>`
       select count(*)::int as n from moderation_request
       where target_discord_id = ${discordId} and action = 'warn' and status = 'success'
@@ -272,14 +272,14 @@ export async function handleIdeenBridge(
         const existing = await sql`select 1 from bot_outbox where dedupe_key = ${dedupe} and created_at > now() - interval '1 day'`;
         if (!existing.length) {
           const embed = {
-            title: "Stufen-Logik Â· Timeout vorschlagen",
+            title: "Stufen-Logik · Timeout vorschlagen",
             description: `**${name}** hat **${count}** Warnungen (30 Tage). Kein Auto-Timeout.`,
             fields: [{ name: "Ziel", value: `${name} (${discordId})` }],
             color: 0xfbbf24,
           };
           await sql`
             insert into bot_outbox (id, channel_id, content, kind, embed_json, dedupe_key, ref_id)
-            values (${newId()}, ${channelId}, ${`Timeout-Vorschlag fÃ¼r ${name}`}, 'alert', ${JSON.stringify(embed)}, ${dedupe}, ${discordId})`;
+            values (${newId()}, ${channelId}, ${`Timeout-Vorschlag für ${name}`}, 'alert', ${JSON.stringify(embed)}, ${dedupe}, ${discordId})`;
         }
       }
     }
@@ -287,7 +287,7 @@ export async function handleIdeenBridge(
   }
 
   if (action === "vote-event") {
-    // Desktop/Server meldet Vote-Start/Cast/Ergebnis â†’ eine Embed-Karte (edit)
+    // Desktop/Server meldet Vote-Start/Cast/Ergebnis → eine Embed-Karte (edit)
     const voteId = String(body.voteId ?? body.id ?? "").slice(0, 120);
     if (!voteId) return bridgeError("voteId fehlt", 400);
     const channelId = (await modChannelId()) || (await getSetting("duty_channel_id", ""));
@@ -362,13 +362,13 @@ export async function handleIdeenBridge(
         targetId: body.voteId ? String(body.voteId) : undefined,
         detail: "Fall anlegen (Stub)",
       }));
-    // Evidence-API braucht Session-Auth â€“ Stub liefert Audit-ID; Desktop/Evidence kann nachziehen.
+    // Evidence-API braucht Session-Auth – Stub liefert Audit-ID; Desktop/Evidence kann nachziehen.
     return bridgeJson({
       ok: true,
       auditId,
       casePath: null,
       error: null,
-      note: "Stub: vollstÃ¤ndige Fallakte Ã¼ber FurrEvidence / Clips-Agent mit auditId verknÃ¼pfen.",
+      note: "Stub: vollständige Fallakte über FurrEvidence / Clips-Agent mit auditId verknüpfen.",
     });
   }
 
@@ -384,7 +384,7 @@ export async function handleIdeenBridge(
     if (/^\d{17,22}$/.test(channelId)) {
       const dedupe = `flag:${kind}:${discordId || "x"}:${context.slice(0, 40)}`;
       const embed = {
-        title: kind === "automod" ? "Anti-Troll Â· AutoMod" : "Anti-Troll Â· Flag",
+        title: kind === "automod" ? "Anti-Troll · AutoMod" : "Anti-Troll · Flag",
         description: context || "Server-Flag gesetzt (kein Auto-Ban).",
         fields: discordId ? [{ name: "Nutzer", value: `<@${discordId}> (\`${discordId}\`)` }] : [],
         color: 0xff007f,
@@ -398,7 +398,7 @@ export async function handleIdeenBridge(
   }
 
   if (action === "moderation-queue") {
-    // Discord-Button â†’ Moderation einreihen (Bot als Executor spÃ¤ter)
+    // Discord-Button → Moderation einreihen (Bot als Executor später)
     const actionName = String(body.action ?? "").toLowerCase();
     const targetDiscordId = String(body.targetDiscordId ?? "");
     const moderatorDiscordId = String(body.moderatorDiscordId ?? "");
@@ -406,9 +406,9 @@ export async function handleIdeenBridge(
     const durationMs = body.durationMs == null ? null : Math.trunc(Number(body.durationMs));
     if (!["warn", "timeout", "mute", "ban"].includes(actionName)) return bridgeError("Unbekannte Aktion", 400);
     if (!DISCORD_ID.test(targetDiscordId) || !DISCORD_ID.test(moderatorDiscordId)) {
-      return bridgeError("UngÃ¼ltige Discord-ID", 400);
+      return bridgeError("Ungültige Discord-ID", 400);
     }
-    if (reason.length < 3) return bridgeError("BegrÃ¼ndung zu kurz", 400);
+    if (reason.length < 3) return bridgeError("Begründung zu kurz", 400);
     const modUser = await resolveUserIdByDiscord(moderatorDiscordId);
     if (!modUser) return bridgeError("Moderator ohne FurrBox-Konto.", 404);
     const id = newId();
@@ -427,7 +427,7 @@ export async function handleIdeenBridge(
     if (existing.length) return bridgeJson({ ok: true, deduped: true });
     const headline = String(body.headline ?? "Gruppen-Instanz offen");
     const embed = {
-      title: "Duty Â· Niemand anwesend",
+      title: "Duty · Niemand anwesend",
       description: `**${headline}**\nInstanz ist offen, aber niemand ist anwesend (Duty).`,
       color: 0xf59e0b,
     };
@@ -440,7 +440,7 @@ export async function handleIdeenBridge(
   return null;
 }
 
-/** Nach Instanz-Ã¶ffnen: wenn niemand on_duty â†’ Duty-Empty-Alert. */
+/** Nach Instanz-öffnen: wenn niemand on_duty → Duty-Empty-Alert. */
 export async function maybeEnqueueDutyEmptyAlert(headline: string) {
   const sql = await getSql();
   const onDuty = await sql<{ n: number }>`

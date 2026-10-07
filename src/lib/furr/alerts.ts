@@ -1,4 +1,4 @@
-﻿// Alert-Bus: kritische Events an Bot / Desktop / VR â€“ Dedup + Rate-Limit.
+﻿// Alert-Bus: kritische Events an Bot / Desktop / VR – Dedup + Rate-Limit.
 import { getSql, getSetting, iso, newId } from "./core";
 import { createThrottle } from "./cache";
 import { runSideEffect } from "./http";
@@ -49,7 +49,7 @@ export async function publishAlert(input: PublishAlertInput): Promise<string | n
     return null;
   }
   if (!rateOk() && burst > 5) {
-    // Kurze SchÃ¼be ok, Dauerfeuer nicht.
+    // Kurze Schübe ok, Dauerfeuer nicht.
   }
   burst += 1;
 
@@ -160,7 +160,7 @@ export async function listAlertsSince(afterId: string | null, limit = 50): Promi
   });
 }
 
-/** FÃ¼r Bridge-Queue: ungelieferte Bot-Alerts markieren und zurÃ¼ckgeben. */
+/** Für Bridge-Queue: ungelieferte Bot-Alerts markieren und zurückgeben. */
 export async function takeBotAlerts(limit = 20) {
   const sql = await getSql();
   const rows = await sql<{
