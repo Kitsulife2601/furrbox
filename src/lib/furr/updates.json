@@ -1,5 +1,13 @@
 [
   {
+    "date": "2026-10-07",
+    "title": "Discord-Bot wird nicht mehr fälschlich als „nicht verbunden“ angezeigt",
+    "items": [
+      "Behoben: Nach dem Öffnen von FurrBox stand bis zu 10 Minuten „Discord-Bot nicht verbunden“, obwohl der Bot lief. Er meldet sich im Leerlauf nur alle 10 Minuten – das wertet FurrBox jetzt richtig.",
+      "Solange der Bot läuft, bleibt die Anzeige grün."
+    ]
+  },
+  {
     "date": "2026-10-05",
     "version": "2.0.27",
     "title": "Release-Fix, Update-Benachrichtigungen, VR Scout Phase 2",

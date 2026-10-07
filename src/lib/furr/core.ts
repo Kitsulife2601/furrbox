@@ -411,10 +411,15 @@ type BridgeStatusValue = { connected: boolean; lastSeenAt: string | null; config
 export const BRIDGE_STATUS_CACHE_MS = 5_000;
 const bridgeStatusCache = new TtlCache<BridgeStatusValue>(BRIDGE_STATUS_CACHE_MS, 1);
 
+const BOT_CONNECTED_WINDOW_MS = 12 * 60_000;
+
 async function readBridgeStatus(): Promise<BridgeStatusValue> {
   const lastSeen = await getSetting("bot_last_seen", "");
   const lastSeenAt = lastSeen ? iso(lastSeen) : null;
-  const connected = Boolean(lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < 60_000);
+  // The bot only reports every 10 minutes while nobody has FurrBox open (IDLE_POLL_MS in
+  // bot/index.mjs) – so it counts as connected for a bit longer than that. With a 60 s window it
+  // showed "nicht verbunden" for up to 10 minutes after opening FurrBox although it was running.
+  const connected = Boolean(lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < BOT_CONNECTED_WINDOW_MS);
   return { connected, lastSeenAt, configured: Boolean(process.env.BOT_BRIDGE_TOKEN) };
 }
 
