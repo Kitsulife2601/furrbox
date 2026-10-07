@@ -22,6 +22,7 @@ import { invalidatePresenceCache } from "@/lib/furr/presence-cache";
 import { AUDIT_LOG_NAME, DISCORD_LOGS, VRCHAT_LOGS } from "@/lib/furr/paths";
 import { VRC_ACCESS, VRC_REGION, parseLocation, vrchatAuditAction } from "@/lib/furr/vrchat-location";
 import { isRole } from "@/lib/furr/roles";
+import { dutyLines } from "@/lib/furr/duty-announce";
 import { enrichQueuePayload, handleIdeenBridge, maybeEnqueueDutyEmptyAlert } from "@/lib/furr/bridge-ideen";
 import { takeBotAlerts } from "@/lib/furr/alerts";
 import { takeChatboxHintsForBridge } from "@/lib/furr/api/chatbox-hint";
@@ -30,7 +31,6 @@ import { alertIfNoOneOnDuty } from "@/lib/furr/api/duty";
 import { appendAuditLater } from "@/lib/furr/audit";
 import { fireStartingSoonReminders, replaceCalendarEvents } from "@/lib/furr/api/calendar";
 
-const DUTY_ROLE: Record<string, string> = { dev: "Dev", owner: "Owner", moderator: "Mod", supporter: "Supporter" };
 const MAX_MEMBERS_PER_PUSH = 2_000;
 const MAX_PRESENCES_PER_PUSH = 2_000;
 const MAX_AUDIT_ENTRIES = 500;
@@ -64,24 +64,17 @@ async function announceInstance(headline: string) {
   const channelId = await getSetting("duty_channel_id", "1434484156431204382");
   if (!/^\d{17,22}$/.test(channelId)) return;
   const sql = await getSql();
-  const staff = await sql<{ name: string; privilege: string; on_duty: boolean }>`
-    select coalesce(dm.nickname, dm.display_name) as name, dm.highest_privilege as privilege,
-           coalesce(d.on_duty and pr.last_heartbeat_at > now() - interval '15 minutes', false) as on_duty
-    from discord_member dm
-    left join furr_profile p on p.discord_id = dm.discord_id
-    left join mod_duty d on d.user_id = p.user_id
-    left join furr_presence pr on pr.user_id = p.user_id
-    where dm.highest_privilege in ('dev', 'owner', 'moderator', 'supporter')
-    order by array_position(array['dev', 'owner', 'moderator', 'supporter'], dm.highest_privilege), 1`;
-  const line = (list: typeof staff) => (list.length ? list.map((s) => `${s.name} (${DUTY_ROLE[s.privilege] ?? s.privilege})`).join(", ") : "niemand");
-  const content = [
-    `🟢 **Neue Gruppen-Instanz:** ${headline}`,
-    `✅ **Anwesend (kann moderieren):** ${line(staff.filter((s) => s.on_duty))}`,
-    `❌ **Nicht anwesend:** ${line(staff.filter((s) => !s.on_duty))}`,
-  ]
-    .join("\n")
-    .slice(0, 1900);
-  await sql`insert into bot_outbox (id, channel_id, content) values (${newId()}, ${channelId}, ${content})`;
+  const duty = await dutyLines();
+  const content = [`🟢 **Neue Gruppen-Instanz:** ${headline}`, ...duty.lines].join("\n").slice(0, 1900);
+  // kind "duty-instance": the bot adds the buttons „Anwesend“ / „Nicht anwesend“ and – when nobody
+  // is there – marks the team roles. (Fallback for a database without the newer outbox columns.)
+  try {
+    await sql`
+      insert into bot_outbox (id, channel_id, content, kind, components_json)
+      values (${newId()}, ${channelId}, ${content}, 'duty-instance', ${JSON.stringify({ ping: !duty.anyone })})`;
+  } catch {
+    await sql`insert into bot_outbox (id, channel_id, content) values (${newId()}, ${channelId}, ${content})`;
+  }
 }
 
 function authorized(request: Request) {

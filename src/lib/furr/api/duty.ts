@@ -58,7 +58,7 @@ export const listDuty = createServerFn({ method: "GET" })
     // Freshness: 15 min für Duty-Badge; Presence-Online nutzt separates Fenster (session/presence).
     const rows = await sql<{ user_id: string; on_duty: boolean; status: string | null; updated_at: unknown; fresh: boolean }>`
       select d.user_id, d.on_duty, d.status, d.updated_at,
-             coalesce(p.last_heartbeat_at > now() - interval '15 minutes', false) as fresh
+             coalesce(p.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now(), false) as fresh
       from mod_duty d left join furr_presence p on p.user_id = d.user_id`;
     void grace; // Setting für Clients / Doku; Duty-Fenster bleibt 15 min wie spezifiziert.
     return rows.map((r) => {
@@ -91,7 +91,8 @@ export const setDuty = createServerFn({ method: "POST" })
     const on = next === "on";
     await sql`
       insert into mod_duty (user_id, on_duty, status, updated_at) values (${context.userId}, ${on}, ${next}, now())
-      on conflict (user_id) do update set on_duty = excluded.on_duty, status = excluded.status, updated_at = now()`;
+      on conflict (user_id) do update set on_duty = excluded.on_duty, status = excluded.status, updated_at = now(),
+        discord_until = null`;
     if (prev !== next) {
       const logKind: DutyLogEntry["kind"] = next === "away" ? "away" : next === "on" ? "on" : "off";
       await writeLog(context.userId, `${me.displayName} (${me.roleLabel})`, logKind, null);
@@ -228,9 +229,9 @@ export async function alertIfNoOneOnDuty(headline: string) {
   const rows = await sql<{ n: number }>`
     select count(*)::int as n
     from mod_duty d
-    join furr_presence pr on pr.user_id = d.user_id
+    left join furr_presence pr on pr.user_id = d.user_id
     where d.status = 'on' and d.on_duty
-      and pr.last_heartbeat_at > now() - interval '15 minutes'`;
+      and (pr.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now())`;
   if ((rows[0]?.n ?? 0) > 0) return;
   publishAlertLater({
     kind: "duty.empty",

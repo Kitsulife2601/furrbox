@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-07",
+    "title": "Discord: Knöpfe „Anwesend“ und „Nicht anwesend“ unter der Instanz-Meldung",
+    "items": [
+      "Neu: Unter der Bot-Nachricht „Neue Gruppen-Instanz“ gibt es zwei Knöpfe. Ein Klick stellt dich direkt in Discord auf anwesend oder nicht anwesend – die Liste in der Nachricht aktualisiert sich sofort.",
+      "„Anwesend“ per Knopf gilt 2 Stunden, auch wenn FurrBox gerade nicht offen ist. Mit offenem FurrBox bleibt es wie bisher.",
+      "Ist bei einer neuen Instanz niemand anwesend, markiert der Bot die Mod- und Supporter-Rolle. Ist jemand da, gibt es keine Markierung.",
+      "Die Knöpfe funktionieren nur für das Team und nur mit FurrBox-Konto. Damit sie erscheinen, muss der Bot einmal neu gestartet werden."
+    ]
+  },
+  {
+    "date": "2026-10-07",
     "version": "2.0.29",
     "title": "FurrBox VR: Feld am Arm nur sichtbar, wenn du draufschaust",
     "items": [

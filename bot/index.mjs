@@ -8,7 +8,7 @@
 import { writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client, EmbedBuilder, GatewayIntentBits, Options, Partials, PermissionsBitField } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, Client, EmbedBuilder, GatewayIntentBits, Options, Partials, PermissionsBitField } from "discord.js";
 import { handleVrchatJobs, setVrchatActive, startVrchat } from "./vrchat.mjs";
 import { filesBusy, handleBotFiles } from "./files.mjs";
 import { withIdeenIntents, installIdeenFeatures, deliverIdeenOutbox, afterModerationSuccess } from "./ideen-hooks.mjs";
@@ -357,7 +357,30 @@ async function poll() {
     for (const m of queue.discordMessages ?? []) {
       try {
         const channel = await client.channels.fetch(m.channelId);
-        if (channel?.isTextBased()) await channel.send({ content: String(m.content).slice(0, 1900), allowedMentions: { parse: [] } });
+        if (!channel?.isTextBased()) continue;
+        const message = { content: String(m.content).slice(0, 1900), allowedMentions: { parse: [] } };
+        // "New group instance": buttons to mark yourself anwesend / nicht anwesend right in Discord,
+        // and a mark for the team roles when nobody is there.
+        if (m.kind === "duty-instance") {
+          message.components = [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId("fb:duty:on").setLabel("Anwesend").setEmoji("✅").setStyle(ButtonStyle.Success),
+              new ButtonBuilder().setCustomId("fb:duty:off").setLabel("Nicht anwesend").setEmoji("❌").setStyle(ButtonStyle.Secondary),
+            ),
+          ];
+          let ping = false;
+          try {
+            ping = Boolean(JSON.parse(m.componentsJson || "{}").ping);
+          } catch {
+            // no extra info
+          }
+          if (ping) {
+            const roles = [ROLE_IDS.moderator, ROLE_IDS.supporter];
+            message.content = `${message.content}\n${roles.map((id) => `<@&${id}>`).join(" ")} – gerade ist niemand anwesend.`.slice(0, 2000);
+            message.allowedMentions = { parse: [], roles };
+          }
+        }
+        await channel.send(message);
       } catch (err) {
         log("Discord-Nachricht fehlgeschlagen:", err instanceof Error ? err.message : err);
       }

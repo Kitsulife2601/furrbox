@@ -2,6 +2,7 @@
 // Wird aus routes/api/bridge/$.ts dünn eingebunden.
 import { discordName, getSetting, getSql, iso, newId, notify } from "@/lib/furr/core";
 import { bridgeError, bridgeJson, runSideEffect } from "@/lib/furr/http";
+import { dutyLines } from "@/lib/furr/duty-announce";
 
 
 const DISCORD_ID = /^\d{17,22}$/;
@@ -118,16 +119,21 @@ export async function handleIdeenBridge(
     const userId = await resolveUserIdByDiscord(discordId);
     if (!userId) return bridgeError("Kein FurrBox-Konto zu dieser Discord-ID. Bitte einmal in FurrBox anmelden.", 404);
     const onDuty = status === "on";
+    // Set from Discord: "anwesend" counts for 2 hours even without FurrBox open.
     await sql`
-      insert into mod_duty (user_id, on_duty, updated_at, status) values (${userId}, ${onDuty}, now(), ${status})
-      on conflict (user_id) do update set on_duty = excluded.on_duty, updated_at = now(), status = excluded.status`;
+      insert into mod_duty (user_id, on_duty, updated_at, status, discord_until)
+      values (${userId}, ${onDuty}, now(), ${status}, case when ${onDuty} then now() + interval '2 hours' else null end)
+      on conflict (user_id) do update set on_duty = excluded.on_duty, updated_at = now(), status = excluded.status,
+        discord_until = excluded.discord_until`;
     const name = await discordName(discordId);
     const auditId = await audit("bot", "duty", { target: name, targetId: discordId, detail: status });
     await runSideEffect(
       () => notify("Duty", `${name} ist jetzt ${status === "on" ? "anwesend" : status === "away" ? "kurz weg" : "nicht anwesend"} (Discord).`),
       "duty-notify",
     );
-    return bridgeJson({ ok: true, status, onDuty, auditId });
+    // For the buttons below the "new instance" message: the refreshed duty lines.
+    const lines = body.withLines ? (await dutyLines()).lines : undefined;
+    return bridgeJson({ ok: true, status, onDuty, auditId, lines });
   }
 
   if (action === "whitelist-check") {
@@ -447,7 +453,7 @@ export async function maybeEnqueueDutyEmptyAlert(headline: string) {
     select count(*)::int as n from mod_duty d
     left join furr_presence p on p.user_id = d.user_id
     where d.on_duty and coalesce(d.status, 'off') = 'on'
-      and coalesce(p.last_heartbeat_at > now() - interval '15 minutes', false)`;
+      and coalesce(p.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now(), false)`;
   if ((onDuty[0]?.n ?? 0) > 0) return;
   await handleIdeenBridge("duty-empty-alert", { headline });
 }

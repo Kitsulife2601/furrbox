@@ -219,6 +219,33 @@ export async function handleButton(interaction, ctx) {
     return;
   }
   const id = interaction.customId || "";
+  // Buttons below the "new group instance" message: mark yourself anwesend / nicht anwesend.
+  if (id === "fb:duty:on" || id === "fb:duty:off") {
+    const status = id.endsWith(":on") ? "on" : "off";
+    let res;
+    try {
+      res = await bridge("duty", { discordId: member.id, status, withLines: true });
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      await interaction.reply({
+        content: /HTTP 404/.test(text)
+          ? "Du hast noch kein FurrBox-Konto. Melde dich einmal in FurrBox mit Discord an, dann geht der Knopf."
+          : "Das hat gerade nicht geklappt. Versuch es gleich noch einmal.",
+        flags: MessageFlags.Ephemeral,
+      });
+      log("Duty-Knopf fehlgeschlagen:", text);
+      return;
+    }
+    // Refresh the list in the message (first line = the instance, last line = the team mark).
+    const old = String(interaction.message?.content ?? "").split("\n");
+    if (Array.isArray(res?.lines) && old.length) {
+      await interaction.update({ content: [old[0], ...res.lines].join("\n").slice(0, 2000), allowedMentions: { parse: [] } });
+    } else {
+      await interaction.reply({ content: status === "on" ? "Du bist jetzt anwesend." : "Du bist nicht mehr anwesend.", flags: MessageFlags.Ephemeral });
+    }
+    log(`Duty ${status} (Knopf) von ${member.user?.tag || member.id}`);
+    return;
+  }
   if (id.startsWith("fb:clip:")) {
     const [, , voteId, auditId] = id.split(":");
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
