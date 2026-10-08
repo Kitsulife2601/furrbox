@@ -170,9 +170,25 @@ function mapGroup(g) {
   };
 }
 
+/**
+ * The group list only says how many *group members* are in an instance. The real number of people
+ * comes from the instance itself (one small request per open instance).
+ */
+async function realUserCount(location) {
+  try {
+    const { json } = await authed(`/instances/${location}`);
+    const n = Number(json?.n_users ?? json?.userCount);
+    return Number.isFinite(n) ? n : null;
+  } catch (err) {
+    // An expired login must still be noticed; anything else (no access, …) keeps the list's number.
+    if (err instanceof VrcError && err.status === 401) throw err;
+    return null;
+  }
+}
+
 async function fetchInstances() {
   const { json } = await authed(`/groups/${encodeURIComponent(session.groupId)}/instances`);
-  return (json ?? []).map((i) => ({
+  const list = (json ?? []).map((i) => ({
     instanceId: String(i.instanceId ?? i.location ?? ""),
     location: String(i.location ?? ""),
     memberCount: Number(i.memberCount ?? 0),
@@ -183,6 +199,12 @@ async function fetchInstances() {
       image: i.world?.thumbnailImageUrl || i.world?.imageUrl || null,
     },
   }));
+  for (const i of list.slice(0, 15)) {
+    if (!i.location.includes(":")) continue;
+    const n = await realUserCount(i.location);
+    if (n !== null) i.memberCount = Math.max(n, i.memberCount);
+  }
+  return list;
 }
 
 /** Sends the current state to FurrBox – only when something changed (lets the database sleep). */

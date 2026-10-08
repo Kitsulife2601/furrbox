@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-08",
+    "title": "Offene Instanzen zeigen die echte Personenzahl",
+    "items": [
+      "Behoben: Bei „Offene Instanzen“ und in der Bot-Meldung stand oft eine zu kleine Zahl, weil nur Gruppenmitglieder gezählt wurden. Jetzt fragt der Bot jede offene Instanz direkt nach der echten Personenzahl.",
+      "Damit das wirkt, muss der Bot einmal neu gestartet werden."
+    ]
+  },
+  {
+    "date": "2026-10-08",
     "version": "2.0.30",
     "title": "Chatbox: Musik-Laufzeit läuft flüssig mit",
     "items": [
