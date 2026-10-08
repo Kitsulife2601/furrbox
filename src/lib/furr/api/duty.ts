@@ -7,6 +7,7 @@ import { publishAlertLater } from "../alerts";
 import { appendTextFile, getSetting, getSql, iso, newId, requirePermission, setSetting } from "../core";
 import { runSideEffect } from "../http";
 import { VRCHAT_LOGS } from "../paths";
+import { connectedGroupId, DUTY_AUTO_SQL, DUTY_ON_SQL, isGroupInstance, markSeenInGroupInstance } from "../duty-announce";
 
 export const DUTY_LOG_NAME = "Anwesenheit.txt";
 /** "Anwesend" only counts while FurrBox was seen recently – nobody stays on duty by accident. */
@@ -15,7 +16,17 @@ export const DUTY_FRESH_MINUTES = 15;
 export const DUTY_HEARTBEAT_GRACE_SEC = 120;
 
 export type DutyStatus = "on" | "off" | "away";
-export type DutyEntry = { userId: string; onDuty: boolean; status?: DutyStatus; since: string | null };
+export type DutyEntry = {
+  userId: string;
+  onDuty: boolean;
+  status?: DutyStatus;
+  since: string | null;
+  name?: string | null;
+  /** Counts as anwesend because they were seen in an instance of our group. */
+  auto?: boolean;
+  vrchatName?: string | null;
+  vrchatId?: string | null;
+};
 export type DutyLogEntry = { id: string; name: string; kind: "on" | "off" | "away" | "votekick"; detail: string | null; at: string };
 
 function stamp() {
@@ -48,29 +59,81 @@ async function writeLog(userId: string, name: string, kind: DutyLogEntry["kind"]
   );
 }
 
-/** Everyone's duty status (only "anwesend" while their FurrBox was seen in the last minutes). */
+/** Everyone's duty status: switched on by hand (and FurrBox seen lately) or seen in a group instance. */
 export const listDuty = createServerFn({ method: "GET" })
   .middleware([accessMiddleware])
   .handler(async ({ context }): Promise<DutyEntry[]> => {
     await requirePermission(context.userId, "canUseEvidence");
     const sql = await getSql();
-    const grace = Number(await getSetting("duty_heartbeat_grace_sec", String(DUTY_HEARTBEAT_GRACE_SEC))) || DUTY_HEARTBEAT_GRACE_SEC;
-    // Freshness: 15 min für Duty-Badge; Presence-Online nutzt separates Fenster (session/presence).
-    const rows = await sql<{ user_id: string; on_duty: boolean; status: string | null; updated_at: unknown; fresh: boolean }>`
-      select d.user_id, d.on_duty, d.status, d.updated_at,
-             coalesce(p.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now(), false) as fresh
-      from mod_duty d left join furr_presence p on p.user_id = d.user_id`;
-    void grace; // Setting für Clients / Doku; Duty-Fenster bleibt 15 min wie spezifiziert.
+    const rows = await sql.query<{
+      user_id: string;
+      status: string | null;
+      on_duty: boolean;
+      updated_at: unknown;
+      effective: boolean;
+      auto: boolean;
+      fresh: boolean;
+      name: string | null;
+      vrchat_name: string | null;
+      vrchat_user_id: string | null;
+    }>(
+      `select d.user_id, d.status, d.on_duty, d.updated_at, ${DUTY_ON_SQL} as effective, ${DUTY_AUTO_SQL} as auto,
+              coalesce(pr.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now(), false) as fresh,
+              p.display_name as name, p.vrchat_name, p.vrchat_user_id
+       from mod_duty d
+       left join furr_presence pr on pr.user_id = d.user_id
+       left join furr_profile p on p.user_id = d.user_id`,
+      [],
+    );
     return rows.map((r) => {
-      const status = normalizeStatus(r.status, Boolean(r.on_duty));
-      const effective: DutyStatus = r.fresh ? status : "off";
+      const manual = normalizeStatus(r.status, Boolean(r.on_duty));
+      const status: DutyStatus = r.effective ? "on" : r.fresh && manual === "away" ? "away" : "off";
       return {
         userId: r.user_id,
-        onDuty: effective === "on",
-        status: effective,
+        onDuty: status === "on",
+        status,
         since: iso(r.updated_at),
+        name: r.name,
+        auto: Boolean(r.auto),
+        vrchatName: r.vrchat_name,
+        vrchatId: r.vrchat_user_id,
       };
     });
+  });
+
+const USR_ID = /^usr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Keeps the own VRChat account (from the desktop app's VRChat login) at the FurrBox profile. */
+export const linkMyVrchat = createServerFn({ method: "POST" })
+  .validator((input: { userId: string; displayName: string }) => ({
+    userId: String(input?.userId ?? "").trim(),
+    displayName: String(input?.displayName ?? "").trim().slice(0, 100),
+  }))
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data }) => {
+    await requirePermission(context.userId, "canUseEvidence");
+    if (!USR_ID.test(data.userId)) throw new Error("Ungültige VRChat-ID.");
+    const sql = await getSql();
+    await sql`
+      update furr_profile set vrchat_user_id = ${data.userId}, vrchat_name = ${data.displayName || null}
+      where user_id = ${context.userId}
+        and (vrchat_user_id is distinct from ${data.userId} or vrchat_name is distinct from ${data.displayName || null})`;
+    return { ok: true as const };
+  });
+
+/**
+ * The desktop app tells in which VRChat instance you are (read from VRChat's own log). In an
+ * instance of our group you count as "anwesend" for the next minutes.
+ */
+export const reportVrchatLocation = createServerFn({ method: "POST" })
+  .validator((location: string) => String(location ?? "").trim().slice(0, 300))
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data: location }) => {
+    await requirePermission(context.userId, "canUseEvidence");
+    const groupId = await connectedGroupId();
+    if (!groupId || !isGroupInstance(location, groupId)) return { inGroup: false };
+    await markSeenInGroupInstance([{ userId: context.userId, location }]);
+    return { inGroup: true };
   });
 
 /** PATCH-artig: on | off | away. Boolean-API bleibt für Alt-Clients. */
@@ -92,7 +155,9 @@ export const setDuty = createServerFn({ method: "POST" })
     await sql`
       insert into mod_duty (user_id, on_duty, status, updated_at) values (${context.userId}, ${on}, ${next}, now())
       on conflict (user_id) do update set on_duty = excluded.on_duty, status = excluded.status, updated_at = now(),
-        discord_until = null`;
+        discord_until = null,
+        -- "Aus" by hand while in a group instance: no automatic "anwesend" in that instance.
+        vrchat_optout = case when ${next} = 'off' and mod_duty.vrchat_until > now() then mod_duty.vrchat_location else null end`;
     if (prev !== next) {
       const logKind: DutyLogEntry["kind"] = next === "away" ? "away" : next === "on" ? "on" : "off";
       await writeLog(context.userId, `${me.displayName} (${me.roleLabel})`, logKind, null);
@@ -226,12 +291,13 @@ export const setDutyChannel = createServerFn({ method: "POST" })
 /** Hilfsfunktion Bridge: niemand anwesend bei offener Instanz → Alert. */
 export async function alertIfNoOneOnDuty(headline: string) {
   const sql = await getSql();
-  const rows = await sql<{ n: number }>`
-    select count(*)::int as n
+  const rows = await sql.query<{ n: number }>(
+    `select count(*)::int as n
     from mod_duty d
     left join furr_presence pr on pr.user_id = d.user_id
-    where d.status = 'on' and d.on_duty
-      and (pr.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now())`;
+    where ${DUTY_ON_SQL}`,
+    [],
+  );
   if ((rows[0]?.n ?? 0) > 0) return;
   publishAlertLater({
     kind: "duty.empty",

@@ -186,6 +186,8 @@ async function realUserCount(location) {
   }
 }
 
+let openInstances = 0;
+
 async function fetchInstances() {
   const { json } = await authed(`/groups/${encodeURIComponent(session.groupId)}/instances`);
   const list = (json ?? []).map((i) => ({
@@ -245,6 +247,7 @@ async function refresh(force = false) {
       groupFetchedAt = Date.now();
     }
     const instances = await fetchInstances();
+    openInstances = instances.length;
     lastError = auditError;
     await pushState(force, instances);
     if (force) await syncAudit();
@@ -395,12 +398,35 @@ export async function handleVrchatJobs(jobs) {
   }
 }
 
+/**
+ * Anwesenheit: looks up where the team's VRChat accounts are and tells FurrBox – who is in an
+ * instance of our group counts as anwesend. VRChat only tells the location of friends of this
+ * account. Only while an instance of the group is open (otherwise nobody can be in one).
+ */
+let teamIds = [];
+async function checkTeam(open) {
+  if (!bridge || !session.auth) return;
+  const seen = [];
+  for (const usrId of open ? teamIds.slice(0, 40) : []) {
+    try {
+      const { json } = await authed(`/users/${encodeURIComponent(usrId)}`);
+      const location = String(json?.location ?? "");
+      if (location.startsWith("wrld_")) seen.push({ usrId, location, displayName: String(json?.displayName ?? "") });
+    } catch (err) {
+      if (err instanceof VrcError && err.status === 401) return;
+    }
+  }
+  const res = await bridge("vrchat-team", { seen });
+  if (Array.isArray(res?.team)) teamIds = res.team.filter((id) => typeof id === "string");
+}
+
 function tick() {
   clearTimeout(watchTimer);
   watchTimer = null;
   if (watchBusy) return; // the running refresh schedules the next one
   watchBusy = true;
   refresh()
+    .then(() => checkTeam(openInstances > 0))
     .catch((err) => log("VRChat-Fehler:", err.message))
     .finally(() => {
       watchBusy = false;

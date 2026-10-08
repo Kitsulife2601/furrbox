@@ -179,6 +179,27 @@ export function StaffFlyout() {
           ))}
         </div>
         {duty.error && <p className="furr-vr-notice mt-2 rounded-md bg-danger/15 px-2 py-1 text-[11px] text-red-200">{duty.error}</p>}
+        {duty.mine?.auto && <p className="mt-2 text-[11px] text-emerald-300">Du bist in einer Instanz unserer Gruppe – FurrBox zählt dich automatisch als anwesend.</p>}
+        {duty.team.some((d) => d.onDuty) && (
+          <ul className="mt-2 grid gap-1">
+            {duty.team
+              .filter((d) => d.onDuty)
+              .map((d) => (
+                <li key={d.userId} className="flex items-center gap-2 text-[12px]">
+                  <span className="size-2 shrink-0 rounded-full bg-emerald-400" />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{d.name ?? "Unbekannt"}</span>
+                    {d.vrchatName && <span className="text-muted"> · VRChat: {d.vrchatName}</span>}
+                  </span>
+                  {d.auto && (
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300" title={d.vrchatId ?? undefined}>
+                      in der Instanz
+                    </span>
+                  )}
+                </li>
+              ))}
+          </ul>
+        )}
         <button type="button" onClick={() => useHandover.getState().open("all")} className="mt-2 text-[12px] text-accent hover:underline">
           Übergabe-Notizen ansehen
         </button>

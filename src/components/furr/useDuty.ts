@@ -92,5 +92,5 @@ export function useDuty(pollMs = 60_000) {
     }
   }
 
-  return { allowed, status, mine, teamOn, busy, error, toggle, setStatus, loading: duty.isLoading };
+  return { allowed, status, mine, teamOn, team: duty.data ?? [], busy, error, toggle, setStatus, loading: duty.isLoading };
 }

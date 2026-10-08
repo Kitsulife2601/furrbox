@@ -2,7 +2,7 @@
 // Wird aus routes/api/bridge/$.ts dünn eingebunden.
 import { discordName, getSetting, getSql, iso, newId, notify } from "@/lib/furr/core";
 import { bridgeError, bridgeJson, runSideEffect } from "@/lib/furr/http";
-import { dutyLines } from "@/lib/furr/duty-announce";
+import { connectedGroupId, dutyLines, isGroupInstance, markSeenInGroupInstance } from "@/lib/furr/duty-announce";
 
 
 const DISCORD_ID = /^\d{17,22}$/;
@@ -134,6 +134,30 @@ export async function handleIdeenBridge(
     // For the buttons below the "new instance" message: the refreshed duty lines.
     const lines = body.withLines ? (await dutyLines()).lines : undefined;
     return bridgeJson({ ok: true, status, onDuty, auditId, lines });
+  }
+
+  // The bot looked up where the team's VRChat accounts are (VRChat only tells that for friends of
+  // the bot account). Who is in an instance of our group counts as anwesend. The answer is the list
+  // of accounts to look up next time.
+  if (action === "vrchat-team") {
+    const groupId = await connectedGroupId();
+    const seen = Array.isArray(body.seen) ? (body.seen as { usrId?: unknown; location?: unknown; displayName?: unknown }[]).slice(0, 50) : [];
+    const team = await sql<{ user_id: string; vrchat_user_id: string }>`
+      select p.user_id, p.vrchat_user_id from furr_profile p
+      join discord_member dm on dm.discord_id = p.discord_id
+      where p.vrchat_user_id is not null and dm.highest_privilege in ('dev', 'owner', 'moderator', 'supporter')
+      limit 40`;
+    const byUsr = new Map(team.map((t) => [t.vrchat_user_id, t.user_id]));
+    const hits: { userId: string; location: string }[] = [];
+    for (const s of seen) {
+      const userId = byUsr.get(String(s.usrId ?? ""));
+      const location = String(s.location ?? "");
+      if (userId && groupId && isGroupInstance(location, groupId)) hits.push({ userId, location: location.slice(0, 300) });
+      const name = String(s.displayName ?? "").trim().slice(0, 100);
+      if (userId && name) await sql`update furr_profile set vrchat_name = ${name} where user_id = ${userId} and vrchat_name is distinct from ${name}`;
+    }
+    await markSeenInGroupInstance(hits);
+    return bridgeJson({ ok: true, team: team.map((t) => t.vrchat_user_id) });
   }
 
   if (action === "whitelist-check") {
@@ -452,8 +476,9 @@ export async function maybeEnqueueDutyEmptyAlert(headline: string) {
   const onDuty = await sql<{ n: number }>`
     select count(*)::int as n from mod_duty d
     left join furr_presence p on p.user_id = d.user_id
-    where d.on_duty and coalesce(d.status, 'off') = 'on'
-      and coalesce(p.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now(), false)`;
+    where (coalesce(d.on_duty and coalesce(d.status, 'off') = 'on'
+      and (p.last_heartbeat_at > now() - interval '15 minutes' or d.discord_until > now()), false)
+      or coalesce(d.vrchat_until > now() and d.vrchat_location is distinct from d.vrchat_optout, false))`;
   if ((onDuty[0]?.n ?? 0) > 0) return;
   await handleIdeenBridge("duty-empty-alert", { headline });
 }

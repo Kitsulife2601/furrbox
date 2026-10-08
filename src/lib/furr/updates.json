@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-08",
+    "title": "Anwesenheit wird über VRChat erkannt",
+    "items": [
+      "Neu: Wer aus dem Team in einer Instanz unserer Gruppe ist, zählt automatisch als anwesend – ohne Schalter. Verlässt du die Instanz, endet das nach ein paar Minuten von selbst.",
+      "FurrBox merkt sich dein VRChat-Konto (Name und usr_-ID), sobald du in der Desktop-App mit VRChat angemeldet bist. Im Staff-Menü steht bei jedem Anwesenden der VRChat-Name und ob er gerade in der Instanz ist.",
+      "Auch die Bot-Meldung in Discord zeigt, wer in der Instanz erkannt wurde und unter welchem VRChat-Namen.",
+      "Der Schalter von Hand bleibt: Stellst du dich in der Instanz auf „Aus“, bleibt es dort aus.",
+      "Erkannt wirst du über die Desktop-App (sie muss offen sein) oder über den Bot, wenn dein VRChat-Konto mit dem Bot-Konto befreundet ist. Für den Bot-Teil muss der Bot einmal neu gestartet werden."
+    ]
+  },
+  {
+    "date": "2026-10-08",
     "title": "Fallakten bearbeiten und Strafe direkt aus dem Fall geben",
     "items": [
       "Neu bei jedem Fall: Knopf „Bearbeiten“. Du änderst den Namen der Person, die Discord- oder VRChat-ID, den Verstoß und die Beschreibung. Jede Änderung steht im Protokoll des Falls.",
