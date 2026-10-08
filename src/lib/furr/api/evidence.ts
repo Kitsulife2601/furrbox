@@ -5,6 +5,7 @@ import {
   bridgeStatus,
   discordName,
   ensureFolderPath,
+  appendTextFile,
   getSql,
   iso,
   loadMe,
@@ -198,8 +199,9 @@ export const saveEvidenceCase = createServerFn({ method: "POST" })
     }
     await notify("Neuer Evidence-Fall", `${me.displayName} hat einen ${data.platform}-Fall zu ${targetName} (${data.violationCategory}) angelegt.`);
     await (await getSql())`
-      insert into evidence_case_meta (case_path, status, assignee_id, updated_by, target_id, target_name)
-      values (${casePath}, 'open', ${context.userId}, ${context.userId}, ${targetId}, ${targetName})
+      insert into evidence_case_meta (case_path, status, assignee_id, updated_by, target_id, target_name, category, description)
+      values (${casePath}, 'open', ${context.userId}, ${context.userId}, ${targetId}, ${targetName},
+              ${data.violationCategory}, ${data.notes.slice(0, 4000) || null})
       on conflict (case_path) do nothing`.catch(() => undefined);
     return { caseId, casePath, uploads };
   });
@@ -219,12 +221,15 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
       assignee_name: string | null;
       note: string | null;
       target_name: string | null;
+      target_id: string | null;
+      category: string | null;
+      description: string | null;
       updated_at: unknown;
     }>(
       `select f.folder, f.name, f.created_at,
          (select count(*)::int from furr_file c where c.scope = 'public' and c.owner_id is null
             and c.folder = f.folder || '/' || f.name and c.is_folder = false) as file_count,
-         m.status, m.assignee_id, p.display_name as assignee_name, m.note, m.target_name, m.updated_at
+         m.status, m.assignee_id, p.display_name as assignee_name, m.note, m.target_name, m.target_id, m.category, m.description, m.updated_at
        from furr_file f
        left join evidence_case_meta m on m.case_path = f.folder || '/' || f.name
        left join furr_profile p on p.user_id = m.assignee_id
@@ -239,12 +244,94 @@ export const listEvidenceCases = createServerFn({ method: "GET" })
       createdAt: iso(r.created_at) ?? "",
       fileCount: Number(r.file_count) || 0,
       targetName: r.target_name,
+      targetId: r.target_id,
+      category: r.category,
+      description: r.description,
       status: (CASE_STATUSES.includes(r.status as CaseStatus) ? r.status : "open") as CaseStatus,
       assigneeId: r.assignee_id,
       assigneeName: r.assignee_id ? (r.assignee_name ?? "Unbekannt") : null,
       note: r.note,
       statusChangedAt: iso(r.updated_at),
     }));
+  });
+
+/** Checks that the path is a case folder and returns its parts. */
+async function caseFolder(path: string) {
+  const idx = path.lastIndexOf("/");
+  const folder = path.slice(0, idx);
+  const name = path.slice(idx + 1);
+  if (![`${EVIDENCE_ROOT}/Discord`, `${EVIDENCE_ROOT}/VRChat`].includes(folder)) throw new Error("Das ist keine Fallakte.");
+  const sql = await getSql();
+  const exists = await sql`
+    select 1 from furr_file where scope = 'public' and owner_id is null and is_folder = true and folder = ${folder} and name = ${name}`;
+  if (!exists.length) throw new Error("Fallakte nicht gefunden.");
+  return { folder, name, platform: folder.split("/").pop() as "Discord" | "VRChat" };
+}
+
+/**
+ * "Bearbeiten": the person (name / id), the violation and the description of a case. Only the
+ * fields that are passed change. The folder keeps its name; the change is noted in the case's protocol.
+ */
+export const editEvidenceCase = createServerFn({ method: "POST" })
+  .validator((input: { path: string; targetName?: string; targetId?: string; category?: string; description?: string }) => ({
+    path: String(input.path ?? "").trim(),
+    targetName: input.targetName === undefined ? undefined : String(input.targetName).trim().slice(0, 200),
+    targetId: input.targetId === undefined ? undefined : String(input.targetId).trim().slice(0, 60),
+    category: input.category === undefined ? undefined : String(input.category).trim().slice(0, 80),
+    description: input.description === undefined ? undefined : String(input.description).trim().slice(0, 4000),
+  }))
+  .middleware([accessMiddleware])
+  .handler(async ({ context, data }) => {
+    const me = await requirePermission(context.userId, "canUseEvidence");
+    const { name, platform } = await caseFolder(data.path);
+    if (data.targetName !== undefined && !data.targetName) throw new Error("Der Name darf nicht leer sein.");
+    if (data.targetId) {
+      const ok = platform === "VRChat" ? /^usr_[0-9a-f-]{36}$/i.test(data.targetId) : /^\d{17,22}$/.test(data.targetId);
+      if (!ok) throw new Error(platform === "VRChat" ? "Die VRChat-ID beginnt mit usr_ und ist 40 Zeichen lang." : "Die Discord-ID ist eine lange Zahl (17–22 Ziffern).");
+    }
+    const sql = await getSql();
+    const before = await sql<{ target_name: string | null; target_id: string | null; category: string | null; description: string | null }>`
+      select target_name, target_id, category, description from evidence_case_meta where case_path = ${data.path}`;
+    const old = before[0] ?? { target_name: null, target_id: null, category: null, description: null };
+    const next = {
+      target_name: data.targetName ?? old.target_name,
+      target_id: data.targetId === undefined ? old.target_id : data.targetId || null,
+      category: data.category === undefined ? old.category : data.category || null,
+      description: data.description === undefined ? old.description : data.description || null,
+    };
+    await sql`
+      insert into evidence_case_meta (case_path, target_name, target_id, category, description, updated_by, updated_at)
+      values (${data.path}, ${next.target_name}, ${next.target_id}, ${next.category}, ${next.description}, ${context.userId}, now())
+      on conflict (case_path) do update set
+        target_name = excluded.target_name, target_id = excluded.target_id, category = excluded.category,
+        description = excluded.description, updated_by = excluded.updated_by, updated_at = now()`;
+
+    const changes: string[] = [];
+    if (next.target_name !== old.target_name) changes.push(`Name: ${next.target_name ?? "–"}`);
+    if (next.target_id !== old.target_id) changes.push(`ID: ${next.target_id ?? "entfernt"}`);
+    if (next.category !== old.category) changes.push(`Verstoß: ${next.category ?? "nicht angegeben"}`);
+    if (next.description !== old.description) changes.push("Beschreibung geändert");
+    if (changes.length) {
+      const stamp = new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin" });
+      const block = [
+        "",
+        `--- Geändert am ${stamp} von ${me.displayName} ---`,
+        ...changes,
+        ...(next.description !== old.description && next.description ? ["Neue Beschreibung:", next.description] : []),
+        "",
+      ].join("\r\n");
+      await appendTextFile("public", `${data.path}/Moderationsprotokoll.txt`, block, context.userId).catch(() => undefined);
+      appendAuditLater({
+        source: "furrbox",
+        action: "case.edit",
+        actorId: context.userId,
+        targetId: next.target_id ?? undefined,
+        targetName: next.target_name ?? undefined,
+        caseId: name,
+        detail: `${me.displayName}: ${changes.filter((c) => !c.startsWith("Beschreibung")).join(", ") || "Beschreibung geändert"}`.slice(0, 300),
+      });
+    }
+    return { ok: true as const };
   });
 
 const CASE_STATUSES: CaseStatus[] = ["open", "working", "waiting", "done"];

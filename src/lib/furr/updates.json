@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-10-08",
+    "title": "Fallakten bearbeiten und Strafe direkt aus dem Fall geben",
+    "items": [
+      "Neu bei jedem Fall: Knopf „Bearbeiten“. Du änderst den Namen der Person, die Discord- oder VRChat-ID, den Verstoß und die Beschreibung. Jede Änderung steht im Protokoll des Falls.",
+      "Verstoß und Beschreibung stehen jetzt direkt in der Fallliste und lassen sich durchsuchen.",
+      "Neu bei VRChat-Fällen: Knopf „Strafe geben“. Du kickst oder bannst die Person in der VRChat-Gruppe direkt aus dem Fall – der Fall wird automatisch als Bezug eingetragen.",
+      "Fehlt am Fall noch die VRChat-ID, suchst du die Person im selben Fenster und klickst sie an. Die ID wird dann am Fall gespeichert.",
+      "Ein Bann startet erst nach 10 Sekunden und lässt sich so lange abbrechen. Er erscheint danach unter „Strafen“ und in der Personenakte."
+    ]
+  },
+  {
+    "date": "2026-10-08",
     "title": "Offene Instanzen zeigen die echte Personenzahl",
     "items": [
       "Behoben: Bei „Offene Instanzen“ und in der Bot-Meldung stand oft eine zu kleine Zahl, weil nur Gruppenmitglieder gezählt wurden. Jetzt fragt der Bot jede offene Instanz direkt nach der echten Personenzahl.",

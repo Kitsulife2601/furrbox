@@ -144,6 +144,11 @@ export type EvidenceCase = {
   fileCount: number;
   /** Who the case is about (cases from before the Personenakte have none). */
   targetName: string | null;
+  /** Discord id or usr_ id of that person. */
+  targetId: string | null;
+  /** Violation and what happened (cases from before "Bearbeiten" have none). */
+  category: string | null;
+  description: string | null;
   /** "open" until someone changes it. */
   status: CaseStatus;
   assigneeId: string | null;

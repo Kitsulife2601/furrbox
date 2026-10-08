@@ -2,7 +2,7 @@
 // who takes care of it and a short note – so nothing is left lying around.
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Paperclip, Search, StickyNote, UserCheck, UserRound } from "lucide-react";
+import { FolderOpen, Gavel, Paperclip, Pencil, Search, StickyNote, UserCheck, UserRound } from "lucide-react";
 import { listEvidenceCases, updateEvidenceCase } from "@/lib/furr/api/evidence";
 import { listPresence } from "@/lib/furr/api/presence";
 import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store/desktop";
 import { useNotifications } from "@/store/notifications";
 import { AttachClipDialog } from "./AttachClipDialog";
+import { EditCaseDialog, PunishCaseDialog } from "./CaseDialogs";
 import { Btn, Empty, PromptDialog, TextInput } from "./ui";
 
 const CASE_STATUS: { id: CaseStatus; label: string; className: string }[] = [
@@ -32,6 +33,8 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 /** Case folders end in a timestamp ("Name_2026-10-02T…") – show only the name. */
 const title = (caseId: string) => caseId.replace(/_\d{4}-.*$/, "");
+/** The name saved at the case wins over the folder name. */
+const nameOf = (c: EvidenceCase) => c.targetName || title(c.caseId).replace(/_/g, " ");
 
 export function CaseList() {
   const live15 = useLiveInterval(15_000);
@@ -44,6 +47,8 @@ export function CaseList() {
   const [search, setSearch] = useState("");
   const [attaching, setAttaching] = useState<EvidenceCase | null>(null);
   const [noting, setNoting] = useState<EvidenceCase | null>(null);
+  const [editing, setEditing] = useState<EvidenceCase | null>(null);
+  const [punishing, setPunishing] = useState<EvidenceCase | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const myId = me.data?.userId ?? null;
@@ -62,7 +67,7 @@ export function CaseList() {
   const shown = all.filter(
     (c) =>
       (filter === "all" || (filter === "done" ? c.status === "done" : c.status !== "done" && (filter === "todo" || c.assigneeId === myId))) &&
-      (!needle || `${c.caseId} ${c.platform} ${c.assigneeName ?? ""} ${c.note ?? ""}`.toLowerCase().includes(needle)),
+      (!needle || `${c.caseId} ${c.targetName ?? ""} ${c.targetId ?? ""} ${c.category ?? ""} ${c.description ?? ""} ${c.platform} ${c.assigneeName ?? ""} ${c.note ?? ""}`.toLowerCase().includes(needle)),
   );
 
   async function change(c: EvidenceCase, patch: { status?: CaseStatus; assigneeId?: string | null; note?: string }) {
@@ -84,9 +89,11 @@ export function CaseList() {
   return (
     <div className="relative min-h-full">
       {attaching && <AttachClipDialog target={attaching} onClose={() => setAttaching(null)} />}
+      {editing && <EditCaseDialog target={editing} onClose={() => setEditing(null)} />}
+      {punishing && <PunishCaseDialog target={punishing} onClose={() => setPunishing(null)} />}
       {noting && (
         <PromptDialog
-          title={`Notiz zu „${title(noting.caseId)}“`}
+          title={`Notiz zu „${nameOf(noting)}“`}
           initial={noting.note ?? ""}
           confirmLabel="Speichern"
           onSubmit={(value) => {
@@ -140,13 +147,15 @@ export function CaseList() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", status.className)}>{status.label}</span>
                   <p className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={c.caseId}>
-                    {title(c.caseId)}
+                    {nameOf(c)}
                   </p>
+                  {c.category && <span className="rounded-full bg-fg/10 px-2 py-0.5 text-[11px] text-muted">{c.category}</span>}
                   <span className="text-[11px] text-subtle">
                     {c.platform} · {c.fileCount} {c.fileCount === 1 ? "Datei" : "Dateien"} · {timeAgo(c.createdAt)}
                   </span>
                 </div>
 
+                {c.description && <p className="line-clamp-3 whitespace-pre-wrap text-[12px] text-muted">{c.description}</p>}
                 {c.note && <p className="whitespace-pre-wrap rounded-md bg-bg/50 px-2.5 py-1.5 text-[12px] text-muted">{c.note}</p>}
 
                 <div className="flex flex-wrap items-center gap-2 text-[12px]">
@@ -188,10 +197,18 @@ export function CaseList() {
                       <UserCheck className="size-3.5" /> Ich übernehme
                     </Btn>
                   )}
-                  <div className="ml-auto flex gap-1">
+                  <div className="ml-auto flex flex-wrap justify-end gap-1">
+                    {c.platform === "VRChat" && c.status !== "done" && (
+                      <Btn variant="ghost" onClick={() => setPunishing(c)} title="Person in der VRChat-Gruppe kicken oder bannen">
+                        <Gavel className="size-3.5" /> Strafe geben
+                      </Btn>
+                    )}
+                    <Btn variant="ghost" onClick={() => setEditing(c)} title="Name, ID, Verstoß und Beschreibung ändern">
+                      <Pencil className="size-3.5" /> Bearbeiten
+                    </Btn>
                     <Btn
                       variant="ghost"
-                      onClick={() => usePersonFile.getState().open({ name: c.targetName ?? title(c.caseId).replace(/_/g, " "), discordId: null, usrId: null })}
+                      onClick={() => usePersonFile.getState().open({ name: nameOf(c), discordId: c.platform === "Discord" ? c.targetId : null, usrId: c.platform === "VRChat" ? c.targetId : null })}
                       title="Alles zu dieser Person zeigen"
                     >
                       <UserRound className="size-3.5" /> Akte
