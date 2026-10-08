@@ -1,5 +1,15 @@
 [
   {
+    "date": "2026-10-08",
+    "version": "2.0.30",
+    "title": "Chatbox: Musik-Laufzeit läuft flüssig mit",
+    "items": [
+      "Die Laufzeit des Liedes in der VRChat-Chatbox wird jetzt alle 1,5 Sekunden aktualisiert statt alle 5 Sekunden.",
+      "Schneller geht es nicht: VRChat sperrt die Chatbox kurz, wenn öfter gesendet wird.",
+      "Läuft kein Lied, bleibt es beim sparsamen Takt wie bisher."
+    ]
+  },
+  {
     "date": "2026-10-07",
     "title": "Update-Hinweis nur noch einmal",
     "items": [

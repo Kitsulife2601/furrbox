@@ -446,6 +446,10 @@ ipcMain.handle("furrbox:vr-placement", (event, input) => {
 // every few seconds – VRChat hides a chatbox text after a while, so it has to be sent again.
 const STATUS_ITEMS = ["time", "date", "world", "people", "joined", "instanceAge", "music"];
 const STATUS_EVERY_MS = 5000;
+// While a song with a running time is shown: as fast as VRChat allows. (Faster than about one
+// message per 1.5 s and VRChat mutes the chatbox for a while as spam.)
+const STATUS_MUSIC_MS = 1500;
+let chatStatusMusic = false;
 /** Idle/Backoff: VRChat nicht in Instanz oder Fenster minimiert/unfokussiert. */
 const STATUS_IDLE_MS = 30_000;
 const STATUS_BLUR_MS = 15_000;
@@ -472,12 +476,14 @@ function statusText() {
     joined: s.joinedAt ? `Hier seit ${duration(s.joinedAt)}` : null,
     instanceAge: opened ? `Instanz offen: ${duration(opened)}` : s.joinedAt ? `Instanz: mind. ${duration(s.joinedAt)}` : null,
   };
+  chatStatusMusic = false;
   if (chatStatus.items.includes("music")) {
     const song = media.state();
     if (song.playing && song.title) {
       const time = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
       const head = `🎵 ${song.title}${song.artist ? ` – ${song.artist}` : ""}`.slice(0, 60);
       if (song.duration > 0) {
+        chatStatusMusic = true;
         // ▰▰▰▱▱▱▱▱▱▱ 1:23 / 3:45
         const filled = Math.min(10, Math.max(0, Math.round((song.position / song.duration) * 10)));
         part.music = `${head}
@@ -515,7 +521,7 @@ function runChatStatusTick() {
     const text = statusText();
     if (text) {
       sendChatbox(text).catch(() => undefined);
-      chatStatusDelayMs = windowQuiet() ? STATUS_BLUR_MS : STATUS_EVERY_MS;
+      chatStatusDelayMs = chatStatusMusic ? STATUS_MUSIC_MS : windowQuiet() ? STATUS_BLUR_MS : STATUS_EVERY_MS;
     } else {
       // VRChat inaktiv / nicht in Instanz → Log seltener pollen.
       chatStatusDelayMs = STATUS_IDLE_MS;
