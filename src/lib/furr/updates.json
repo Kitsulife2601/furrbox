@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-13",
+    "title": "Anwesenheit über VRChat: zuverlässiger und nachvollziehbar",
+    "items": [
+      "Behoben: Konten mit eingetragener VRChat-ID wurden übersprungen, wenn ihre Discord-Rolle nicht als Team erkannt war. Jetzt zählt jede eingetragene ID.",
+      "Das Konto, mit dem der Bot selbst angemeldet ist, wird jetzt auch erkannt.",
+      "Der Bot schreibt ins Protokoll, wie viele Konten er sehen konnte und wie viele nicht (nicht befreundet oder privat) – so lässt sich prüfen, warum jemand fehlt.",
+      "Dafür den Bot einmal neu starten."
+    ]
+  },
+  {
+    "date": "2026-10-13",
     "title": "VRChat-ID bei Accounts eintragen",
     "items": [
       "Neu im FurrAccountManager: Spalte „VRChat“. Dort trägst du für jedes Teammitglied die VRChat-ID ein (usr_…) oder fügst einfach den Link zum VRChat-Profil ein.",

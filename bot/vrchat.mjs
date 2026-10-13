@@ -430,16 +430,42 @@ export async function handleVrchatJobs(jobs) {
  * account. Only while an instance of the group is open (otherwise nobody can be in one).
  */
 let teamIds = [];
+let teamSummary = "";
 async function checkTeam(open) {
   if (!bridge || !session.auth) return;
   const seen = [];
+  const count = { instanz: 0, privat: 0, offline: 0, unbekannt: 0 };
   for (const usrId of open ? teamIds.slice(0, 40) : []) {
-    const json = (await softAuthed(`/users/${encodeURIComponent(usrId)}`))?.json;
-    const location = String(json?.location ?? "");
-    if (location.startsWith("wrld_")) seen.push({ usrId, location, displayName: String(json?.displayName ?? "") });
+    let location = "";
+    let displayName = "";
+    if (usrId === session.accountId) {
+      // The bot's own account: VRChat shows its location only in its own profile.
+      const json = (await softAuthed("/auth/user"))?.json;
+      const p = json?.presence ?? {};
+      if (String(p.world ?? "").startsWith("wrld_") && p.instance) location = `${p.world}:${p.instance}`;
+      else location = json ? "offline" : "";
+      displayName = String(json?.displayName ?? "");
+    } else {
+      const json = (await softAuthed(`/users/${encodeURIComponent(usrId)}`))?.json;
+      location = String(json?.location ?? "");
+      displayName = String(json?.displayName ?? "");
+    }
+    if (location.startsWith("wrld_")) {
+      seen.push({ usrId, location, displayName });
+      count.instanz += 1;
+    } else if (location === "private" || location === "traveling") count.privat += 1;
+    else if (location === "offline") count.offline += 1;
+    else count.unbekannt += 1; // no friend of this account – VRChat does not tell where they are
   }
   const res = await bridge("vrchat-team", { seen });
+  const before = teamIds.length;
   if (Array.isArray(res?.team)) teamIds = res.team.filter((id) => typeof id === "string");
+  // One line whenever something changes – shows why someone is (not) recognised.
+  const summary = open
+    ? `${before} Konten geprüft: ${count.instanz} in einer Welt sichtbar (${res?.inGroup ?? "?"} davon in unserer Gruppe), ${count.privat} privat, ${count.offline} offline, ${count.unbekannt} nicht einsehbar (nicht mit dem Bot-Konto befreundet)`
+    : `keine Gruppen-Instanz offen, ${teamIds.length} Konten hinterlegt`;
+  if (summary !== teamSummary) log("VRChat-Anwesenheit:", summary);
+  teamSummary = summary;
 }
 
 function tick() {

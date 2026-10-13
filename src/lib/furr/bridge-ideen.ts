@@ -144,8 +144,7 @@ export async function handleIdeenBridge(
     const seen = Array.isArray(body.seen) ? (body.seen as { usrId?: unknown; location?: unknown; displayName?: unknown }[]).slice(0, 50) : [];
     const team = await sql<{ user_id: string; vrchat_user_id: string }>`
       select p.user_id, p.vrchat_user_id from furr_profile p
-      join discord_member dm on dm.discord_id = p.discord_id
-      where p.vrchat_user_id is not null and dm.highest_privilege in ('dev', 'owner', 'moderator', 'supporter')
+      where p.vrchat_user_id is not null
       limit 40`;
     const byUsr = new Map(team.map((t) => [t.vrchat_user_id, t.user_id]));
     const hits: { userId: string; location: string }[] = [];
@@ -157,7 +156,7 @@ export async function handleIdeenBridge(
       if (userId && name) await sql`update furr_profile set vrchat_name = ${name} where user_id = ${userId} and vrchat_name is distinct from ${name}`;
     }
     await markSeenInGroupInstance(hits);
-    return bridgeJson({ ok: true, team: team.map((t) => t.vrchat_user_id) });
+    return bridgeJson({ ok: true, team: team.map((t) => t.vrchat_user_id), inGroup: hits.length });
   }
 
   if (action === "whitelist-check") {
