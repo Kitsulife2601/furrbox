@@ -157,14 +157,32 @@ async function finishLogin(auth, twoFactor) {
   return { done: true, displayName: me.displayName };
 }
 
-async function verify(auth, method, code) {
+async function verify(auth, method, rawCode) {
+  // Codes get pasted with spaces or a dash ("123 456") – VRChat wants the bare code.
+  const code = String(rawCode ?? "").replace(/[s-]/g, "");
   const path =
     method === "emailOtp"
       ? "/auth/twofactorauth/emailotp/verify"
       : method === "otp"
         ? "/auth/twofactorauth/otp/verify"
         : "/auth/twofactorauth/totp/verify";
-  const { res, json } = await call(path, { method: "POST", body: { code }, auth });
+  let res;
+  let json;
+  try {
+    ({ res, json } = await call(path, { method: "POST", body: { code }, auth }));
+  } catch (err) {
+    // VRChat answers a wrong or expired code with a bare "400".
+    if (err instanceof VrcError && err.status === 400) {
+      throw new VrcError(
+        method === "emailOtp"
+          ? "Der Code ist falsch oder abgelaufen. Nimm den Code aus der neuesten E-Mail von VRChat."
+          : "Der Code ist falsch oder abgelaufen. Nimm den aktuellen Code aus deiner Authenticator-App.",
+        400,
+      );
+    }
+    if (err instanceof VrcError && err.status === 429) throw new VrcError("Zu viele Versuche. Warte ein paar Minuten und versuch es dann noch einmal.", 429);
+    throw err;
+  }
   if (!json?.verified) throw new VrcError("Der Code ist falsch oder abgelaufen.", 400);
   // VRChat may hand out a fresh auth cookie together with the 2FA cookie – keep the newest.
   return finishLogin(readCookie(res, "auth") ?? auth, readCookie(res, "twoFactorAuth"));
