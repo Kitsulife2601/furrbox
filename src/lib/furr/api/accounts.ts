@@ -12,15 +12,23 @@ export const listAccounts = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await requirePermission(context.userId, "canManageAccounts");
     const sql = await getSql();
-    const roles = await sql<{ user_id: string; role: string }>`select user_id, role from furr_profile`;
-    const accountRole = new Map(roles.map((r) => [r.user_id, r.role]));
+    const roles = await sql<{ user_id: string; role: string; vrchat_user_id: string | null; vrchat_name: string | null }>`
+      select user_id, role, vrchat_user_id, vrchat_name from furr_profile`;
+    const profile = new Map(roles.map((r) => [r.user_id, r]));
     return (await queryPresence(true))
       .filter((u) => u.hasAccount)
-      .map((u) => ({ ...u, accountRole: (isRole(accountRole.get(u.id)) ? accountRole.get(u.id) : "member") as Role }));
+      .map((u) => ({
+        ...u,
+        accountRole: (isRole(profile.get(u.id)?.role) ? profile.get(u.id)?.role : "member") as Role,
+        vrchatUserId: profile.get(u.id)?.vrchat_user_id ?? null,
+        vrchatName: profile.get(u.id)?.vrchat_name ?? null,
+      }));
   });
 
 export const updateAccount = createServerFn({ method: "POST" })
-  .validator((input: { userId: string; role?: Role; discordId?: string | null; displayName?: string }) => ({
+  .validator((input: { userId: string; role?: Role; discordId?: string | null; displayName?: string; vrchat?: string | null }) => ({
+    // VRChat account for the automatic Anwesenheit: a usr_ id, or the link to the VRChat profile ("" removes it).
+    vrchat: input.vrchat === undefined ? undefined : String(input.vrchat ?? "").trim(),
     userId: String(input.userId ?? ""),
     role: isRole(input.role) ? input.role : undefined,
     discordId: input.discordId === undefined ? undefined : String(input.discordId ?? "").trim(),
@@ -45,6 +53,20 @@ export const updateAccount = createServerFn({ method: "POST" })
         if (clash.length) throw new Error(`Discord-ID ist bereits ${clash[0].username} zugewiesen.`);
       }
       await sql`update furr_profile set discord_id = ${data.discordId || null} where user_id = ${data.userId}`;
+    }
+    if (data.vrchat !== undefined) {
+      const usr = /usr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(data.vrchat)?.[0].toLowerCase() ?? null;
+      if (data.vrchat && !usr) throw new Error("Das ist keine VRChat-ID. Sie beginnt mit usr_ – oder füge den Link zum VRChat-Profil ein.");
+      if (usr) {
+        const clash = await sql<{ username: string }>`
+          select username from furr_profile where vrchat_user_id = ${usr} and user_id <> ${data.userId}`;
+        if (clash.length) throw new Error(`Diese VRChat-ID ist bereits ${clash[0].username} zugewiesen.`);
+      }
+      // A new id: the name is filled in again as soon as the account is seen.
+      await sql`
+        update furr_profile set vrchat_user_id = ${usr},
+          vrchat_name = case when vrchat_user_id is not distinct from ${usr} then vrchat_name else null end
+        where user_id = ${data.userId}`;
     }
     if (data.role) await sql`update furr_profile set role = ${data.role} where user_id = ${data.userId}`;
     if (data.displayName !== undefined) {

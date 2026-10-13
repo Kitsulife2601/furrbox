@@ -8,7 +8,7 @@ import { errorMessage, timeAgo, useMe } from "@/lib/furr/client";
 import { ROLES, ROLE_LABEL, type Role } from "@/lib/furr/roles";
 import { useNotifications } from "@/store/notifications";
 import { dualLabel } from "./Presence";
-import { Btn, ConfirmDialog, Empty } from "./ui";
+import { Btn, ConfirmDialog, Empty, PromptDialog } from "./ui";
 
 export function Accounts() {
   const live = useLiveInterval(10_000);
@@ -16,12 +16,13 @@ export function Accounts() {
   const queryClient = useQueryClient();
   const accounts = useQuery({ queryKey: ["furr", "accounts"], queryFn: () => listAccounts(), refetchInterval: live });
   const [removeId, setRemoveId] = useState<string | null>(null);
+  const [vrcId, setVrcId] = useState<string | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["furr"] });
   const toast = (title: string, description: string) =>
     useNotifications.getState().notify({ version: "FurrAccountManager", title, description });
 
-  async function update(userId: string, patch: { role?: Role }) {
+  async function update(userId: string, patch: { role?: Role; vrchat?: string }) {
     try {
       await updateAccount({ data: { userId, ...patch } });
       await refresh();
@@ -31,6 +32,7 @@ export function Accounts() {
   }
 
   const removing = accounts.data?.find((a) => a.id === removeId);
+  const linking = accounts.data?.find((a) => a.id === vrcId);
 
   return (
     <div className="relative grid h-full min-h-0 bg-bg/40">
@@ -52,6 +54,7 @@ export function Accounts() {
                 <th className="px-3 py-2 font-medium">Account</th>
                 <th className="px-3 py-2 font-medium">Rolle</th>
                 <th className="px-3 py-2 font-medium">Discord-ID</th>
+                <th className="px-3 py-2 font-medium">VRChat</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th />
               </tr>
@@ -84,6 +87,28 @@ export function Accounts() {
                   <td className="px-3 py-2">
                     <span className="font-mono">{a.discordId ?? "–"}</span>
                   </td>
+                  <td className="px-3 py-2">
+                    {a.vrchatUserId ? (
+                      <>
+                        <p className="font-medium">{a.vrchatName ?? "Name noch unbekannt"}</p>
+                        <p className="max-w-40 truncate font-mono text-[10px] text-muted" title={a.vrchatUserId}>
+                          {a.vrchatUserId}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-muted">nicht eingetragen</p>
+                    )}
+                    <div className="mt-0.5 flex gap-2">
+                      <button type="button" onClick={() => setVrcId(a.id)} className="text-accent hover:underline">
+                        {a.vrchatUserId ? "Ändern" : "Eintragen"}
+                      </button>
+                      {a.vrchatUserId && (
+                        <button type="button" onClick={() => void update(a.id, { vrchat: "" })} className="text-muted hover:text-fg hover:underline">
+                          Entfernen
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-muted">
                     {dualLabel(a)}
                     <br />
@@ -101,6 +126,18 @@ export function Accounts() {
         )}
       </div>
 
+      {linking && (
+        <PromptDialog
+          title={`VRChat-ID von ${linking.displayName} (usr_… oder Link zum VRChat-Profil)`}
+          initial={linking.vrchatUserId ?? ""}
+          confirmLabel="Speichern"
+          onCancel={() => setVrcId(null)}
+          onSubmit={(value) => {
+            setVrcId(null);
+            void update(linking.id, { vrchat: value });
+          }}
+        />
+      )}
       {removing && (
         <ConfirmDialog
           title={`Account ${removing.displayName} löschen?`}

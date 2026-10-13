@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-13",
+    "title": "VRChat-ID bei Accounts eintragen",
+    "items": [
+      "Neu im FurrAccountManager: Spalte „VRChat“. Dort trägst du für jedes Teammitglied die VRChat-ID ein (usr_…) oder fügst einfach den Link zum VRChat-Profil ein.",
+      "Damit erkennt FurrBox automatisch, wer in einer Instanz unserer Gruppe ist, und zählt die Person als anwesend.",
+      "Der VRChat-Name wird von selbst ergänzt, sobald das Konto gesehen wird."
+    ]
+  },
+  {
+    "date": "2026-10-13",
     "title": "Watchlist-Alarm beim Beitritt funktioniert jetzt",
     "items": [
       "Behoben: Der Alarm „jemand von der Watchlist ist beigetreten“ kam nie, weil die Desktop-App Beitritte nicht gemeldet hat.",
