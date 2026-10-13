@@ -8,8 +8,12 @@ export async function reconcileSanctions(ctx) {
   const { bridge, guild, mutedRole, log } = ctx;
   let list = [];
   try {
-    const res = await bridge("sanctions");
-    list = Array.isArray(res?.sanctions) ? res.sanctions : [];
+    const res = await bridge("sanctions-active");
+    // The server lists every platform with targetId / type; here only Discord counts.
+    list = (Array.isArray(res?.sanctions) ? res.sanctions : [])
+      .filter((x) => (x.platform ?? "discord") === "discord")
+      .map((x) => ({ ...x, discordId: x.discordId ?? x.targetId, kind: x.kind ?? x.type }))
+      .filter((x) => /^d{17,22}$/.test(String(x.discordId ?? "")));
   } catch (err) {
     log("Sanction-Abgleich fehlgeschlagen:", err instanceof Error ? err.message : err);
     return;

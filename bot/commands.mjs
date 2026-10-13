@@ -92,7 +92,11 @@ export function buildCommandDefs() {
 
 export async function registerGuildCommands({ token, clientId, guildId, log }) {
   const rest = new REST({ version: "10" }).setToken(token);
-  const body = buildCommandDefs();
+  // Plain REST wants Discord's own field names – and the permission number as text (it is a BigInt).
+  const body = buildCommandDefs().map(({ defaultMemberPermissions, ...def }) => ({
+    ...def,
+    default_member_permissions: defaultMemberPermissions == null ? null : String(defaultMemberPermissions),
+  }));
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body });
   log(`Slash-Commands registriert (${body.length}) für Guild ${guildId}.`);
 }

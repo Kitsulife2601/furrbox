@@ -110,6 +110,19 @@ async function call(path, { method = "GET", body, auth, twoFactor, basic } = {})
   return { res, json };
 }
 
+/**
+ * Extra look-ups (people in an instance, where a team member is): same login, but a refusal never
+ * logs the bot out. VRChat also answers 401 when the account simply may not see something.
+ */
+async function softAuthed(path) {
+  if (!session.auth) return null;
+  try {
+    return await call(path, { auth: session.auth, twoFactor: session.twoFactor });
+  } catch {
+    return null;
+  }
+}
+
 /** Calls VRChat with the saved login; an invalid login is cleared and reported. */
 async function authed(path, opts = {}) {
   if (!session.auth) throw new VrcError("VRChat ist nicht angemeldet.", 401);
@@ -175,15 +188,10 @@ function mapGroup(g) {
  * comes from the instance itself (one small request per open instance).
  */
 async function realUserCount(location) {
-  try {
-    const { json } = await authed(`/instances/${location}`);
-    const n = Number(json?.n_users ?? json?.userCount);
-    return Number.isFinite(n) ? n : null;
-  } catch (err) {
-    // An expired login must still be noticed; anything else (no access, …) keeps the list's number.
-    if (err instanceof VrcError && err.status === 401) throw err;
-    return null;
-  }
+  // No access to this instance, … → keep the number from the list.
+  const json = (await softAuthed(`/instances/${location}`))?.json;
+  const n = Number(json?.n_users ?? json?.userCount ?? NaN);
+  return Number.isFinite(n) ? n : null;
 }
 
 let openInstances = 0;
@@ -408,13 +416,9 @@ async function checkTeam(open) {
   if (!bridge || !session.auth) return;
   const seen = [];
   for (const usrId of open ? teamIds.slice(0, 40) : []) {
-    try {
-      const { json } = await authed(`/users/${encodeURIComponent(usrId)}`);
-      const location = String(json?.location ?? "");
-      if (location.startsWith("wrld_")) seen.push({ usrId, location, displayName: String(json?.displayName ?? "") });
-    } catch (err) {
-      if (err instanceof VrcError && err.status === 401) return;
-    }
+    const json = (await softAuthed(`/users/${encodeURIComponent(usrId)}`))?.json;
+    const location = String(json?.location ?? "");
+    if (location.startsWith("wrld_")) seen.push({ usrId, location, displayName: String(json?.displayName ?? "") });
   }
   const res = await bridge("vrchat-team", { seen });
   if (Array.isArray(res?.team)) teamIds = res.team.filter((id) => typeof id === "string");

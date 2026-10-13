@@ -1,5 +1,15 @@
 [
   {
+    "date": "2026-10-13",
+    "title": "Bot: VRChat-Anmeldung bleibt bestehen, Slash-Befehle gehen wieder",
+    "items": [
+      "Behoben: Der Bot hat sich nach dem letzten Update selbst aus VRChat abgemeldet, sobald er die Personenzahl einer Instanz nachgeschaut hat. Solche Zusatz-Abfragen können die Anmeldung jetzt nicht mehr löschen.",
+      "Behoben: Die Slash-Befehle (/duty, /whitelist, /hint) wurden beim Start nicht bei Discord eingetragen.",
+      "Behoben: Laufende Strafen wurden nach einem Bot-Neustart nicht wieder abgeglichen.",
+      "Wichtig: Bot neu starten und VRChat in FurrBox einmal neu verbinden."
+    ]
+  },
+  {
     "date": "2026-10-08",
     "title": "Anwesenheit wird über VRChat erkannt",
     "items": [
