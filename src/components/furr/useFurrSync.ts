@@ -9,6 +9,7 @@ import { detectPlatform } from "@/lib/furr/client";
 import { useDesktop } from "@/store/desktop";
 import { useNotifications, type NotifyKind } from "@/store/notifications";
 import { pollAlerts } from "@/lib/furr/api/alerts-api";
+import { ownSightings } from "./useWatchlistWatch";
 
 /** Server-Alert-Bus (alerts.ts) → Info-Center-Gruppen. */
 function alertKind(kind: string): NotifyKind {
@@ -117,6 +118,7 @@ export function useFurrSync(active: boolean) {
         lastAlertId.current = ordered[ordered.length - 1].id;
         for (const a of ordered) {
           if (a.channels.length && !a.channels.includes("desktop")) continue;
+          if (a.kind === "watchlist.join" && ownSightings.has(String(a.payload?.sightingId ?? ""))) continue;
           useNotifications.getState().notify({
             id: `alert-${a.id}`,
             version: "FurrBox · Team-Alert",

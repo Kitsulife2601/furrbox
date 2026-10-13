@@ -4,7 +4,7 @@
 // with pages you swipe through.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveInterval } from "@/lib/furr/live-interval";
 import {
   AlertTriangle,
@@ -51,6 +51,7 @@ import {
 import { listChatMessages } from "@/lib/furr/api/chat";
 import { listDuty, markVotekickDone } from "@/lib/furr/api/duty";
 import { listPresence } from "@/lib/furr/api/presence";
+import { listWatchlist } from "@/lib/furr/api/watchlist";
 import { listVrchatInstances } from "@/lib/furr/api/vrchat";
 import { errorMessage, useMe } from "@/lib/furr/client";
 import { playSound } from "@/lib/furr/sounds";
@@ -233,7 +234,12 @@ function VrPanel() {
     boost: boostFrames,
   });
   const muteAlerts = useVrSettings((s) => s.muteAlerts);
-  const watchlist = useVrSettings((s) => s.watchlist);
+  const localWatch = useVrSettings((s) => s.watchlist);
+  const teamWatch = useQuery({ queryKey: ["furr", "watchlist"], queryFn: () => listWatchlist(), enabled: Boolean(me.data), refetchInterval: 60_000, retry: false });
+  const watchlist = useMemo(
+    () => [...localWatch, ...(teamWatch.data ?? []).filter((e) => e.alarmJoin).map((e) => ({ id: e.usrId, name: e.displayName ?? undefined }))],
+    [localWatch, teamWatch.data],
+  );
 
   useWatchlistJoinToasts({ events: s?.events, watchlist, mute: muteAlerts, boost: boostFrames });
   useVoteResultToasts({ votes: s?.votes, mute: muteAlerts, boost: boostFrames });

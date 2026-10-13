@@ -1,6 +1,16 @@
 [
   {
     "date": "2026-10-13",
+    "title": "Watchlist-Alarm beim Beitritt funktioniert jetzt",
+    "items": [
+      "Behoben: Der Alarm „jemand von der Watchlist ist beigetreten“ kam nie, weil die Desktop-App Beitritte nicht gemeldet hat.",
+      "Jetzt gibt es Ton und Meldung, sobald jemand von der Watchlist in deiner VRChat-Instanz ist – auch wenn die Person schon da war, als du gekommen bist. Ein Klick auf die Meldung öffnet die Personenakte.",
+      "Das restliche Team bekommt dazu einen Team-Alert, und die Sichtung steht in der Watchlist unter „Zuletzt gesehen“.",
+      "Das Feld am Arm (FurrBox VR) nutzt jetzt ebenfalls die gemeinsame Watchlist."
+    ]
+  },
+  {
+    "date": "2026-10-13",
     "title": "Bot: VRChat-Anmeldung bleibt bestehen, Slash-Befehle gehen wieder",
     "items": [
       "Behoben: Der Bot hat sich nach dem letzten Update selbst aus VRChat abgemeldet, sobald er die Personenzahl einer Instanz nachgeschaut hat. Solche Zusatz-Abfragen können die Anmeldung jetzt nicht mehr löschen.",

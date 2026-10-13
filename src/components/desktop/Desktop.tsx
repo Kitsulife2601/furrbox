@@ -33,6 +33,7 @@ import { StaffFlyout } from "./StaffTray";
 import { VoteKickPanel } from "./VoteKickPanel";
 import { HandoverDialogs } from "./Handover";
 import { useVrchatDuty } from "@/components/furr/useVrchatDuty";
+import { useWatchlistWatch } from "@/components/furr/useWatchlistWatch";
 import { CommandPalette } from "./CommandPalette";
 import { WhatsNewDialog } from "./WhatsNew";
 
@@ -119,6 +120,7 @@ function DesktopShell({ backgroundStyle }: { backgroundStyle?: CSSProperties }) 
   useChatboxStatus();
   useVoteWatch();
   useVrchatDuty();
+  useWatchlistWatch();
   useDesktopShortcuts();
 
   useEffect(() => {
